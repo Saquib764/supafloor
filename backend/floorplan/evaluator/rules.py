@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+from collections import deque
 from typing import Callable
 
 from floorplan.geometry import (
     area,
     aspect_ratio,
+    centroid,
     min_width,
     polygon_from_boundary,
     polygon_from_room,
     rectangularity,
 )
 from floorplan.schemas.enums import RoomType, Severity, ZoneType
-from floorplan.schemas.models import FloorPlan, RuleResult
+from floorplan.schemas.models import FloorPlan, Room, RuleResult
 from floorplan.topology import (
     adjacency_via_doors,
     build_adjacency,
@@ -22,6 +24,11 @@ from floorplan.topology import (
 )
 
 RuleFn = Callable[[FloorPlan], RuleResult]
+
+_PUBLIC = {RoomType.LIVING, RoomType.DINING, RoomType.KITCHEN, RoomType.ENTRY}
+_PRIVATE = {RoomType.BEDROOM, RoomType.MASTER_BEDROOM}
+_CIRCULATION = {RoomType.HALLWAY, RoomType.ENTRY}
+_SKIP_HUB = {RoomType.CLOSET, RoomType.STORAGE, RoomType.BALCONY, RoomType.OTHER}
 
 
 def _hard(rule_id: str, name: str, passed: bool, reason: str, repair: str | None = None, score: float | None = None) -> RuleResult:
@@ -382,6 +389,363 @@ def rule_balcony_usability(plan: FloorPlan) -> RuleResult:
     return _soft("balcony", "Balcony Usability", score, f"Balcony {a:.1f} m²", "Enlarge balcony to ≥4 m²")
 
 
+# ── Soft aesthetics (spatial layout conventions) ─────────────────────────────
+
+
+def _largest(rooms: list[Room]) -> Room | None:
+    return max(rooms, key=lambda r: area(r.coords()), default=None)
+
+
+def _type_map(plan: FloorPlan) -> dict[str, RoomType]:
+    return {r.id: r.room_type for r in plan.rooms}
+
+
+def _hop_distances(adj: dict[str, list[str]], start: str) -> dict[str, int]:
+    dist = {start: 0}
+    q = deque([start])
+    while q:
+        cur = q.popleft()
+        for nxt in adj.get(cur, []):
+            if nxt not in dist:
+                dist[nxt] = dist[cur] + 1
+                q.append(nxt)
+    return dist
+
+
+def _shortest_hop(adj: dict[str, list[str]], starts: list[str], target: str) -> int | None:
+    best: int | None = None
+    for s in starts:
+        d = _hop_distances(adj, s).get(target)
+        if d is None:
+            continue
+        if best is None or d < best:
+            best = d
+    return best
+
+
+def rule_living_centrality(plan: FloorPlan) -> RuleResult:
+    """Living near plan center and within short door-hops of most rooms."""
+    living = [r for r in plan.rooms if r.room_type == RoomType.LIVING]
+    liv = _largest(living)
+    if liv is None:
+        return _soft("living_centrality", "Living Centrality", 3.0, "No living room", "Add a central living room")
+
+    # Area-weighted plan centroid vs living centroid
+    total_a = sum(area(r.coords()) for r in plan.rooms) or 1.0
+    pcx = sum(centroid(r.coords())[0] * area(r.coords()) for r in plan.rooms) / total_a
+    pcy = sum(centroid(r.coords())[1] * area(r.coords()) for r in plan.rooms) / total_a
+    lcx, lcy = centroid(liv.coords())
+    minx = miny = float("inf")
+    maxx = maxy = float("-inf")
+    for r in plan.rooms:
+        for x, y in r.coords():
+            minx = min(minx, x)
+            miny = min(miny, y)
+            maxx = max(maxx, x)
+            maxy = max(maxy, y)
+    diag = ((maxx - minx) ** 2 + (maxy - miny) ** 2) ** 0.5 or 1.0
+    geo_dist = ((lcx - pcx) ** 2 + (lcy - pcy) ** 2) ** 0.5
+    geo_score = 10.0 * (1.0 - min(1.0, geo_dist / (0.45 * diag)))
+
+    adj = adjacency_via_doors(plan)
+    hops = _hop_distances(adj, liv.id)
+    targets = [r for r in plan.rooms if r.id != liv.id and r.room_type not in _SKIP_HUB]
+    reachable_hops = [hops[r.id] for r in targets if r.id in hops]
+    if reachable_hops:
+        mean_hops = sum(reachable_hops) / len(reachable_hops)
+        hub_score = max(2.0, 10.0 - max(0.0, mean_hops - 1.0) * 3.5)
+    else:
+        mean_hops = 0.0
+        hub_score = 5.0
+
+    score = 0.45 * geo_score + 0.55 * hub_score
+    return _soft(
+        "living_centrality",
+        "Living Centrality",
+        score,
+        f"Living {geo_dist:.1f} m from plan center; mean {mean_hops:.1f} hops to other rooms",
+        "Place living nearer the center and connect rooms via hall/living hub",
+    )
+
+
+def rule_kitchen_public_link(plan: FloorPlan) -> RuleResult:
+    """Kitchen should connect directly to dining or living (or one short hop via hall)."""
+    kitchens = [r for r in plan.rooms if r.room_type == RoomType.KITCHEN]
+    if not kitchens:
+        return _soft("kitchen_public_link", "Kitchen–Public Link", 7.0, "No kitchen in program")
+
+    adj = adjacency_via_doors(plan)
+    types = _type_map(plan)
+    living_ids = [r.id for r in plan.rooms if r.room_type == RoomType.LIVING]
+    dining_ids = [r.id for r in plan.rooms if r.room_type == RoomType.DINING]
+    scores: list[float] = []
+    notes: list[str] = []
+
+    for k in kitchens:
+        nbrs = {types[n] for n in adj.get(k.id, []) if n in types}
+        if RoomType.DINING in nbrs or RoomType.LIVING in nbrs:
+            scores.append(10.0)
+            notes.append(f"{k.name} opens to dining/living")
+            continue
+        # Path to dining then living
+        best = None
+        for tid in dining_ids + living_ids:
+            h = _hop_distances(adj, k.id).get(tid)
+            if h is not None and (best is None or h < best):
+                best = h
+        if best is None:
+            scores.append(2.0)
+            notes.append(f"{k.name} unreachable from living/dining")
+        elif best <= 1:
+            scores.append(9.0)
+            notes.append(f"{k.name} adjacent to public room")
+        elif best == 2 and RoomType.HALLWAY in nbrs:
+            scores.append(7.0)
+            notes.append(f"{k.name} 2 hops via hall to public")
+        elif best == 2:
+            scores.append(5.5)
+            notes.append(f"{k.name} 2 hops from living/dining")
+        else:
+            scores.append(3.0)
+            notes.append(f"{k.name} {best} hops from living/dining")
+
+    score = sum(scores) / len(scores)
+    return _soft(
+        "kitchen_public_link",
+        "Kitchen–Public Link",
+        score,
+        "; ".join(notes),
+        "Connect kitchen directly to dining or living",
+    )
+
+
+def rule_entry_sequence(plan: FloorPlan) -> RuleResult:
+    """Prefer exterior → entry → (hall) → living; avoid exterior into private rooms."""
+    entries = [r for r in plan.rooms if r.room_type == RoomType.ENTRY]
+    living = _largest([r for r in plan.rooms if r.room_type == RoomType.LIVING])
+    adj = adjacency_via_doors(plan)
+    types = _type_map(plan)
+
+    exterior_doors = [d for d in plan.doors if d.is_exterior]
+    exterior_room_ids: set[str] = set()
+    for d in exterior_doors:
+        exterior_room_ids.update(d.connects)
+    if not exterior_room_ids:
+        exterior_room_ids = set(exterior_touching_rooms(plan))
+
+    private_hits = 0
+    if exterior_doors:
+        for d in exterior_doors:
+            if any(types.get(c) in _PRIVATE for c in d.connects):
+                private_hits += 1
+    else:
+        private_hits = sum(1 for rid in exterior_room_ids if types.get(rid) in _PRIVATE)
+
+    if living is None:
+        return _soft("entry_sequence", "Entry Sequence", 4.0, "No living room to sequence toward", "Add living after entry")
+
+    score = 8.0
+    reasons: list[str] = []
+
+    if private_hits:
+        score -= private_hits * 2.5
+        reasons.append(f"exterior opens toward private room ({private_hits})")
+
+    if entries:
+        entry = _largest(entries) or entries[0]
+        # Entry should touch exterior or receive an exterior door
+        entry_on_exit = entry.id in exterior_room_ids or any(
+            d.is_exterior and entry.id in d.connects for d in plan.doors
+        )
+        if entry_on_exit:
+            score += 1.0
+            reasons.append("entry at unit exit")
+        else:
+            score -= 1.5
+            reasons.append("entry not at exterior")
+
+        hops = _hop_distances(adj, entry.id).get(living.id)
+        if hops is None:
+            score -= 3.0
+            reasons.append("living unreachable from entry")
+        elif hops == 1:
+            score += 1.0
+            reasons.append("living adjacent to entry")
+        elif hops == 2:
+            # Prefer hall between entry and living
+            nbrs = {types[n] for n in adj.get(entry.id, []) if n in types}
+            if RoomType.HALLWAY in nbrs or RoomType.LIVING in nbrs:
+                reasons.append("living 2 hops from entry via circulation")
+            else:
+                score -= 0.5
+                reasons.append("living 2 hops from entry")
+        else:
+            score -= min(3.0, (hops - 2) * 1.5)
+            reasons.append(f"living {hops} hops from entry")
+    else:
+        # No foyer: living itself at exit is acceptable; deep living is not
+        if living.id in exterior_room_ids or any(d.is_exterior and living.id in d.connects for d in plan.doors):
+            score -= 0.5
+            reasons.append("no entry; living at exterior")
+        else:
+            starts = list(exterior_room_ids) or ([plan.rooms[0].id] if plan.rooms else [])
+            hops = _shortest_hop(adj, starts, living.id)
+            if hops is None:
+                score -= 2.0
+                reasons.append("no entry; living far from exit")
+            elif hops <= 1:
+                score -= 1.0
+                reasons.append("no entry buffer before living")
+            else:
+                score -= 2.5
+                reasons.append(f"no entry; living {hops} hops from exit")
+
+    reason = "; ".join(reasons) if reasons else "Entry sequence ok"
+    return _soft(
+        "entry_sequence",
+        "Entry Sequence",
+        score,
+        reason,
+        "Add a small entry/foyer so exit leads to living, not bedrooms",
+    )
+
+
+def rule_hall_organization(plan: FloorPlan) -> RuleResult:
+    """Private rooms should hang off hallway/entry rather than using living as a corridor."""
+    beds = [r for r in plan.rooms if r.room_type in _PRIVATE]
+    if not beds:
+        return _soft("hall_organization", "Hall Organization", 7.0, "No bedrooms to organize")
+
+    adj = adjacency_via_doors(plan)
+    types = _type_map(plan)
+    circ_ids = {r.id for r in plan.rooms if r.room_type in _CIRCULATION}
+    living_ids = {r.id for r in plan.rooms if r.room_type == RoomType.LIVING}
+
+    buffered = 0
+    living_only = 0
+    for b in beds:
+        nbrs = set(adj.get(b.id, []))
+        if nbrs & circ_ids:
+            buffered += 1
+        elif nbrs & living_ids and not (nbrs & circ_ids):
+            living_only += 1
+
+    # Living-as-corridor: path between two beds goes only through living (no hall on path)
+    corridor_pairs = 0
+    pair_count = 0
+    for i, a in enumerate(beds):
+        for b in beds[i + 1 :]:
+            pair_count += 1
+            # BFS recording parent
+            parent: dict[str, str | None] = {a.id: None}
+            q = deque([a.id])
+            found = False
+            while q and not found:
+                cur = q.popleft()
+                for nxt in adj.get(cur, []):
+                    if nxt in parent:
+                        continue
+                    parent[nxt] = cur
+                    if nxt == b.id:
+                        found = True
+                        break
+                    q.append(nxt)
+            if not found:
+                continue
+            path = []
+            cur: str | None = b.id
+            while cur is not None:
+                path.append(cur)
+                cur = parent[cur]
+            mid = path[1:-1]
+            mid_types = [types[x] for x in mid if x in types]
+            if mid and all(t == RoomType.LIVING for t in mid_types) and RoomType.HALLWAY not in mid_types:
+                corridor_pairs += 1
+
+    frac_buffered = buffered / len(beds)
+    score = 3.0 + frac_buffered * 6.0
+    score -= living_only * 1.2
+    if pair_count:
+        score -= (corridor_pairs / pair_count) * 2.5
+    if not circ_ids and len(beds) >= 2:
+        score -= 1.5
+
+    return _soft(
+        "hall_organization",
+        "Hall Organization",
+        score,
+        f"{buffered}/{len(beds)} bedrooms on hall/entry; {living_only} living-only; "
+        f"{corridor_pairs} bed pairs routed through living",
+        "Serve bedrooms from a hallway instead of crossing the living room",
+    )
+
+
+def rule_public_near_exit(plan: FloorPlan) -> RuleResult:
+    """Living/public zone should sit closer to the exit than private bedrooms."""
+    living = _largest([r for r in plan.rooms if r.room_type == RoomType.LIVING])
+    beds = [r for r in plan.rooms if r.room_type in _PRIVATE]
+    entries = [r for r in plan.rooms if r.room_type == RoomType.ENTRY]
+    adj = adjacency_via_doors(plan)
+
+    starts: list[str] = [e.id for e in entries]
+    if not starts:
+        exterior_doors = [d for d in plan.doors if d.is_exterior]
+        for d in exterior_doors:
+            starts.extend(d.connects)
+    if not starts:
+        starts = exterior_touching_rooms(plan)
+    if not starts and plan.rooms:
+        starts = [plan.rooms[0].id]
+
+    if living is None:
+        return _soft("public_near_exit", "Public Near Exit", 4.0, "No living room", "Place living near the exit")
+
+    liv_hops = _shortest_hop(adj, starts, living.id)
+    if liv_hops is None:
+        return _soft(
+            "public_near_exit",
+            "Public Near Exit",
+            3.0,
+            "Living unreachable from exit/entry",
+            "Connect living to the entry path",
+        )
+
+    bed_hops = []
+    for b in beds:
+        h = _shortest_hop(adj, starts, b.id)
+        if h is not None:
+            bed_hops.append(h)
+
+    # Living ideally 0–1 hops from exit; bedrooms equal or deeper
+    if liv_hops <= 1:
+        score = 9.5
+    elif liv_hops == 2:
+        score = 7.0
+    else:
+        score = max(2.0, 6.0 - (liv_hops - 2) * 1.5)
+
+    if bed_hops:
+        min_bed = min(bed_hops)
+        avg_bed = sum(bed_hops) / len(bed_hops)
+        if liv_hops > min_bed:
+            score -= min(3.5, (liv_hops - min_bed) * 2.0)
+        elif liv_hops <= avg_bed:
+            score = min(10.0, score + 0.5)
+        reason = (
+            f"Living {liv_hops} hops from exit; bedrooms min {min_bed} / avg {avg_bed:.1f} hops"
+        )
+    else:
+        reason = f"Living {liv_hops} hops from exit (no bedrooms)"
+
+    return _soft(
+        "public_near_exit",
+        "Public Near Exit",
+        score,
+        reason,
+        "Keep living closer to the exit than bedrooms",
+    )
+
+
 HARD_RULES: list[RuleFn] = [
     rule_polygon_validity,
     rule_room_overlap,
@@ -407,6 +771,11 @@ SOFT_RULES: list[RuleFn] = [
     rule_aspect_quality,
     rule_storage_adequacy,
     rule_balcony_usability,
+    rule_living_centrality,
+    rule_kitchen_public_link,
+    rule_entry_sequence,
+    rule_hall_organization,
+    rule_public_near_exit,
 ]
 
 

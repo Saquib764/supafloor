@@ -1,8 +1,8 @@
 {
   "id": "003",
   "plan_name": "Luxury 2 Bedroom",
-  "overall": 7.45,
-  "summary": "This floor plan scores **7.45/10 (Fair)** for \u201cLuxury 2 Bedroom\u201d with 10 rooms, 90.0 m\u00b2 total room area. It fails 1 hard rule(s): Minimum Area. Strong areas include living size, natural light, privacy. Weaker areas include wet core compactness, storage adequacy. Highest category is privacy (10.0); lowest is geometry (8.0).",
+  "overall": 7.42,
+  "summary": "This floor plan scores **7.42/10 (Fair)** for \u201cLuxury 2 Bedroom\u201d with 10 rooms, 90.0 m\u00b2 total room area. It fails 1 hard rule(s): Minimum Area. Strong areas include living size, natural light, privacy. Weaker areas include wet core compactness, storage adequacy, living centrality. Highest category is privacy (10.0); lowest is geometry (8.0).",
   "categories": {
     "geometry": 8.0,
     "topology": 10.0,
@@ -11,7 +11,8 @@
     "circulation": 9.0,
     "furniture": 10.0,
     "daylight": 10.0,
-    "architecture": 7.28
+    "architecture": 7.28,
+    "aesthetics": 8.96
   },
   "hard_failures": [
     "minimum_area"

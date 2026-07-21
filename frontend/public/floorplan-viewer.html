@@ -200,7 +200,7 @@
           const scale = ref(1)
           const pan = ref({ x: 0, y: 0 })
           let dragging = false, last = { x: 0, y: 0 }
-          const categories = ['geometry','topology','construction','privacy','circulation','furniture','daylight','architecture']
+          const categories = ['geometry','topology','construction','privacy','circulation','furniture','daylight','architecture','aesthetics']
           const pretty = computed(() => JSON.stringify({ plan: plan.value, scores: scores.value, adjacency: adjacency.value }, null, 2))
           function layers() {
             const list = ['boundary','rooms','doors','windows']

@@ -8,14 +8,15 @@ from floorplan.geometry import area
 from floorplan.schemas.models import FloorPlan, RuleResult, ScoreBreakdown
 
 DEFAULT_WEIGHTS = {
-    "geometry": 0.15,
-    "topology": 0.10,
-    "construction": 0.10,
-    "privacy": 0.15,
-    "circulation": 0.10,
-    "furniture": 0.10,
-    "daylight": 0.15,
-    "architecture": 0.15,
+    "geometry": 0.14,
+    "topology": 0.09,
+    "construction": 0.09,
+    "privacy": 0.10,
+    "circulation": 0.09,
+    "furniture": 0.09,
+    "daylight": 0.12,
+    "architecture": 0.12,
+    "aesthetics": 0.16,
 }
 
 RULE_CATEGORY = {
@@ -41,6 +42,11 @@ RULE_CATEGORY = {
     "storage": "architecture",
     "balcony": "architecture",
     "furniture": "furniture",
+    "living_centrality": "aesthetics",
+    "kitchen_public_link": "aesthetics",
+    "entry_sequence": "aesthetics",
+    "hall_organization": "aesthetics",
+    "public_near_exit": "aesthetics",
 }
 
 CATEGORY_LABELS = {
@@ -52,6 +58,7 @@ CATEGORY_LABELS = {
     "furniture": "Furniture usability",
     "daylight": "Daylight",
     "architecture": "Architecture",
+    "aesthetics": "Aesthetics",
 }
 
 
@@ -194,6 +201,7 @@ def build_summary(scores: ScoreBreakdown, *, plan: FloorPlan | None = None) -> s
         "daylight": scores.daylight,
         "circulation": scores.circulation,
         "furniture": scores.furniture,
+        "aesthetics": scores.aesthetics,
     }
     best = max(cats, key=cats.get)
     worst = min(cats, key=cats.get)
@@ -230,6 +238,7 @@ def score_plan(plan: FloorPlan, weights: dict[str, float] | None = None) -> Scor
         furniture=round(cats["furniture"], 2),
         daylight=round(cats["daylight"], 2),
         architecture=round(cats["architecture"], 2),
+        aesthetics=round(cats["aesthetics"], 2),
         overall=round(overall, 2),
         weights=weights,
         rules=rules,

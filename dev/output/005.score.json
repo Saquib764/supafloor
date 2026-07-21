@@ -2,7 +2,7 @@
   "id": "005",
   "plan_name": "3 Bedroom Corner",
   "overall": 5.51,
-  "summary": "This floor plan scores **5.51/10 (Weak)** for \u201c3 Bedroom Corner\u201d with 10 rooms, 84.0 m\u00b2 total room area. It fails 2 hard rule(s): Minimum Area, Minimum Width. Strong areas include living size, natural light, privacy. Weaker areas include wet core compactness, storage adequacy. Highest category is privacy (10.0); lowest is geometry (6.0).",
+  "summary": "This floor plan scores **5.51/10 (Weak)** for \u201c3 Bedroom Corner\u201d with 10 rooms, 84.0 m\u00b2 total room area. It fails 2 hard rule(s): Minimum Area, Minimum Width. Strong areas include living size, natural light, privacy. Weaker areas include wet core compactness, storage adequacy, living centrality. Highest category is privacy (10.0); lowest is geometry (6.0).",
   "categories": {
     "geometry": 6.0,
     "topology": 10.0,
@@ -11,7 +11,8 @@
     "circulation": 9.0,
     "furniture": 8.75,
     "daylight": 10.0,
-    "architecture": 7.15
+    "architecture": 7.15,
+    "aesthetics": 8.93
   },
   "hard_failures": [
     "minimum_area",
