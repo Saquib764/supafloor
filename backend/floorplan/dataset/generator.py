@@ -32,7 +32,7 @@ def generate_sample(
     mutate: bool = True,
     include_renders: bool = True,
 ) -> DatasetSample:
-    """Choose Template → Boundary → Fit → Reconcile → Mutate → Reconcile → Evaluate → Render."""
+    """Choose Template → Boundary → Fit → Reconcile → Mutate (+ reconcile) → Evaluate → Render."""
     template = get_template(template_id)
     plan = instantiate_template(template_id, width=width, depth=depth)
     boundary = generate_boundary(width=width, depth=depth, shape=boundary_shape)
