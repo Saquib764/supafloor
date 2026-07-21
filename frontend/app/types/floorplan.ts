@@ -1,3 +1,6 @@
+export const FLOORPLAN_LINEAR_UNIT = 'ft'
+export const FLOORPLAN_AREA_UNIT = 'ft²'
+
 export type RoomType =
   | 'living'
   | 'dining'

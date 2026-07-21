@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { FLOORPLAN_AREA_UNIT, FLOORPLAN_LINEAR_UNIT } from '~/types/floorplan'
+
 defineProps<{
   inspection: RoomInspection | null
   loading?: boolean
@@ -58,7 +60,7 @@ defineProps<{
             Area
           </dt>
           <dd class="font-medium text-white">
-            {{ inspection.area.toFixed(2) }} m²
+            {{ inspection.area.toFixed(2) }} {{ FLOORPLAN_AREA_UNIT }}
           </dd>
         </div>
         <div class="grid grid-cols-[7rem_1fr] gap-2 text-sm">
@@ -74,7 +76,7 @@ defineProps<{
             Perimeter
           </dt>
           <dd class="font-medium text-white">
-            {{ inspection.perimeter.toFixed(2) }} m
+            {{ inspection.perimeter.toFixed(2) }} {{ FLOORPLAN_LINEAR_UNIT }}
           </dd>
         </div>
         <div class="grid grid-cols-[7rem_1fr] gap-2 text-sm">

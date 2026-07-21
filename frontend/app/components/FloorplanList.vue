@@ -10,6 +10,7 @@ const props = defineProps<{
   items: FloorplanEntry[]
   selectedId: string | null
   loadingId?: string | null
+  deletingId?: string | null
   generating?: boolean
   roomOptions?: number[]
 }>()
@@ -17,6 +18,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'generate', totalRooms: number): void
+  (e: 'delete', id: string): void
 }>()
 
 const rooms = ref(3)
@@ -66,21 +68,23 @@ watch(
         v-for="item in items"
         :key="item.id"
       >
-        <button
-          type="button"
-          class="w-full text-left rounded-lg px-3 py-2.5 transition-colors"
+        <div
+          class="flex items-center gap-2 rounded-lg px-3 py-2.5 transition-colors"
           :class="item.id === selectedId
             ? 'bg-primary-500/20 ring-1 ring-primary-500/50'
             : 'hover:bg-white/5'"
-          @click="emit('select', item.id)"
         >
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-sm font-medium text-white truncate">
-              {{ item.label }}
-            </span>
+          <button
+            type="button"
+            class="min-w-0 flex-1 text-left text-sm font-medium text-white truncate"
+            @click="emit('select', item.id)"
+          >
+            {{ item.label }}
+          </button>
+          <div class="flex items-center gap-1 shrink-0">
             <span
               v-if="loadingId === item.id"
-              class="text-xs text-gray-500 shrink-0"
+              class="text-xs text-gray-500"
             >
               …
             </span>
@@ -89,12 +93,21 @@ watch(
               color="neutral"
               variant="soft"
               size="sm"
-              class="shrink-0"
             >
               {{ item.overall.toFixed(1) }}
             </UBadge>
+            <UButton
+              size="xs"
+              color="error"
+              variant="ghost"
+              icon="i-lucide-trash-2"
+              :loading="deletingId === item.id"
+              :disabled="deletingId === item.id"
+              aria-label="Delete floorplan"
+              @click.stop="emit('delete', item.id)"
+            />
           </div>
-        </button>
+        </div>
       </li>
       <li
         v-if="!items.length"

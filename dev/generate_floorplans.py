@@ -25,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", "-o", type=Path, required=True, help="Target output folder")
     parser.add_argument("--count", "-n", type=int, default=5, help="Number of samples to generate")
     parser.add_argument("--rooms", type=int, default=None, help="Sleeping room count (default: cycle 1–4)")
-    parser.add_argument("--area", type=float, default=None, help="Target encapsulating area (m²)")
+    parser.add_argument("--area", type=float, default=None, help="Target encapsulating area (ft²)")
     parser.add_argument("--seed", type=int, default=0, help="RNG seed base")
     parser.add_argument("--no-mutate", action="store_true", help="Skip mutation step")
     parser.add_argument("--size", type=int, default=800, help="PNG render size")

@@ -96,5 +96,13 @@ export function useFloorplanApi(baseUrl?: string) {
     return res.json()
   }
 
-  return { render, evaluate, mutate, inspect, generate, listPlans, getPlan, loadPlan, recreate }
+  async function deletePlan(planId: string) {
+    const res = await fetch(`${apiBase}/floorplan/plans/${encodeURIComponent(planId)}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json() as Promise<{ deleted: string }>
+  }
+
+  return { render, evaluate, mutate, inspect, generate, listPlans, getPlan, loadPlan, recreate, deletePlan }
 }

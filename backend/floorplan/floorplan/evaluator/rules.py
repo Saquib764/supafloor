@@ -266,8 +266,8 @@ def rule_living_size(plan: FloorPlan) -> RuleResult:
     if not living:
         return _soft("living_size", "Living Size", 3.0, "No living room", "Add living room")
     a = max(area(r.coords()) for r in living)
-    score = min(10.0, a / 2.0)  # 20m2 -> 10
-    return _soft("living_size", "Living Size", score, f"Living area {a:.1f} m²", "Expand living room")
+    score = min(10.0, a / 2.0)  # 20 ft² -> 10
+    return _soft("living_size", "Living Size", score, f"Living area {a:.1f} ft²", "Expand living room")
 
 
 def rule_bedroom_ratio(plan: FloorPlan) -> RuleResult:
@@ -348,7 +348,7 @@ def rule_wet_core_compactness(plan: FloorPlan) -> RuleResult:
             dists.append(((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5)
     avg = sum(dists) / len(dists)
     score = max(2.0, 10.0 - avg * 1.5)
-    return _soft("wet_core", "Wet Core Compactness", score, f"Avg wet-room distance {avg:.2f} m", "Cluster wet rooms for shared plumbing")
+    return _soft("wet_core", "Wet Core Compactness", score, f"Avg wet-room distance {avg:.2f} ft", "Cluster wet rooms for shared plumbing")
 
 
 def rule_rectangularity(plan: FloorPlan) -> RuleResult:
@@ -386,7 +386,7 @@ def rule_balcony_usability(plan: FloorPlan) -> RuleResult:
         return _soft("balcony", "Balcony Usability", 6.0, "No balcony in plan")
     a = max(area(r.coords()) for r in bals)
     score = min(10.0, a * 1.5)
-    return _soft("balcony", "Balcony Usability", score, f"Balcony {a:.1f} m²", "Enlarge balcony to ≥4 m²")
+    return _soft("balcony", "Balcony Usability", score, f"Balcony {a:.1f} ft²", "Enlarge balcony to ≥4 ft²")
 
 
 # ── Soft aesthetics (spatial layout conventions) ─────────────────────────────
@@ -463,7 +463,7 @@ def rule_living_centrality(plan: FloorPlan) -> RuleResult:
         "living_centrality",
         "Living Centrality",
         score,
-        f"Living {geo_dist:.1f} m from plan center; mean {mean_hops:.1f} hops to other rooms",
+        f"Living {geo_dist:.1f} ft from plan center; mean {mean_hops:.1f} hops to other rooms",
         "Place living nearer the center and connect rooms via hall/living hub",
     )
 

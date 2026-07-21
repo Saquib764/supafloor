@@ -15,7 +15,7 @@ def main(argv: list[str] | None = None) -> None:
 
     p_gen = sub.add_parser("generate", help="Generate one sample from scratch")
     p_gen.add_argument("--rooms", type=int, default=3, help="Sleeping room count")
-    p_gen.add_argument("--area", type=float, default=None, help="Target encapsulating area (m²)")
+    p_gen.add_argument("--area", type=float, default=None, help="Target encapsulating area (ft²)")
     p_gen.add_argument("--seed", type=int, default=0)
     p_gen.add_argument("--out", type=str, default=None)
 

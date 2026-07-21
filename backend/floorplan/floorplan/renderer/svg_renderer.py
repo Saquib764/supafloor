@@ -121,7 +121,7 @@ def render_svg(
                 a = area(room.coords())
                 parts.append(
                     f'<text x="{px:.1f}" y="{py + 14:.1f}" text-anchor="middle" '
-                    f'font-family="Georgia, serif" font-size="9" fill="#555">{a:.1f} m²</text>'
+                    f'font-family="Georgia, serif" font-size="9" fill="#555">{a:.1f} ft²</text>'
                 )
         parts.append("</g>")
 
@@ -156,7 +156,7 @@ def render_svg(
         parts.append(f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="#666" stroke-width="1"/>')
         parts.append(
             f'<text x="{(x0 + x1) / 2:.1f}" y="{y0 + 14:.1f}" text-anchor="middle" '
-            f'font-family="Georgia, serif" font-size="10" fill="#444">{maxx - minx:.2f} m</text>'
+            f'font-family="Georgia, serif" font-size="10" fill="#444">{maxx - minx:.2f} ft</text>'
         )
         parts.append("</g>")
 

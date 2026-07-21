@@ -1,4 +1,4 @@
-"""Three area options (m²) per room-name root. Pick one at random when placing."""
+"""Three area options (ft²) per room-name root. Pick one at random when placing."""
 
 from __future__ import annotations
 

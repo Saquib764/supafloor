@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from floorplan.dataset.store import list_documents, load_document, save_document
+from floorplan.dataset.store import delete_document, list_documents, load_document, save_document
 from floorplan.evaluator import hard_failures, score_plan
 from floorplan.renderer import render_plan
 from floorplan.requirements import (
@@ -154,6 +154,10 @@ def list_saved_plans() -> list[dict[str, Any]]:
 
 def get_saved_plan(plan_id: str) -> dict[str, Any]:
     return load_document(plan_id)
+
+
+def delete_saved_plan(plan_id: str) -> None:
+    delete_document(plan_id)
 
 
 def load_sample(plan_id: str, *, include_renders: bool = True) -> DatasetSample:

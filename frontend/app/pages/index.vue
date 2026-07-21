@@ -20,6 +20,7 @@ const roomOptions = [1, 2, 3, 4]
 const floorplans = ref<LoadedFloorplan[]>([])
 const selectedId = ref<string | null>(null)
 const loadingId = ref<string | null>(null)
+const deletingId = ref<string | null>(null)
 const acting = ref(false)
 const selectedRoomId = ref<string | null>(null)
 const error = ref<string | null>(null)
@@ -166,6 +167,26 @@ async function onRecreate() {
   }
 }
 
+async function onDelete(id: string) {
+  deletingId.value = id
+  error.value = null
+  try {
+    await api.deletePlan(id)
+    const wasSelected = selectedId.value === id
+    floorplans.value = floorplans.value.filter(fp => fp.id !== id)
+    if (wasSelected) {
+      selectedRoomId.value = null
+      const next = floorplans.value[0]
+      selectedId.value = next?.id ?? null
+      if (next) await onSelect(next.id)
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    deletingId.value = null
+  }
+}
+
 async function onAction(action: string) {
   if (action === 'generate') {
     await onGenerate()
@@ -232,10 +253,12 @@ onMounted(async () => {
         :items="listItems"
         :selected-id="selectedId"
         :loading-id="loadingId"
+        :deleting-id="deletingId"
         :generating="acting"
         :room-options="roomOptions"
         @select="onSelect"
         @generate="onGenerate"
+        @delete="onDelete"
       />
       <FloorplanActions
         :disabled="!selected"

@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from floorplan.dataset import get_saved_plan, list_saved_plans, load_sample, recreate_sample
+from floorplan.dataset import delete_saved_plan, get_saved_plan, list_saved_plans, load_sample, recreate_sample
 from floorplan.schemas.requests import (
     AdaptRequest,
     DatasetRequest,
@@ -86,11 +86,11 @@ def render(body: RenderRequest) -> dict[str, Any]:
 @router.post("/import")
 async def import_image(
     file: UploadFile = File(...),
-    meters_per_pixel: float = 0.05,
+    feet_per_pixel: float = 0.05,
 ) -> dict:
     data = await file.read()
     try:
-        plan = engine.import_image(data, meters_per_pixel=meters_per_pixel)
+        plan = engine.import_image(data, feet_per_pixel=feet_per_pixel)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return plan.model_dump()
@@ -140,6 +140,15 @@ def plan_recreate(plan_id: str, body: RecreateRequest | None = None) -> dict:
     except FileNotFoundError as exc:
         raise HTTPException(404, f"Plan not found: {plan_id}") from exc
     return sample.model_dump()
+
+
+@router.delete("/plans/{plan_id}")
+def plan_delete(plan_id: str) -> dict[str, str]:
+    try:
+        delete_saved_plan(plan_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"Plan not found: {plan_id}") from exc
+    return {"deleted": plan_id}
 
 
 @router.post("/dataset")

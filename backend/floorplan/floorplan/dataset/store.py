@@ -36,6 +36,14 @@ def load_document(plan_id: str, root: Path | None = None) -> dict[str, Any]:
     return json.loads(path.read_text())
 
 
+def delete_document(plan_id: str, root: Path | None = None) -> None:
+    path = plans_dir(root) / f"{plan_id}.json"
+    if not path.exists():
+        raise FileNotFoundError(plan_id)
+    path.unlink()
+    _write_index(root)
+
+
 def list_documents(root: Path | None = None) -> list[dict[str, Any]]:
     directory = plans_dir(root)
     items: list[dict[str, Any]] = []

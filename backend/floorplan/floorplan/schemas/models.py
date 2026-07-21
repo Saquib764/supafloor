@@ -75,7 +75,7 @@ class Boundary(BaseModel):
     id: str = Field(default_factory=_uid)
     exterior: list[Point2D]
     holes: list[list[Point2D]] = Field(default_factory=list)
-    units: str = "m"
+    units: str = "ft"
 
     @field_validator("exterior", mode="before")
     @classmethod

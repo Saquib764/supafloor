@@ -1,6 +1,7 @@
 """Dataset package."""
 
 from .generator import (
+    delete_saved_plan,
     generate_dataset,
     generate_sample,
     get_saved_plan,
@@ -10,6 +11,7 @@ from .generator import (
 )
 
 __all__ = [
+    "delete_saved_plan",
     "generate_dataset",
     "generate_sample",
     "get_saved_plan",

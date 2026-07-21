@@ -67,7 +67,7 @@ def test_renderer():
 
 def test_importer():
     png = synthesize_bw_fixture()
-    plan = import_bw_image(png, meters_per_pixel=0.05)
+    plan = import_bw_image(png, feet_per_pixel=0.05)
     assert len(plan.rooms) >= 3
     adj = build_adjacency(plan)
     assert isinstance(adj, dict)
@@ -138,3 +138,8 @@ def test_api_demo():
     r = client.post(f"/floorplan/plans/{plan_id}/recreate", json={"include_renders": False, "save": True})
     assert r.status_code == 200
     assert r.json()["requirements"]["generated"]["spaces"] == body["requirements"]["generated"]["spaces"]
+    r = client.delete(f"/floorplan/plans/{plan_id}")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == plan_id
+    r = client.get(f"/floorplan/plans/{plan_id}")
+    assert r.status_code == 404
