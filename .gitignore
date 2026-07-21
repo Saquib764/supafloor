@@ -11,10 +11,10 @@ build/
 floorplan_dataset/
 *.png
 !frontend/public/**
+!dev/output/**
 .DS_Store
 node_modules/
 .nuxt/
 .output/
 .env
 uv.lock
-dev/output/
