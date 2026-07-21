@@ -290,7 +290,6 @@ def list_templates() -> list[dict]:
 
 
 def _room(name: str, room_type: RoomType, coords: list[tuple[float, float]], zone: ZoneType) -> Room:
-    """Creator always returns a closed, geometrically valid room polygon."""
     return make_room(name, coords, room_type=room_type, zone=zone)
 
 

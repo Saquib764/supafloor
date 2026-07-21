@@ -13,19 +13,18 @@ from floorplan.geometry import (
     perimeter,
     polygon_from_boundary,
     polygon_from_room,
-    shared_edge,
     touches,
 )
 from floorplan.schemas.models import ConstraintGraph, FloorPlan, Room
 
 
 def build_adjacency(plan: FloorPlan, tol: float = 0.08) -> dict[str, list[str]]:
-    """Undirected adjacency from shared edges / touching rooms."""
+    """Undirected adjacency from touching rooms (shared usable edge)."""
     adj: dict[str, set[str]] = defaultdict(set)
     rooms = plan.rooms
     for i, a in enumerate(rooms):
         for b in rooms[i + 1 :]:
-            if touches(a.coords(), b.coords(), tol=tol) or shared_edge(a.coords(), b.coords(), tol=tol):
+            if touches(a.coords(), b.coords(), tol=tol):
                 adj[a.id].add(b.id)
                 adj[b.id].add(a.id)
     return {k: sorted(v) for k, v in adj.items()}
@@ -131,6 +130,7 @@ def geometry_hash(plan: FloorPlan, precision: int = 1) -> str:
 
 
 def adjacency_signature(plan: FloorPlan) -> str:
+    """Alias kept for callers; same as topology_hash."""
     return topology_hash(plan)
 
 

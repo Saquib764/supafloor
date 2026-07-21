@@ -26,6 +26,40 @@ description: >-
 - Are there leftover prints, TODOs that do nothing, or duplicated paths?
 - Prefer one straightforward path over speculative generality.
 
+## Rules of thumb (encode these)
+
+### Design
+
+- **One source of truth.** Don’t re-validate what creation already guarantees (e.g. room polygons are closed on construct — don’t rebuild/recheck every score unless necessary).
+- **Name things for what they do.** If `move_wall` only translates a room, don’t pretend it’s a wall editor. Prefer honest names over legacy fiction.
+- **No fake diversity.** Don’t ship template aliases that only rename geometry. Either implement the layout or don’t list it as distinct.
+- **Don’t thread unused fields.** If authors don’t create `walls` / `zones`, don’t pass them through every mutator “just in case.”
+- **Aliases are debt.** Prefer one function (`topology_hash`) over duplicate metadata keys that mean the same thing.
+
+### Efficiency
+
+- **Build polygons once per call.** Never call `touches` and `shared_edge` back-to-back on the same pair (each rebuilds Shapely geometry).
+- **Don’t double-run the rule engine.** If you need validity and a score, call `score_plan` once and derive hard failures from its rules.
+- **Reuse linear math when affine is uniform.** Bbox stretch is a point formula — don’t wrap every room vertex through Shapely affinity.
+- **O(n²) room pairs are OK for small apartments; don’t multiply work inside the pair loop.**
+- **Avoid allocating wrappers for trivial math.** Door/window length/midpoint from `start`/`end` directly — no temporary `LineSegment` unless needed.
+
+### Cleanup hygiene
+
+- Delete unused params (`samples` that are never read).
+- Delete unused exports (`fit_polygon_in_boundary` with no callers).
+- Collapse near-duplicate functions (resize / expand living / shrink hallway → one scale helper).
+- Prefer `model_copy(update=...)` over dump→rebuild when only a few fields change.
+
+### API / product
+
+- Keep the geometry contract boring and strict:
+  - Floor plan = `rooms` + `doors` + `windows`
+  - Room = `name` + closed valid polygon
+  - Door / window = line (`start`, `end`)
+- Hard rules reject; soft rules explain. Every rule returns score + reason (+ repair when useful).
+- Dev scripts stay thin: generate files, score files — no business logic hidden in `dev/`.
+
 ## Repository folder structure
 
 Encode and respect this layout. Put new code in the matching folder; do not invent parallel trees.
@@ -96,13 +130,6 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 | Dataset export | `backend/floorplan/dataset/` |
 | Manual scripts | `dev/` |
 | Viewer UI | `frontend/app/.../floorplan/` |
-
-## Geometry contract (keep simple)
-
-- Floor plan = separate lists: **rooms**, **doors**, **windows**
-- Room = `name` + **closed valid polygon**
-- Door / window = **line** (`start`, `end`)
-- Prefer `make_room` / `make_door_line` / `make_window_line` over ad-hoc construction
 
 ## Tooling
 

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import cv2
 import numpy as np
 
-from floorplan.geometry.ops import area, aspect_ratio, bounding_box, to_points, touches
+from floorplan.geometry.ops import aspect_ratio, bounding_box, to_points
 from floorplan.schemas.enums import RoomType, ZoneType
 from floorplan.schemas.models import Boundary, FloorPlan, Room
 from floorplan.topology import build_adjacency

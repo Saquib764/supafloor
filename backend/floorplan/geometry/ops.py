@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Iterable, Optional, Sequence
 
 from shapely import affinity
-from shapely.geometry import LineString, Point, Polygon, box
+from shapely.geometry import LineString, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from shapely.validation import make_valid
@@ -71,32 +71,30 @@ def difference(a: CoordSeq, b: CoordSeq) -> BaseGeometry:
     return points_to_polygon(a).difference(points_to_polygon(b))
 
 
-def shared_edge(a: CoordSeq, b: CoordSeq, tol: float = 0.05) -> Optional[LineString]:
-    """Return shared boundary segment between two polygons, if any."""
-    ga = points_to_polygon(a).buffer(0)
-    gb = points_to_polygon(b).buffer(0)
-    inter = ga.boundary.intersection(gb.boundary)
-    if inter.is_empty:
-        # Near-touching: expand slightly
-        inter = ga.buffer(tol).intersection(gb.buffer(tol)).boundary
-    if inter.is_empty:
+def _longest_line(geom) -> Optional[LineString]:
+    if geom is None or geom.is_empty:
         return None
-    if inter.geom_type == "LineString":
-        return inter if inter.length >= tol else None
-    if inter.geom_type == "MultiLineString":
-        longest = max(inter.geoms, key=lambda g: g.length)
-        return longest if longest.length >= tol else None
-    if inter.geom_type == "GeometryCollection":
-        lines = [g for g in inter.geoms if g.geom_type in ("LineString", "MultiLineString")]
+    if geom.geom_type == "LineString":
+        return geom
+    if geom.geom_type == "MultiLineString":
+        return max(geom.geoms, key=lambda g: g.length)
+    if geom.geom_type == "GeometryCollection":
+        lines = [g for g in geom.geoms if g.geom_type in ("LineString", "MultiLineString")]
         if not lines:
             return None
-        merged = unary_union(lines)
-        if merged.geom_type == "LineString":
-            return merged if merged.length >= tol else None
-        if merged.geom_type == "MultiLineString":
-            longest = max(merged.geoms, key=lambda g: g.length)
-            return longest if longest.length >= tol else None
+        return _longest_line(unary_union(lines))
     return None
+
+
+def shared_edge(a: CoordSeq, b: CoordSeq, tol: float = 0.05) -> Optional[LineString]:
+    """Return shared boundary segment between two polygons, if any."""
+    ga = points_to_polygon(a)
+    gb = points_to_polygon(b)
+    inter = ga.boundary.intersection(gb.boundary)
+    if inter.is_empty:
+        inter = ga.buffer(tol).intersection(gb.buffer(tol)).boundary
+    line = _longest_line(inter)
+    return line if line is not None and line.length >= tol else None
 
 
 def contains(outer: CoordSeq, inner: CoordSeq) -> bool:
@@ -104,12 +102,14 @@ def contains(outer: CoordSeq, inner: CoordSeq) -> bool:
 
 
 def touches(a: CoordSeq, b: CoordSeq, tol: float = 0.05) -> bool:
+    """True when polygons share a usable edge (or near-touch within tol)."""
     ga = points_to_polygon(a)
     gb = points_to_polygon(b)
-    if ga.touches(gb) or ga.intersects(gb):
-        edge = shared_edge(a, b, tol=tol)
-        return edge is not None
-    return ga.buffer(tol).intersects(gb.buffer(tol)) and not ga.buffer(-tol).intersects(gb.buffer(-tol))
+    inter = ga.boundary.intersection(gb.boundary)
+    if inter.is_empty:
+        inter = ga.buffer(tol).intersection(gb.buffer(tol)).boundary
+    line = _longest_line(inter)
+    return line is not None and line.length >= tol
 
 
 def distance(a: CoordSeq, b: CoordSeq) -> float:
@@ -160,19 +160,17 @@ def perimeter(coords: CoordSeq) -> float:
     return float(points_to_polygon(coords).length)
 
 
-def min_width(coords: CoordSeq, samples: int = 16) -> float:
-    """Approximate minimum width via bounding-box shorter side and inscribed circle radius * 2."""
+def min_width(coords: CoordSeq) -> float:
+    """Approximate minimum width: min(bbox short side, 2 × centroid→boundary)."""
     poly = points_to_polygon(coords)
     if poly.is_empty:
         return 0.0
     minx, miny, maxx, maxy = poly.bounds
     bbox_min = min(maxx - minx, maxy - miny)
-    # Maximum inscribed circle approximation via distance to boundary from interior points
     cx, cy = poly.centroid.x, poly.centroid.y
     if not poly.contains(Point(cx, cy)):
         return float(bbox_min)
-    radius = poly.exterior.distance(Point(cx, cy))
-    return float(min(bbox_min, radius * 2))
+    return float(min(bbox_min, poly.exterior.distance(Point(cx, cy)) * 2))
 
 
 def rectangularity(coords: CoordSeq) -> float:
@@ -186,28 +184,5 @@ def rectangularity(coords: CoordSeq) -> float:
     return float(min(1.0, poly.area / mrr.area))
 
 
-def fit_polygon_in_boundary(inner: CoordSeq, boundary: CoordSeq) -> list[Coord]:
-    """Scale and translate inner polygon so its bbox fits inside boundary bbox."""
-    b = points_to_polygon(boundary)
-    i = points_to_polygon(inner)
-    if i.is_empty or b.is_empty:
-        return list(inner)
-    bx0, by0, bx1, by1 = b.bounds
-    ix0, iy0, ix1, iy1 = i.bounds
-    bw, bh = max(bx1 - bx0, 1e-9), max(by1 - by0, 1e-9)
-    iw, ih = max(ix1 - ix0, 1e-9), max(iy1 - iy0, 1e-9)
-    factor = min(bw / iw, bh / ih) * 0.98
-    scaled = affinity.scale(i, xfact=factor, yfact=factor, origin="centroid")
-    sx0, sy0, sx1, sy1 = scaled.bounds
-    dx = (bx0 + bx1) / 2 - (sx0 + sx1) / 2
-    dy = (by0 + by1) / 2 - (sy0 + sy1) / 2
-    moved = affinity.translate(scaled, xoff=dx, yoff=dy)
-    return list(moved.exterior.coords[:-1])
-
-
 def rect(x: float, y: float, w: float, h: float) -> list[Coord]:
     return [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
-
-
-def bbox_polygon(minx: float, miny: float, maxx: float, maxy: float) -> Polygon:
-    return box(minx, miny, maxx, maxy)

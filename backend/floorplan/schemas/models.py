@@ -122,9 +122,6 @@ class Room(BaseModel):
         """Open ring coords for Shapely (closing vertex stripped)."""
         return [p.as_tuple() for p in _open_ring(self.polygon)]
 
-    def closed_coords(self) -> list[tuple[float, float]]:
-        return [p.as_tuple() for p in self.polygon]
-
 
 class LineSegment(BaseModel):
     """Geometric line used by doors and windows."""
@@ -179,10 +176,12 @@ class Door(BaseModel):
         return LineSegment(start=self.start, end=self.end)
 
     def midpoint(self) -> Point2D:
-        return self.as_line().midpoint()
+        return Point2D(x=(self.start.x + self.end.x) / 2.0, y=(self.start.y + self.end.y) / 2.0)
 
     def length(self) -> float:
-        return self.as_line().length()
+        dx = self.end.x - self.start.x
+        dy = self.end.y - self.start.y
+        return float((dx * dx + dy * dy) ** 0.5)
 
 
 class Window(BaseModel):
@@ -208,10 +207,12 @@ class Window(BaseModel):
         return LineSegment(start=self.start, end=self.end)
 
     def midpoint(self) -> Point2D:
-        return self.as_line().midpoint()
+        return Point2D(x=(self.start.x + self.end.x) / 2.0, y=(self.start.y + self.end.y) / 2.0)
 
     def length(self) -> float:
-        return self.as_line().length()
+        dx = self.end.x - self.start.x
+        dy = self.end.y - self.start.y
+        return float((dx * dx + dy * dy) ** 0.5)
 
 
 class Wall(BaseModel):

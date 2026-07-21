@@ -14,7 +14,6 @@ from floorplan.schemas.models import DatasetSample, FloorPlan
 from floorplan.services.boundary_adapt import adapt_to_boundary, generate_boundary
 from floorplan.templates import get_template, instantiate_template, list_templates
 from floorplan.topology import (
-    adjacency_signature,
     constraint_graph_from_plan,
     geometry_hash,
     room_ratio_signature,
@@ -49,6 +48,7 @@ def generate_sample(
 
     scores = score_plan(plan)
     topology = constraint_graph_from_plan(plan)
+    failures = hard_failures(scores.rules)
 
     svg = None
     png_b64 = None
@@ -75,10 +75,9 @@ def generate_sample(
             "seed": seed,
             "topology_hash": topology_hash(plan),
             "geometry_hash": geometry_hash(plan),
-            "adjacency_signature": adjacency_signature(plan),
             "room_ratio_signature": room_ratio_signature(plan),
-            "hard_failures": [r.rule_id for r in hard_failures(scores.rules)],
-            "valid": len(hard_failures(scores.rules)) == 0,
+            "hard_failures": [r.rule_id for r in failures],
+            "valid": len(failures) == 0,
         },
     )
 

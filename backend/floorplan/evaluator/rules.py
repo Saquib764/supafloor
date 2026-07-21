@@ -7,9 +7,7 @@ from typing import Callable
 from floorplan.geometry import (
     area,
     aspect_ratio,
-    contains,
     min_width,
-    perimeter,
     polygon_from_boundary,
     polygon_from_room,
     rectangularity,
@@ -59,12 +57,8 @@ def _soft(rule_id: str, name: str, score: float, reason: str, repair: str | None
 
 
 def rule_polygon_validity(plan: FloorPlan) -> RuleResult:
-    bad = []
-    for room in plan.rooms:
-        poly = polygon_from_room(room)
-        closed = room.polygon[0].as_tuple() == room.polygon[-1].as_tuple()
-        if not closed or not poly.is_valid or poly.is_empty or poly.area <= 0:
-            bad.append(room.name)
+    # Rooms are validated closed/positive on create; only re-check boundary here.
+    bad: list[str] = []
     try:
         b = polygon_from_boundary(plan.ensure_boundary())
         if not b.is_valid or b.is_empty:
@@ -75,8 +69,8 @@ def rule_polygon_validity(plan: FloorPlan) -> RuleResult:
         "polygon_validity",
         "Polygon Validity",
         not bad,
-        "All room polygons closed and valid" if not bad else f"Invalid polygons: {', '.join(bad)}",
-        "Repair invalid polygons / ensure closed rings",
+        "Boundary polygon valid" if not bad else f"Invalid polygons: {', '.join(bad)}",
+        "Repair invalid boundary polygon",
     )
 
 
@@ -195,20 +189,16 @@ def rule_required_rooms(plan: FloorPlan) -> RuleResult:
 
 
 def rule_doors_on_walls(plan: FloorPlan) -> RuleResult:
+    """Doors must exist and connect rooms (rule id kept for score category map)."""
     if not plan.doors:
         return _hard("doors_on_walls", "Door Lines", False, "No doors defined", "Add door line segments")
-    bad = []
-    for d in plan.doors:
-        if d.length() <= 0:
-            bad.append(d.id)
-        elif not d.connects:
-            bad.append(d.id)
+    bad = [d.id for d in plan.doors if not d.connects]
     return _hard(
         "doors_on_walls",
         "Door Lines",
         not bad,
-        "Doors are valid lines with room connections" if not bad else f"Invalid doors: {bad}",
-        "Ensure each door is a non-zero line with connects[]",
+        "Doors have room connections" if not bad else f"Doors missing connects: {bad}",
+        "Ensure each door has connects[]",
     )
 
 
@@ -216,7 +206,7 @@ def rule_windows_on_exterior(plan: FloorPlan) -> RuleResult:
     exterior = set(exterior_touching_rooms(plan))
     bedrooms = [r for r in plan.rooms if r.room_type in (RoomType.BEDROOM, RoomType.MASTER_BEDROOM, RoomType.LIVING)]
     need_light = [r for r in bedrooms if r.id not in exterior]
-    has_windows = any(w.length() > 0 for w in plan.windows)
+    has_windows = bool(plan.windows)
     passed = has_windows and len(need_light) <= len(bedrooms) // 2
     reason = "Exterior exposure OK" if passed else f"Poor exterior access for: {[r.name for r in need_light]}"
     return _hard(
