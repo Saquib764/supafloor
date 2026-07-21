@@ -30,21 +30,20 @@ frontend/public/floorplan-viewer.html   Standalone Vue viewer
 
 ## Quick start
 
+Requires [uv](https://docs.astral.sh/uv/).
+
 ```bash
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
+uv sync --group dev
 
 # API
-python -m floorplan.cli serve --port 8000
+uv run floorplan serve --port 8000
 
 # Tests
-pytest -q
+uv run pytest -q
 
 # Generate a small dataset
-python -m floorplan.cli dataset -n 20 --out ../floorplan_dataset
+uv run floorplan dataset -n 20 --out ../floorplan_dataset
 ```
 
 Open the viewer: `frontend/public/floorplan-viewer.html` (expects API at `http://localhost:8000`).
