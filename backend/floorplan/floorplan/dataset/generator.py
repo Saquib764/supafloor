@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from floorplan.dataset.store import delete_document, list_documents, load_document, save_document
+from floorplan.dataset.artifacts import write_plan_artifacts
+from floorplan.dataset.store import delete_document, list_documents, load_document, plans_dir, save_document, scores_dir
 from floorplan.evaluator import hard_failures, score_plan
 from floorplan.renderer import render_plan
 from floorplan.requirements import (
@@ -24,7 +25,12 @@ from floorplan.topology import (
 )
 
 
-def _sample_from_document(document: dict[str, Any], *, include_renders: bool = True) -> DatasetSample:
+def _sample_from_document(
+    document: dict[str, Any],
+    *,
+    include_renders: bool = True,
+    write_artifacts: bool = False,
+) -> DatasetSample:
     plan = document_to_plan(document)
     scores = score_plan(plan)
     topology = constraint_graph_from_plan(plan)
@@ -36,6 +42,9 @@ def _sample_from_document(document: dict[str, Any], *, include_renders: bool = T
         rendered = render_plan(plan)
         svg = rendered["svg"]
         png_b64 = rendered["png"]
+
+    if write_artifacts:
+        write_plan_artifacts(plan, scores, scores_dir(), plan_id=document["id"])
 
     params = document["parameters"]
     return DatasetSample(
@@ -82,7 +91,7 @@ def generate_sample(
     document = build_document(total_rooms, target_area=target_area, seed=seed)
     if save:
         save_document(document)
-    return _sample_from_document(document, include_renders=include_renders)
+    return _sample_from_document(document, include_renders=include_renders, write_artifacts=save)
 
 
 def recreate_sample(plan_id: str, *, include_renders: bool = True, save: bool = True) -> DatasetSample:
@@ -90,7 +99,7 @@ def recreate_sample(plan_id: str, *, include_renders: bool = True, save: bool = 
     document = recreate_document(load_document(plan_id))
     if save:
         save_document(document)
-    return _sample_from_document(document, include_renders=include_renders)
+    return _sample_from_document(document, include_renders=include_renders, write_artifacts=save)
 
 
 def generate_dataset(

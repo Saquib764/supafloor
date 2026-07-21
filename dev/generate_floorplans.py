@@ -9,6 +9,7 @@ Usage (from repo root):
 Each sample writes:
   <out>/001.json   — floor plan (+ metadata)
   <out>/001.png    — rendered image
+  <out>/001.score.md / .score.json — score report sidecars
   <out>/index.json — listing of generated files
 """
 
@@ -35,9 +36,9 @@ def main(argv: list[str] | None = None) -> int:
     if str(service_root) not in sys.path:
         sys.path.insert(0, str(service_root))
 
-    from floorplan.dataset import generate_sample
-    from floorplan.renderer import render_png
     from floorplan.constants import pick_target_area
+    from floorplan.dataset import generate_sample
+    from floorplan.dataset.artifacts import write_plan_artifacts
 
     out: Path = args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -56,15 +57,12 @@ def main(argv: list[str] | None = None) -> int:
             include_renders=False,
         )
         plan = sample.floor_plan
-        png_bytes = render_png(
-            plan,
-            size=args.size,
-            layers=["boundary", "rooms", "labels", "doors", "windows"],
-        )
+        scores = sample.scores
+        assert scores is not None
+
+        files = write_plan_artifacts(plan, scores, out, plan_id=sample_id, size=args.size)
 
         json_path = out / f"{sample_id}.json"
-        png_path = out / f"{sample_id}.png"
-
         payload = {
             "id": sample_id,
             "total_rooms": sample.requirements.get("total_rooms"),
@@ -73,10 +71,9 @@ def main(argv: list[str] | None = None) -> int:
             "requirements": sample.requirements,
             "mutation_history": sample.mutation_history,
             "metadata": sample.metadata,
-            "files": {"json": json_path.name, "png": png_path.name},
+            "files": {"json": json_path.name, **files},
         }
         json_path.write_text(json.dumps(payload, indent=2))
-        png_path.write_bytes(png_bytes)
 
         index.append(
             {
@@ -84,12 +81,13 @@ def main(argv: list[str] | None = None) -> int:
                 "total_rooms": sample.requirements.get("total_rooms"),
                 "name": plan.name,
                 "json": json_path.name,
-                "png": png_path.name,
+                "png": files["png"],
+                "score_md": files["score_md"],
                 "valid": sample.metadata.get("valid"),
                 "room_count": len(plan.rooms),
             }
         )
-        print(f"Wrote {json_path.name} + {png_path.name} ({plan.name}, rooms={rooms})")
+        print(f"Wrote {json_path.name} + {files['png']} + {files['score_md']} ({plan.name}, rooms={rooms})")
 
     (out / "index.json").write_text(json.dumps(index, indent=2))
     print(f"\nGenerated {len(index)} plans → {out.resolve()}")

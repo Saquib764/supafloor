@@ -7,10 +7,11 @@ import random
 from typing import Any
 from uuid import uuid4
 
-from shapely.geometry import Point, Polygon, box
+from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
 
-from floorplan.geometry.authors import make_room
+from floorplan.geometry.authors import make_door_line, make_room, make_window_line
+from floorplan.geometry.ops import polygon_from_boundary, polygon_from_room, shared_edge
 from floorplan.geometry.boundary import (
     boundary_from_params,
     force_manhattan,
@@ -20,7 +21,12 @@ from floorplan.geometry.boundary import (
 from floorplan.requirements.areas import AREA_OPTIONS, area_options_for, name_root
 from floorplan.requirements.program import space_names_for
 from floorplan.schemas.enums import RoomType, ZoneType
-from floorplan.schemas.models import Boundary, FloorPlan, Point2D
+from floorplan.schemas.models import Boundary, Door, FloorPlan, Point2D, Room, Window
+
+_DOOR_LEN = 0.9
+_WINDOW_LEN = 1.0
+_EDGE_TOL = 0.08
+_MIN_LINE_LEN = 0.05
 
 _MIN_SPACE_AREA = 0.5
 
@@ -574,8 +580,180 @@ def recreate_document(document: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _longest_line(geom) -> LineString | None:
+    if geom is None or geom.is_empty:
+        return None
+    if geom.geom_type == "LineString":
+        return geom
+    if geom.geom_type == "MultiLineString":
+        return max(geom.geoms, key=lambda g: g.length)
+    if geom.geom_type == "GeometryCollection":
+        lines = [g for g in geom.geoms if g.geom_type in ("LineString", "MultiLineString")]
+        if not lines:
+            return None
+        return _longest_line(unary_union(lines))
+    return None
+
+
+def _segment_on_linestring(
+    ls: LineString,
+    length: float = _DOOR_LEN,
+) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    if ls.length < _MIN_LINE_LEN:
+        return None
+    use = min(length, ls.length * 0.8)
+    mid = ls.length / 2.0
+    a = max(0.0, mid - use / 2.0)
+    b = min(ls.length, a + use)
+    p0 = ls.interpolate(a)
+    p1 = ls.interpolate(b)
+    if p0.coords[0] == p1.coords[0]:
+        return None
+    return (float(p0.x), float(p0.y)), (float(p1.x), float(p1.y))
+
+
+def _living_room(rooms: list[Room]) -> Room | None:
+    for name in ("Living", "Living/Sleeping"):
+        for room in rooms:
+            if room.name == name:
+                return room
+    return None
+
+
+def _room_by_name(rooms: list[Room], name: str) -> Room | None:
+    return next((room for room in rooms if room.name == name), None)
+
+
+def _door_on_edge(
+    edge: LineString,
+    connects: list[str],
+    *,
+    is_exterior: bool = False,
+) -> Door | None:
+    ends = _segment_on_linestring(edge)
+    if ends is None:
+        return None
+    return make_door_line(ends[0], ends[1], connects=connects, is_exterior=is_exterior)
+
+
+def _door_neighbor_order(room: Room, others: list[Room], covered: set[str]) -> list[Room]:
+    preferred = {"Hall", "Living", "Living/Sleeping"}
+
+    def sort_key(other: Room) -> tuple[int, int, str]:
+        connected = 0 if other.id in covered else 1
+        preferred_rank = 0 if other.name in preferred else 1
+        return (connected, preferred_rank, other.name)
+
+    return sorted(
+        [other for other in others if other.id != room.id],
+        key=sort_key,
+    )
+
+
+def _place_doors(rooms: list[Room]) -> list[Door]:
+    doors: list[Door] = []
+    covered: set[str] = set()
+
+    living = _living_room(rooms)
+    hall = _room_by_name(rooms, "Hall")
+    if living and hall:
+        edge = shared_edge(living.coords(), hall.coords(), tol=_EDGE_TOL)
+        if edge is not None:
+            door = _door_on_edge(edge, [living.id, hall.id])
+            if door is not None:
+                doors.append(door)
+                covered.update(door.connects)
+
+    for room in rooms:
+        if room.id in covered:
+            continue
+        placed = False
+        for other in _door_neighbor_order(room, rooms, covered):
+            edge = shared_edge(room.coords(), other.coords(), tol=_EDGE_TOL)
+            if edge is None:
+                continue
+            door = _door_on_edge(edge, [room.id, other.id])
+            if door is None:
+                continue
+            doors.append(door)
+            covered.add(room.id)
+            covered.add(other.id)
+            placed = True
+            break
+        if placed:
+            continue
+        boundary = polygon_from_room(room).exterior
+        door = _door_on_edge(LineString(boundary.coords), [room.id], is_exterior=True)
+        if door is not None:
+            doors.append(door)
+            covered.add(room.id)
+
+    return doors
+
+
+def _exterior_edge(room: Room, boundary_poly: Polygon) -> LineString | None:
+    poly = polygon_from_room(room)
+    inter = poly.boundary.intersection(boundary_poly.boundary)
+    if inter.is_empty:
+        inter = poly.buffer(_EDGE_TOL).intersection(boundary_poly.buffer(_EDGE_TOL)).boundary
+    line = _longest_line(inter)
+    return line if line is not None and line.length >= _MIN_LINE_LEN else None
+
+
+def _window_segments(
+    edge: LineString,
+    count: int,
+    length: float = _WINDOW_LEN,
+) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    if edge.length < _MIN_LINE_LEN or count <= 0:
+        return []
+    out: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    use = min(length, edge.length * 0.35)
+    for i in range(count):
+        mid = edge.length * (i + 1) / (count + 1)
+        a = max(0.0, mid - use / 2.0)
+        b = min(edge.length, a + use)
+        p0 = edge.interpolate(a)
+        p1 = edge.interpolate(b)
+        if p0.coords[0] == p1.coords[0]:
+            continue
+        out.append(((float(p0.x), float(p0.y)), (float(p1.x), float(p1.y))))
+    return out
+
+
+def _window_priority(room: Room) -> tuple[int, int]:
+    root = name_root(room.name)
+    order = {"Living": 0, "Living/Sleeping": 0, "Room": 1}
+    n = 0
+    if root == "Room":
+        parts = room.name.rsplit(" ", 1)
+        n = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
+    return (order.get(root, 2), n)
+
+
+def _place_windows(rooms: list[Room], boundary: Boundary, count: int = 2) -> list[Window]:
+    boundary_poly = polygon_from_boundary(boundary)
+    candidates = [
+        (room, edge)
+        for room in rooms
+        if (edge := _exterior_edge(room, boundary_poly)) is not None
+    ]
+    candidates.sort(key=lambda pair: _window_priority(pair[0]))
+
+    windows: list[Window] = []
+    for room, edge in candidates:
+        need = count - len(windows)
+        if need <= 0:
+            break
+        for start, end in _window_segments(edge, need):
+            windows.append(make_window_line(start, end, room_ids=[room.id]))
+            if len(windows) >= count:
+                break
+    return windows
+
+
 def document_to_plan(document: dict[str, Any]) -> FloorPlan:
-    """Build FloorPlan from document.generated (no doors/windows)."""
+    """Build FloorPlan from document.generated, including doors and windows."""
     generated = document["generated"]
     parameters = document["parameters"]
     poly = generated["boundary"]["polygon"]
@@ -604,11 +782,13 @@ def document_to_plan(document: dict[str, Any]) -> FloorPlan:
                 zone=ZoneType.PUBLIC,
             )
         ]
+    doors = _place_doors(rooms)
+    windows = _place_windows(rooms, boundary)
     return FloorPlan(
         name=document.get("label") or f"{parameters.get('total_rooms', '?')}-room",
         rooms=rooms,
-        doors=[],
-        windows=[],
+        doors=doors,
+        windows=windows,
         boundary=boundary,
         metadata={"plan_id": document.get("id"), "seed": parameters.get("seed")},
     )

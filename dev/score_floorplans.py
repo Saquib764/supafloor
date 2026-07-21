@@ -23,18 +23,27 @@ def _load_plan(path: Path):
 
     raw = json.loads(path.read_text())
     if "floor_plan" in raw:
-        # Generator payload or DatasetSample-like
         try:
             return FloorPlan.model_validate(raw["floor_plan"]), raw
         except Exception:
             sample = DatasetSample.model_validate(raw)
             return sample.floor_plan, raw
+    if "generated" in raw and "parameters" in raw:
+        from floorplan.requirements import document_to_plan
+
+        return document_to_plan(raw), raw
     return FloorPlan.model_validate(raw), raw
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Score floor plans in a folder; write README + per-plan reports")
-    parser.add_argument("--dir", "-d", type=Path, required=True, help="Folder containing generated JSON (+ PNG)")
+    parser.add_argument("--dir", "-d", type=Path, required=True, help="Folder containing plan JSON files")
+    parser.add_argument(
+        "--score-dir",
+        type=Path,
+        default=None,
+        help="Folder for PNG + score reports (default: sibling score/ when --dir is plans/)",
+    )
     parser.add_argument("--readme", type=str, default="README.md", help="Index README filename")
     args = parser.parse_args(argv)
 
@@ -42,12 +51,18 @@ def main(argv: list[str] | None = None) -> int:
     if str(service_root) not in sys.path:
         sys.path.insert(0, str(service_root))
 
-    from floorplan.evaluator import score_plan
+    from floorplan.dataset.artifacts import score_row, write_plan_artifacts
+    from floorplan.evaluator import score_label, score_plan
 
     target: Path = args.dir
     if not target.is_dir():
         print(f"Not a directory: {target}", file=sys.stderr)
         return 1
+
+    score_out = args.score_dir
+    if score_out is None:
+        score_out = target.parent / "score" if target.name == "plans" else target
+    score_out.mkdir(parents=True, exist_ok=True)
 
     json_files = sorted(
         p
@@ -62,7 +77,8 @@ def main(argv: list[str] | None = None) -> int:
     readme_parts: list[str] = [
         "# Floor plan scores",
         "",
-        f"Scored **{len(json_files)}** plan(s) in `{target.resolve()}`.",
+        f"Scored **{len(json_files)}** plan(s) from `{target.resolve()}`.",
+        f"Reports written to `{score_out.resolve()}`.",
         "",
         "| Plan | Overall | Rating | Valid | Image |",
         "|---|---:|---|---|---|",
@@ -74,54 +90,15 @@ def main(argv: list[str] | None = None) -> int:
         plan, raw = _load_plan(path)
         scores = score_plan(plan)
         sample_id = raw.get("id") or plan.id
-        png_name = raw.get("files", {}).get("png") or f"{path.stem}.png"
-        png_path = target / png_name
-        image_rel = png_name if png_path.exists() else None
+        files = write_plan_artifacts(plan, scores, score_out, plan_id=path.stem)
+        score_md_name = files["score_md"]
+        image_rel = files["png"]
 
-        score_md_name = f"{path.stem}.score.md"
-        report_body = scores.report
-        # Embed image at top of per-plan report
-        per_plan_lines = [
-            f"# Score report — {plan.name}",
-            "",
-            f"Source: `{path.name}`",
-            "",
-        ]
-        if image_rel:
-            per_plan_lines += [f"![{plan.name}]({image_rel})", ""]
-        per_plan_lines += [
-            scores.summary,
-            "",
-            report_body,
-        ]
-        (target / score_md_name).write_text("\n".join(per_plan_lines))
+        row = score_row(plan, scores, score_md_name=score_md_name, png_name=image_rel)
+        row["id"] = sample_id
+        index_rows.append(row)
 
-        # Also write machine-readable score sidecar
-        score_json = {
-            "id": sample_id,
-            "plan_name": plan.name,
-            "overall": scores.overall,
-            "summary": scores.summary,
-            "categories": {
-                "geometry": scores.geometry,
-                "topology": scores.topology,
-                "construction": scores.construction,
-                "privacy": scores.privacy,
-                "circulation": scores.circulation,
-                "furniture": scores.furniture,
-                "daylight": scores.daylight,
-                "architecture": scores.architecture,
-                "aesthetics": scores.aesthetics,
-            },
-            "hard_failures": [r.rule_id for r in scores.rules if r.hard and not r.passed],
-            "report_file": score_md_name,
-            "image": image_rel,
-        }
-        (target / f"{path.stem}.score.json").write_text(json.dumps(score_json, indent=2))
-
-        valid = len(score_json["hard_failures"]) == 0
-        from floorplan.evaluator import score_label
-
+        valid = row["valid"]
         rating = score_label(scores.overall)
         img_cell = f"![]({image_rel})" if image_rel else "—"
         readme_parts.append(
@@ -145,13 +122,12 @@ def main(argv: list[str] | None = None) -> int:
         details.append("---")
         details.append("")
 
-        index_rows.append(score_json)
         print(f"Scored {path.name} → {scores.overall:.2f} ({rating})")
 
     readme_parts.extend(details)
-    readme_path = target / args.readme
+    readme_path = score_out / args.readme
     readme_path.write_text("\n".join(readme_parts))
-    (target / "scores_index.json").write_text(json.dumps(index_rows, indent=2))
+    (score_out / "scores_index.json").write_text(json.dumps(index_rows, indent=2))
     print(f"\nWrote {readme_path} and {len(index_rows)} per-plan score reports")
     return 0
 

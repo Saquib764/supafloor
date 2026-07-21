@@ -7,11 +7,19 @@ from pathlib import Path
 from typing import Any
 
 # Repo: backend/floorplan/floorplan/dataset/store.py → ../../../.. = repo root
-_DEFAULT_DIR = Path(__file__).resolve().parents[4] / "dev" / "output" / "plans"
+_OUTPUT_ROOT = Path(__file__).resolve().parents[4] / "dev" / "output"
+_DEFAULT_PLANS_DIR = _OUTPUT_ROOT / "plans"
+_DEFAULT_SCORES_DIR = _OUTPUT_ROOT / "score"
 
 
 def plans_dir(root: Path | None = None) -> Path:
-    path = root or _DEFAULT_DIR
+    path = root or _DEFAULT_PLANS_DIR
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def scores_dir(root: Path | None = None) -> Path:
+    path = root or _DEFAULT_SCORES_DIR
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -41,6 +49,10 @@ def delete_document(plan_id: str, root: Path | None = None) -> None:
     if not path.exists():
         raise FileNotFoundError(plan_id)
     path.unlink()
+    for name in (f"{plan_id}.png", f"{plan_id}.score.md", f"{plan_id}.score.json"):
+        artifact = scores_dir() / name
+        if artifact.exists():
+            artifact.unlink()
     _write_index(root)
 
 
