@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from thefluxtrain.floorplan.evaluator.furniture import score_furniture
-from thefluxtrain.floorplan.evaluator.rules import evaluate_rules, hard_failures
-from thefluxtrain.floorplan.schemas.models import FloorPlan, ScoreBreakdown
+from floorplan.evaluator.furniture import score_furniture
+from floorplan.evaluator.rules import evaluate_rules, hard_failures
+from floorplan.schemas.models import FloorPlan, ScoreBreakdown
 
 DEFAULT_WEIGHTS = {
     "geometry": 0.15,

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import copy
 import random
 from typing import Any, Callable, Optional
 
-from thefluxtrain.floorplan.evaluator import hard_failures, is_valid, score_plan
-from thefluxtrain.floorplan.geometry.ops import (
-    area,
+from floorplan.evaluator import is_valid, score_plan
+from floorplan.geometry.ops import (
     bounding_box,
     rect,
     rotate,
@@ -16,8 +14,8 @@ from thefluxtrain.floorplan.geometry.ops import (
     to_points,
     translate,
 )
-from thefluxtrain.floorplan.schemas.enums import MutationOp, RoomType, ZoneType
-from thefluxtrain.floorplan.schemas.models import Boundary, Door, FloorPlan, Point2D, Room, Window, _uid
+from floorplan.schemas.enums import MutationOp, RoomType, ZoneType
+from floorplan.schemas.models import Boundary, Door, FloorPlan, Point2D, Room, Window, _uid
 
 
 def _new_plan(**kwargs) -> FloorPlan:

@@ -7,8 +7,8 @@ from typing import Any, Optional
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from thefluxtrain.floorplan.schemas.models import Boundary, FloorPlan, Point2D
-from thefluxtrain.floorplan.services.engine import FloorPlanEngine
+from floorplan.schemas.models import Boundary, FloorPlan, Point2D
+from floorplan.services.engine import FloorPlanEngine
 
 router = APIRouter(prefix="/floorplan", tags=["floorplan"])
 engine = FloorPlanEngine()
@@ -193,5 +193,5 @@ def demo(template_id: str = "compact_2bed") -> dict:
         "plan": plan.model_dump(),
         "scores": scores.model_dump(),
         "render": rendered,
-        "adjacency": __import__("thefluxtrain.floorplan.topology", fromlist=["build_adjacency"]).build_adjacency(plan),
+        "adjacency": __import__("floorplan.topology", fromlist=["build_adjacency"]).build_adjacency(plan),
     }

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from thefluxtrain.floorplan.geometry import (
+from floorplan.geometry import (
     area,
     aspect_ratio,
     contains,
@@ -14,9 +14,9 @@ from thefluxtrain.floorplan.geometry import (
     polygon_from_room,
     rectangularity,
 )
-from thefluxtrain.floorplan.schemas.enums import RoomType, Severity, ZoneType
-from thefluxtrain.floorplan.schemas.models import FloorPlan, RuleResult
-from thefluxtrain.floorplan.topology import (
+from floorplan.schemas.enums import RoomType, Severity, ZoneType
+from floorplan.schemas.models import FloorPlan, RuleResult
+from floorplan.topology import (
     adjacency_via_doors,
     build_adjacency,
     exterior_touching_rooms,
@@ -333,7 +333,7 @@ def rule_wet_core_compactness(plan: FloorPlan) -> RuleResult:
     wet = [r for r in plan.rooms if r.zone == ZoneType.WET or r.room_type in (RoomType.BATHROOM, RoomType.POWDER, RoomType.KITCHEN, RoomType.UTILITY)]
     if len(wet) < 2:
         return _soft("wet_core", "Wet Core Compactness", 7.0, "Single wet room")
-    from thefluxtrain.floorplan.geometry import centroid, distance
+    from floorplan.geometry import centroid, distance
 
     centers = [centroid(r.coords()) for r in wet]
     # average pairwise distance

@@ -6,8 +6,8 @@ import argparse
 import json
 from pathlib import Path
 
-from thefluxtrain.floorplan.dataset import generate_dataset, generate_sample
-from thefluxtrain.floorplan.templates import list_templates
+from floorplan.dataset import generate_dataset, generate_sample
+from floorplan.templates import list_templates
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.cmd == "serve":
         import uvicorn
 
-        uvicorn.run("thefluxtrain.floorplan.api.app:app", host=args.host, port=args.port, reload=False)
+        uvicorn.run("floorplan.api.app:app", host=args.host, port=args.port, reload=False)
 
 
 if __name__ == "__main__":

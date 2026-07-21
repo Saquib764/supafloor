@@ -7,10 +7,10 @@ from typing import Any, Optional
 import cv2
 import numpy as np
 
-from thefluxtrain.floorplan.geometry.ops import area, aspect_ratio, bounding_box, to_points, touches
-from thefluxtrain.floorplan.schemas.enums import RoomType, ZoneType
-from thefluxtrain.floorplan.schemas.models import Boundary, FloorPlan, Room
-from thefluxtrain.floorplan.topology import build_adjacency
+from floorplan.geometry.ops import area, aspect_ratio, bounding_box, to_points, touches
+from floorplan.schemas.enums import RoomType, ZoneType
+from floorplan.schemas.models import Boundary, FloorPlan, Room
+from floorplan.topology import build_adjacency
 
 
 def _order_rooms_by_area(contours_data: list[dict]) -> list[dict]:

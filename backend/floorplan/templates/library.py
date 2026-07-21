@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from thefluxtrain.floorplan.schemas.enums import MutationOp, RoomType, ZoneType
-from thefluxtrain.floorplan.schemas.models import (
+from floorplan.schemas.enums import MutationOp, RoomType, ZoneType
+from floorplan.schemas.models import (
     Boundary,
     FloorPlan,
     Point2D,
@@ -14,7 +14,7 @@ from thefluxtrain.floorplan.schemas.models import (
     Door,
     Window,
 )
-from thefluxtrain.floorplan.geometry.ops import rect, to_points
+from floorplan.geometry.ops import rect, to_points
 
 
 def _req(

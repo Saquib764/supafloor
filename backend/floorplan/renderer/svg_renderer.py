@@ -8,9 +8,9 @@ from typing import Any, Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
-from thefluxtrain.floorplan.geometry import area, bounding_box, centroid
-from thefluxtrain.floorplan.schemas.models import FloorPlan
-from thefluxtrain.floorplan.topology import build_adjacency
+from floorplan.geometry import area, bounding_box, centroid
+from floorplan.schemas.models import FloorPlan
+from floorplan.topology import build_adjacency
 
 ROOM_COLORS = {
     "living": "#E8D5B7",

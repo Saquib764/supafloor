@@ -6,14 +6,14 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from thefluxtrain.floorplan.evaluator import hard_failures, score_plan
-from thefluxtrain.floorplan.mutations import mutate_pipeline
-from thefluxtrain.floorplan.renderer import render_plan
-from thefluxtrain.floorplan.schemas.enums import MutationOp
-from thefluxtrain.floorplan.schemas.models import DatasetSample, FloorPlan
-from thefluxtrain.floorplan.services.boundary_adapt import adapt_to_boundary, generate_boundary
-from thefluxtrain.floorplan.templates import get_template, instantiate_template, list_templates
-from thefluxtrain.floorplan.topology import (
+from floorplan.evaluator import hard_failures, score_plan
+from floorplan.mutations import mutate_pipeline
+from floorplan.renderer import render_plan
+from floorplan.schemas.enums import MutationOp
+from floorplan.schemas.models import DatasetSample, FloorPlan
+from floorplan.services.boundary_adapt import adapt_to_boundary, generate_boundary
+from floorplan.templates import get_template, instantiate_template, list_templates
+from floorplan.topology import (
     adjacency_signature,
     constraint_graph_from_plan,
     geometry_hash,

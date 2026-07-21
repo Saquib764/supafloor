@@ -1,6 +1,6 @@
 """Geometry operation tests."""
 
-from thefluxtrain.floorplan.geometry import (
+from floorplan.geometry import (
     area,
     aspect_ratio,
     bounding_box,
@@ -18,7 +18,7 @@ from thefluxtrain.floorplan.geometry import (
     translate,
     union,
 )
-from thefluxtrain.floorplan.geometry.ops import rect
+from floorplan.geometry.ops import rect
 
 
 def test_area_and_centroid():

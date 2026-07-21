@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from thefluxtrain.floorplan.evaluator import evaluate_rules, score_plan
-from thefluxtrain.floorplan.importer import import_bw_image
-from thefluxtrain.floorplan.mutations import apply_mutation, mutate_pipeline
-from thefluxtrain.floorplan.renderer import render_plan
-from thefluxtrain.floorplan.schemas.enums import MutationOp
-from thefluxtrain.floorplan.schemas.models import Boundary, FloorPlan
-from thefluxtrain.floorplan.services.boundary_adapt import adapt_to_boundary, generate_boundary
-from thefluxtrain.floorplan.templates import get_template, instantiate_template, list_templates
-from thefluxtrain.floorplan.topology import build_adjacency, room_metrics
+from floorplan.evaluator import evaluate_rules, score_plan
+from floorplan.importer import import_bw_image
+from floorplan.mutations import apply_mutation, mutate_pipeline
+from floorplan.renderer import render_plan
+from floorplan.schemas.enums import MutationOp
+from floorplan.schemas.models import Boundary, FloorPlan
+from floorplan.services.boundary_adapt import adapt_to_boundary, generate_boundary
+from floorplan.templates import get_template, instantiate_template, list_templates
+from floorplan.topology import build_adjacency, room_metrics
 
 
 class FloorPlanEngine:
@@ -52,12 +52,12 @@ class FloorPlanEngine:
         return import_bw_image(image_bytes, **kwargs)
 
     def generate_sample(self, **kwargs):
-        from thefluxtrain.floorplan.dataset import generate_sample
+        from floorplan.dataset import generate_sample
 
         return generate_sample(**kwargs)
 
     def generate_dataset(self, n: int = 10, **kwargs):
-        from thefluxtrain.floorplan.dataset import generate_dataset
+        from floorplan.dataset import generate_dataset
 
         return generate_dataset(n=n, **kwargs)
 

@@ -7,7 +7,7 @@ Deterministic residential floor plan engine for generating, mutating, validating
 ## Layout
 
 ```
-backend/thefluxtrain/floorplan/
+backend/floorplan/
   api/          FastAPI routes (POST /floorplan/render, …)
   geometry/     Shapely-backed immutable geometry ops
   topology/     Adjacency, reachability, diversity hashes
@@ -38,13 +38,13 @@ pip install -r requirements.txt
 pip install -e .
 
 # API
-python -m thefluxtrain.floorplan.cli serve --port 8000
+python -m floorplan.cli serve --port 8000
 
 # Tests
 pytest -q
 
 # Generate a small dataset
-python -m thefluxtrain.floorplan.cli dataset -n 20 --out ../floorplan_dataset
+python -m floorplan.cli dataset -n 20 --out ../floorplan_dataset
 ```
 
 Open the viewer: `frontend/public/floorplan-viewer.html` (expects API at `http://localhost:8000`).

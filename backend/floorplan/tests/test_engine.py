@@ -1,15 +1,15 @@
 """Template, mutation, evaluation, render, import, dataset tests."""
 
-from thefluxtrain.floorplan.dataset import generate_dataset, generate_sample
-from thefluxtrain.floorplan.evaluator import evaluate_rules, score_plan
-from thefluxtrain.floorplan.importer import import_bw_image, synthesize_bw_fixture
-from thefluxtrain.floorplan.mutations import apply_mutation, mutate_pipeline
-from thefluxtrain.floorplan.renderer import render_plan, render_svg
-from thefluxtrain.floorplan.schemas.enums import MutationOp
-from thefluxtrain.floorplan.services import FloorPlanEngine
-from thefluxtrain.floorplan.services.boundary_adapt import adapt_to_boundary, generate_boundary
-from thefluxtrain.floorplan.templates import get_template, instantiate_template, list_templates
-from thefluxtrain.floorplan.topology import build_adjacency, topology_hash
+from floorplan.dataset import generate_dataset, generate_sample
+from floorplan.evaluator import evaluate_rules, score_plan
+from floorplan.importer import import_bw_image, synthesize_bw_fixture
+from floorplan.mutations import apply_mutation, mutate_pipeline
+from floorplan.renderer import render_plan, render_svg
+from floorplan.schemas.enums import MutationOp
+from floorplan.services import FloorPlanEngine
+from floorplan.services.boundary_adapt import adapt_to_boundary, generate_boundary
+from floorplan.templates import get_template, instantiate_template, list_templates
+from floorplan.topology import build_adjacency, topology_hash
 
 
 def test_templates_listed():
@@ -100,7 +100,7 @@ def test_engine_facade():
 
 def test_api_demo():
     from fastapi.testclient import TestClient
-    from thefluxtrain.floorplan.api.app import app
+    from floorplan.api.app import app
 
     client = TestClient(app)
     r = client.get("/floorplan/health")

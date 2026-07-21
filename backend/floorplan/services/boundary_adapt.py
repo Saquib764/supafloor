@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from thefluxtrain.floorplan.geometry.ops import (
+from floorplan.geometry.ops import (
     bounding_box,
     fit_polygon_in_boundary,
     points_to_polygon,
@@ -10,7 +10,7 @@ from thefluxtrain.floorplan.geometry.ops import (
     to_points,
     translate,
 )
-from thefluxtrain.floorplan.schemas.models import Boundary, FloorPlan, Point2D
+from floorplan.schemas.models import Boundary, FloorPlan, Point2D
 from shapely import affinity
 
 

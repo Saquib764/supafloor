@@ -7,7 +7,7 @@ import json
 from collections import defaultdict, deque
 from typing import Optional
 
-from thefluxtrain.floorplan.geometry import (
+from floorplan.geometry import (
     area,
     aspect_ratio,
     perimeter,
@@ -16,7 +16,7 @@ from thefluxtrain.floorplan.geometry import (
     shared_edge,
     touches,
 )
-from thefluxtrain.floorplan.schemas.models import ConstraintGraph, FloorPlan, Room
+from floorplan.schemas.models import ConstraintGraph, FloorPlan, Room
 
 
 def build_adjacency(plan: FloorPlan, tol: float = 0.08) -> dict[str, list[str]]:

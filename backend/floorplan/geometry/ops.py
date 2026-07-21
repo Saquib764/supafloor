@@ -14,7 +14,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
-from thefluxtrain.floorplan.schemas.models import Boundary, Point2D, Room
+from floorplan.schemas.models import Boundary, Point2D, Room
 
 
 Coord = tuple[float, float]

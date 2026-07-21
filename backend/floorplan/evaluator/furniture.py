@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from thefluxtrain.floorplan.geometry import area, bounding_box, min_width
-from thefluxtrain.floorplan.schemas.enums import RoomType, Severity
-from thefluxtrain.floorplan.schemas.models import FloorPlan, RuleResult, Room
+from floorplan.geometry import area, bounding_box, min_width
+from floorplan.schemas.enums import RoomType, Severity
+from floorplan.schemas.models import FloorPlan, RuleResult, Room
 
 
 @dataclass(frozen=True)

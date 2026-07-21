@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from thefluxtrain.floorplan.api.routes import router
+from floorplan.api.routes import router
 
 
 def create_app() -> FastAPI:
