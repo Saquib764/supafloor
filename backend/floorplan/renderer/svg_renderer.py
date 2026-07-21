@@ -33,7 +33,8 @@ ROOM_COLORS = {
 
 
 def _bounds(plan: FloorPlan, pad: float = 0.5) -> tuple[float, float, float, float]:
-    minx, miny, maxx, maxy = bounding_box(plan.boundary.coords())
+    boundary = plan.ensure_boundary()
+    minx, miny, maxx, maxy = bounding_box(boundary.coords())
     return minx - pad, miny - pad, maxx + pad, maxy + pad
 
 
@@ -74,7 +75,17 @@ def render_svg(
 
     if "boundary" in layers:
         parts.append('<g id="layer-boundary">')
-        parts.append(_poly_svg(plan.boundary.coords(), bounds, size, fill="none", stroke="#1A1A1A", stroke_width=3, opacity=1))
+        parts.append(
+            _poly_svg(
+                plan.ensure_boundary().coords(),
+                bounds,
+                size,
+                fill="none",
+                stroke="#1A1A1A",
+                stroke_width=3,
+                opacity=1,
+            )
+        )
         parts.append("</g>")
 
     if "rooms" in layers or "rule_heatmap" in layers:
@@ -117,20 +128,28 @@ def render_svg(
     if "doors" in layers:
         parts.append('<g id="layer-doors">')
         for door in plan.doors:
-            px, py = _transform(door.position.x, door.position.y, bounds, size)
-            parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="5" fill="#8B4513" stroke="#3D2314" stroke-width="1"/>')
+            x0, y0 = _transform(door.start.x, door.start.y, bounds, size)
+            x1, y1 = _transform(door.end.x, door.end.y, bounds, size)
+            parts.append(
+                f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" '
+                f'stroke="#8B4513" stroke-width="4" stroke-linecap="round"/>'
+            )
         parts.append("</g>")
 
     if "windows" in layers:
         parts.append('<g id="layer-windows">')
         for win in plan.windows:
-            px, py = _transform(win.position.x, win.position.y, bounds, size)
-            parts.append(f'<rect x="{px - 6:.1f}" y="{py - 3:.1f}" width="12" height="6" fill="#6BA3C9" stroke="#2C5F7C" stroke-width="1"/>')
+            x0, y0 = _transform(win.start.x, win.start.y, bounds, size)
+            x1, y1 = _transform(win.end.x, win.end.y, bounds, size)
+            parts.append(
+                f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" '
+                f'stroke="#6BA3C9" stroke-width="5" stroke-linecap="round"/>'
+            )
         parts.append("</g>")
 
     if "dimensions" in layers:
         parts.append('<g id="layer-dimensions">')
-        minx, miny, maxx, maxy = bounding_box(plan.boundary.coords())
+        minx, miny, maxx, maxy = bounding_box(plan.ensure_boundary().coords())
         # Width dimension along bottom
         x0, y0 = _transform(minx, miny - 0.3, bounds, size)
         x1, y1 = _transform(maxx, miny - 0.3, bounds, size)
@@ -188,21 +207,22 @@ def render_png(plan: FloorPlan, *, size: int = 800, layers: Optional[list[str]] 
             draw.polygon(pts, fill=rgb + (220,), outline=(44, 44, 44, 255))
 
     if "boundary" in layers:
-        pts = [_transform(x, y, bounds, size) for x, y in plan.boundary.coords()]
-        # close polygon
+        pts = [_transform(x, y, bounds, size) for x, y in plan.ensure_boundary().coords()]
         if pts[0] != pts[-1]:
             pts = pts + [pts[0]]
         draw.line(pts, fill=(26, 26, 26), width=3)
 
     if "doors" in layers:
         for door in plan.doors:
-            px, py = _transform(door.position.x, door.position.y, bounds, size)
-            draw.ellipse([px - 5, py - 5, px + 5, py + 5], fill=(139, 69, 19))
+            p0 = _transform(door.start.x, door.start.y, bounds, size)
+            p1 = _transform(door.end.x, door.end.y, bounds, size)
+            draw.line([p0, p1], fill=(139, 69, 19), width=4)
 
     if "windows" in layers:
         for win in plan.windows:
-            px, py = _transform(win.position.x, win.position.y, bounds, size)
-            draw.rectangle([px - 6, py - 3, px + 6, py + 3], fill=(107, 163, 201), outline=(44, 95, 124))
+            p0 = _transform(win.start.x, win.start.y, bounds, size)
+            p1 = _transform(win.end.x, win.end.y, bounds, size)
+            draw.line([p0, p1], fill=(107, 163, 201), width=5)
 
     if "labels" in layers:
         try:

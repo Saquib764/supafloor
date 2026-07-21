@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-from floorplan.geometry.ops import (
-    bounding_box,
-    fit_polygon_in_boundary,
-    points_to_polygon,
-    scale,
-    to_points,
-    translate,
-)
+from floorplan.geometry.ops import points_to_polygon, to_points
 from floorplan.schemas.models import Boundary, FloorPlan, Point2D
 from shapely import affinity
 
 
 def adapt_to_boundary(plan: FloorPlan, boundary: Boundary) -> FloorPlan:
     """Stretch/compress plan geometry to fit target boundary bbox (topology preserved)."""
-    src = points_to_polygon(plan.boundary.coords())
+    src_boundary = plan.ensure_boundary()
+    src = points_to_polygon(src_boundary.coords())
     dst = points_to_polygon(boundary.coords())
     sx0, sy0, sx1, sy1 = src.bounds
     dx0, dy0, dx1, dy1 = dst.bounds
@@ -26,7 +20,6 @@ def adapt_to_boundary(plan: FloorPlan, boundary: Boundary) -> FloorPlan:
 
     def xform_coords(coords: list[tuple[float, float]]) -> list[tuple[float, float]]:
         poly = points_to_polygon(coords)
-        # normalize to origin
         moved = affinity.translate(poly, xoff=-sx0, yoff=-sy0)
         scaled = affinity.scale(moved, xfact=xfact, yfact=yfact, origin=(0, 0))
         final = affinity.translate(scaled, xoff=dx0, yoff=dy0)
@@ -38,19 +31,25 @@ def adapt_to_boundary(plan: FloorPlan, boundary: Boundary) -> FloorPlan:
         return Point2D(x=x, y=y)
 
     rooms = [r.model_copy(update={"polygon": to_points(xform_coords(r.coords()))}) for r in plan.rooms]
-    doors = [d.model_copy(update={"position": xform_point(d.position)}) for d in plan.doors]
-    windows = [w.model_copy(update={"position": xform_point(w.position)}) for w in plan.windows]
+    doors = [
+        d.model_copy(update={"start": xform_point(d.start), "end": xform_point(d.end)})
+        for d in plan.doors
+    ]
+    windows = [
+        w.model_copy(update={"start": xform_point(w.start), "end": xform_point(w.end)})
+        for w in plan.windows
+    ]
     walls = [
         wall.model_copy(update={"start": xform_point(wall.start), "end": xform_point(wall.end)})
         for wall in plan.walls
     ]
     return FloorPlan(
         name=plan.name,
-        boundary=boundary,
         rooms=rooms,
-        walls=walls,
         doors=doors,
         windows=windows,
+        boundary=boundary,
+        walls=walls,
         zones=plan.zones,
         constraint_graph=plan.constraint_graph,
         metadata={**plan.metadata, "adapted": True},
@@ -59,7 +58,6 @@ def adapt_to_boundary(plan: FloorPlan, boundary: Boundary) -> FloorPlan:
 
 def generate_boundary(width: float = 10.0, depth: float = 8.0, shape: str = "rect") -> Boundary:
     if shape == "l":
-        # L-shaped boundary
         coords = [
             (0, 0),
             (width, 0),

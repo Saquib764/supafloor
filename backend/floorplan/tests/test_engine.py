@@ -41,7 +41,7 @@ def test_adapt_boundary():
     plan = instantiate_template("studio", width=7, depth=5.5)
     boundary = generate_boundary(width=12, depth=9, shape="rect")
     adapted = adapt_to_boundary(plan, boundary)
-    assert adapted.boundary.coords()[1][0] == 12
+    assert adapted.ensure_boundary().coords()[1][0] == 12
 
 
 def test_mutations():

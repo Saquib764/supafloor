@@ -23,31 +23,35 @@ export interface Point2D {
   y: number
 }
 
+/** Closed polygon ring (first point equals last). */
 export interface Room {
   id: string
   name: string
-  room_type: RoomType
   polygon: Point2D[]
-  zone: ZoneType
+  room_type?: RoomType
+  zone?: ZoneType
   level?: number
   metadata?: Record<string, unknown>
 }
 
+/** Door opening as a line segment. */
 export interface Door {
   id: string
-  wall_id: string
-  position: Point2D
-  width: number
+  start: Point2D
+  end: Point2D
   connects: string[]
   is_exterior?: boolean
+  swing?: string
 }
 
+/** Window opening as a line segment. */
 export interface Window {
   id: string
-  wall_id: string
-  position: Point2D
-  width: number
+  start: Point2D
+  end: Point2D
+  room_ids?: string[]
   height?: number
+  sill_height?: number
 }
 
 export interface Boundary {
@@ -57,14 +61,15 @@ export interface Boundary {
   units?: string
 }
 
+/** Floor plan = separate room / door / window lists. */
 export interface FloorPlan {
   id: string
   name: string
-  boundary: Boundary
   rooms: Room[]
-  walls: unknown[]
   doors: Door[]
   windows: Window[]
+  boundary?: Boundary | null
+  walls?: unknown[]
   zones?: unknown[]
   metadata?: Record<string, unknown>
 }

@@ -58,7 +58,7 @@ def generate_sample(
         png_b64 = rendered["png"]
 
     return DatasetSample(
-        boundary=boundary,
+        boundary=plan.ensure_boundary(),
         requirements={
             "template_id": template.id,
             "template_name": template.name,

@@ -5,16 +5,21 @@ from __future__ import annotations
 from floorplan.schemas.enums import MutationOp, RoomType, ZoneType
 from floorplan.schemas.models import (
     Boundary,
+    Door,
     FloorPlan,
-    Point2D,
     Room,
     RoomRequirement,
     TemplateSpec,
-    Wall,
-    Door,
     Window,
 )
 from floorplan.geometry.ops import rect, to_points
+from floorplan.geometry.authors import (
+    horizontal_opening,
+    make_door_line,
+    make_room,
+    make_window_line,
+    vertical_opening,
+)
 
 
 def _req(
@@ -285,14 +290,33 @@ def list_templates() -> list[dict]:
 
 
 def _room(name: str, room_type: RoomType, coords: list[tuple[float, float]], zone: ZoneType) -> Room:
-    return Room(name=name, room_type=room_type, polygon=to_points(coords), zone=zone)
+    """Creator always returns a closed, geometrically valid room polygon."""
+    return make_room(name, coords, room_type=room_type, zone=zone)
+
+
+def _hdoor(xc: float, y: float, length: float, connects: list[str], *, exterior: bool = False) -> Door:
+    a, b = horizontal_opening(xc, y, length)
+    return make_door_line(a, b, connects=connects, is_exterior=exterior)
+
+
+def _vdoor(x: float, yc: float, length: float, connects: list[str], *, exterior: bool = False) -> Door:
+    a, b = vertical_opening(x, yc, length)
+    return make_door_line(a, b, connects=connects, is_exterior=exterior)
+
+
+def _hwin(xc: float, y: float, length: float, room_ids: list[str] | None = None) -> Window:
+    a, b = horizontal_opening(xc, y, length)
+    return make_window_line(a, b, room_ids=room_ids)
+
+
+def _vwin(x: float, yc: float, length: float, room_ids: list[str] | None = None) -> Window:
+    a, b = vertical_opening(x, yc, length)
+    return make_window_line(a, b, room_ids=room_ids)
 
 
 def instantiate_compact_2bed(width: float = 10.0, depth: float = 8.0) -> FloorPlan:
-    """Deterministic rectangular compact 2BR layout fitted to a box boundary."""
+    """Deterministic rectangular compact 2BR: rooms + door lines + window lines."""
     w, d = width, depth
-    # Grid proportions (normalized then scaled)
-    # Living (left), kitchen (top-right of living), hall+beds (right)
     living = rect(0, 0, w * 0.45, d * 0.70)
     kitchen = rect(0, d * 0.70, w * 0.45, d * 0.30)
     entry = rect(w * 0.45, 0, w * 0.15, d * 0.25)
@@ -312,69 +336,31 @@ def instantiate_compact_2bed(width: float = 10.0, depth: float = 8.0) -> FloorPl
     ]
 
     boundary = Boundary(exterior=to_points(rect(0, 0, w, d)))
-
-    # Simple walls along room edges (exterior flag for boundary)
-    walls = [
-        Wall(start=Point2D(x=0, y=0), end=Point2D(x=w, y=0), is_exterior=True),
-        Wall(start=Point2D(x=w, y=0), end=Point2D(x=w, y=d), is_exterior=True),
-        Wall(start=Point2D(x=w, y=d), end=Point2D(x=0, y=d), is_exterior=True),
-        Wall(start=Point2D(x=0, y=d), end=Point2D(x=0, y=0), is_exterior=True),
-    ]
-
     id_map = {r.name: r.id for r in rooms}
+
     doors = [
-        Door(
-            wall_id=walls[0].id,
-            position=Point2D(x=w * 0.52, y=0),
-            connects=[id_map["Entry"]],
-            is_exterior=True,
-        ),
-        Door(
-            wall_id="internal",
-            position=Point2D(x=w * 0.45, y=d * 0.15),
-            connects=[id_map["Entry"], id_map["Living"]],
-        ),
-        Door(
-            wall_id="internal",
-            position=Point2D(x=w * 0.45, y=d * 0.40),
-            connects=[id_map["Living"], id_map["Hall"]],
-        ),
-        Door(
-            wall_id="internal",
-            position=Point2D(x=w * 0.52, y=d * 0.50),
-            connects=[id_map["Hall"], id_map["Bedroom 1"]],
-        ),
-        Door(
-            wall_id="internal",
-            position=Point2D(x=w * 0.52, y=d * 0.65),
-            connects=[id_map["Hall"], id_map["Bedroom 2"]],
-        ),
-        Door(
-            wall_id="internal",
-            position=Point2D(x=w * 0.52, y=d * 0.80),
-            connects=[id_map["Hall"], id_map["Bathroom"]],
-        ),
-        Door(
-            wall_id="internal",
-            position=Point2D(x=w * 0.22, y=d * 0.70),
-            connects=[id_map["Living"], id_map["Kitchen"]],
-        ),
+        _hdoor(w * 0.52, 0.0, 0.9, [id_map["Entry"]], exterior=True),
+        _vdoor(w * 0.45, d * 0.12, 0.9, [id_map["Entry"], id_map["Living"]]),
+        _vdoor(w * 0.45, d * 0.40, 0.9, [id_map["Living"], id_map["Hall"]]),
+        _vdoor(w * 0.60, d * 0.25, 0.9, [id_map["Hall"], id_map["Bedroom 1"]]),
+        _vdoor(w * 0.60, d * 0.65, 0.9, [id_map["Hall"], id_map["Bedroom 2"]]),
+        _vdoor(w * 0.60, d * 0.80, 0.8, [id_map["Hall"], id_map["Bathroom"]]),
+        _hdoor(w * 0.22, d * 0.70, 0.9, [id_map["Living"], id_map["Kitchen"]]),
     ]
 
     windows = [
-        Window(wall_id=walls[2].id, position=Point2D(x=w * 0.22, y=d), width=1.5),
-        Window(wall_id=walls[1].id, position=Point2D(x=w, y=d * 0.25), width=1.2),
-        Window(wall_id=walls[1].id, position=Point2D(x=w, y=d * 0.75), width=1.2),
-        Window(wall_id=walls[3].id, position=Point2D(x=0, y=d * 0.35), width=1.4),
+        _hwin(w * 0.22, d, 1.5, [id_map["Kitchen"]]),
+        _vwin(w, d * 0.25, 1.2, [id_map["Bedroom 1"]]),
+        _vwin(w, d * 0.75, 1.2, [id_map["Bedroom 2"]]),
+        _vwin(0.0, d * 0.35, 1.4, [id_map["Living"]]),
     ]
 
     return FloorPlan(
         name="Compact 2 Bedroom",
-        boundary=boundary,
         rooms=rooms,
-        walls=walls,
         doors=doors,
         windows=windows,
+        boundary=boundary,
         metadata={"template_id": "compact_2bed"},
     )
 
@@ -390,29 +376,22 @@ def instantiate_studio(width: float = 7.0, depth: float = 5.5) -> FloorPlan:
         _room("Bathroom", RoomType.BATHROOM, bath, ZoneType.WET),
     ]
     boundary = Boundary(exterior=to_points(rect(0, 0, w, d)))
-    walls = [
-        Wall(start=Point2D(x=0, y=0), end=Point2D(x=w, y=0), is_exterior=True),
-        Wall(start=Point2D(x=w, y=0), end=Point2D(x=w, y=d), is_exterior=True),
-        Wall(start=Point2D(x=w, y=d), end=Point2D(x=0, y=d), is_exterior=True),
-        Wall(start=Point2D(x=0, y=d), end=Point2D(x=0, y=0), is_exterior=True),
-    ]
     id_map = {r.name: r.id for r in rooms}
     doors = [
-        Door(wall_id=walls[0].id, position=Point2D(x=w * 0.2, y=0), connects=[id_map["Living/Sleep"]], is_exterior=True),
-        Door(wall_id="internal", position=Point2D(x=w * 0.70, y=d * 0.20), connects=[id_map["Living/Sleep"], id_map["Bathroom"]]),
-        Door(wall_id="internal", position=Point2D(x=w * 0.70, y=d * 0.55), connects=[id_map["Living/Sleep"], id_map["Kitchen"]]),
+        _hdoor(w * 0.20, 0.0, 0.9, [id_map["Living/Sleep"]], exterior=True),
+        _vdoor(w * 0.70, d * 0.20, 0.8, [id_map["Living/Sleep"], id_map["Bathroom"]]),
+        _vdoor(w * 0.70, d * 0.55, 0.9, [id_map["Living/Sleep"], id_map["Kitchen"]]),
     ]
     windows = [
-        Window(wall_id=walls[2].id, position=Point2D(x=w * 0.35, y=d), width=1.8),
-        Window(wall_id=walls[3].id, position=Point2D(x=0, y=d * 0.5), width=1.2),
+        _hwin(w * 0.35, d, 1.8, [id_map["Living/Sleep"]]),
+        _vwin(0.0, d * 0.50, 1.2, [id_map["Living/Sleep"]]),
     ]
     return FloorPlan(
         name="Studio",
-        boundary=boundary,
         rooms=rooms,
-        walls=walls,
         doors=doors,
         windows=windows,
+        boundary=boundary,
         metadata={"template_id": "studio"},
     )
 
@@ -443,39 +422,32 @@ def instantiate_3bed(width: float = 12.0, depth: float = 9.0) -> FloorPlan:
         _room("Bedroom 3", RoomType.BEDROOM, bed3, ZoneType.PRIVATE),
     ]
     boundary = Boundary(exterior=to_points(rect(0, 0, w, d)))
-    walls = [
-        Wall(start=Point2D(x=0, y=0), end=Point2D(x=w, y=0), is_exterior=True),
-        Wall(start=Point2D(x=w, y=0), end=Point2D(x=w, y=d), is_exterior=True),
-        Wall(start=Point2D(x=w, y=d), end=Point2D(x=0, y=d), is_exterior=True),
-        Wall(start=Point2D(x=0, y=d), end=Point2D(x=0, y=0), is_exterior=True),
-    ]
     id_map = {r.name: r.id for r in rooms}
     doors = [
-        Door(wall_id=walls[0].id, position=Point2D(x=w * 0.46, y=0), connects=[id_map["Entry"]], is_exterior=True),
-        Door(wall_id="i", position=Point2D(x=w * 0.40, y=d * 0.10), connects=[id_map["Entry"], id_map["Living"]]),
-        Door(wall_id="i", position=Point2D(x=w * 0.40, y=d * 0.35), connects=[id_map["Living"], id_map["Hall"]]),
-        Door(wall_id="i", position=Point2D(x=w * 0.11, y=d * 0.55), connects=[id_map["Living"], id_map["Dining"]]),
-        Door(wall_id="i", position=Point2D(x=w * 0.22, y=d * 0.75), connects=[id_map["Dining"], id_map["Kitchen"]]),
-        Door(wall_id="i", position=Point2D(x=w * 0.52, y=d * 0.30), connects=[id_map["Hall"], id_map["Master Bedroom"]]),
-        Door(wall_id="i", position=Point2D(x=w * 0.60, y=d * 0.40), connects=[id_map["Master Bedroom"], id_map["Master Bath"]]),
-        Door(wall_id="i", position=Point2D(x=w * 0.72, y=d * 0.50), connects=[id_map["Hall"], id_map["Bedroom 2"]]),
-        Door(wall_id="i", position=Point2D(x=w * 0.60, y=d * 0.60), connects=[id_map["Hall"], id_map["Bedroom 3"]]),
-        Door(wall_id="i", position=Point2D(x=w * 0.46, y=d * 0.80), connects=[id_map["Hall"], id_map["Bath 2"]]),
+        _hdoor(w * 0.46, 0.0, 0.9, [id_map["Entry"]], exterior=True),
+        _vdoor(w * 0.40, d * 0.10, 0.9, [id_map["Entry"], id_map["Living"]]),
+        _vdoor(w * 0.40, d * 0.35, 0.9, [id_map["Living"], id_map["Hall"]]),
+        _hdoor(w * 0.11, d * 0.55, 0.9, [id_map["Living"], id_map["Dining"]]),
+        _vdoor(w * 0.22, d * 0.75, 0.9, [id_map["Dining"], id_map["Kitchen"]]),
+        _vdoor(w * 0.52, d * 0.25, 0.9, [id_map["Hall"], id_map["Master Bedroom"]]),
+        _hdoor(w * 0.60, d * 0.40, 0.8, [id_map["Master Bedroom"], id_map["Master Bath"]]),
+        _vdoor(w * 0.72, d * 0.50, 0.9, [id_map["Hall"], id_map["Bedroom 2"]]),
+        _hdoor(w * 0.60, d * 0.60, 0.9, [id_map["Hall"], id_map["Bedroom 3"]]),
+        _vdoor(w * 0.52, d * 0.85, 0.8, [id_map["Hall"], id_map["Bath 2"]]),
     ]
     windows = [
-        Window(wall_id=walls[3].id, position=Point2D(x=0, y=d * 0.25), width=1.5),
-        Window(wall_id=walls[2].id, position=Point2D(x=w * 0.10, y=d), width=1.2),
-        Window(wall_id=walls[1].id, position=Point2D(x=w, y=d * 0.20), width=1.4),
-        Window(wall_id=walls[1].id, position=Point2D(x=w, y=d * 0.55), width=1.2),
-        Window(wall_id=walls[1].id, position=Point2D(x=w, y=d * 0.80), width=1.2),
+        _vwin(0.0, d * 0.25, 1.5, [id_map["Living"]]),
+        _hwin(w * 0.10, d, 1.2, [id_map["Dining"]]),
+        _vwin(w, d * 0.20, 1.4, [id_map["Master Bedroom"]]),
+        _vwin(w, d * 0.55, 1.2, [id_map["Bedroom 2"]]),
+        _vwin(w, d * 0.80, 1.2, [id_map["Bedroom 3"]]),
     ]
     return FloorPlan(
         name="3 Bedroom",
-        boundary=boundary,
         rooms=rooms,
-        walls=walls,
         doors=doors,
         windows=windows,
+        boundary=boundary,
         metadata={"template_id": "3bed"},
     )
 
@@ -508,11 +480,9 @@ def instantiate_template(template_id: str, width: float | None = None, depth: fl
         kwargs["width"] = width
     if depth is not None:
         kwargs["depth"] = depth
-    # Some lambdas use w/d
     try:
         return fn(**kwargs) if kwargs else fn()
     except TypeError:
-        # luxury etc use positional via defaults
         if width is not None and depth is not None:
             return fn(width, depth)
         return fn()

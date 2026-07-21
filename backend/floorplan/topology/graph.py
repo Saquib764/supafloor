@@ -65,7 +65,7 @@ def reachable(plan: FloorPlan, start_id: Optional[str] = None) -> set[str]:
 
 
 def exterior_touching_rooms(plan: FloorPlan, tol: float = 0.08) -> list[str]:
-    boundary = polygon_from_boundary(plan.boundary)
+    boundary = polygon_from_boundary(plan.ensure_boundary())
     result = []
     for room in plan.rooms:
         poly = polygon_from_room(room)
@@ -76,9 +76,8 @@ def exterior_touching_rooms(plan: FloorPlan, tol: float = 0.08) -> list[str]:
         elif inter.geom_type == "MultiLineString":
             length = sum(g.length for g in inter.geoms)
         elif not inter.is_empty:
-            # buffered near-touch
             buffered = poly.buffer(tol).intersection(boundary.buffer(tol))
-            length = buffered.area  # proxy
+            length = buffered.area
         if length > tol:
             result.append(room.id)
     return result
@@ -126,7 +125,7 @@ def geometry_hash(plan: FloorPlan, precision: int = 1) -> str:
     for room in sorted(plan.rooms, key=lambda r: (r.room_type.value, area(r.coords()))):
         coords = [(q(x), q(y)) for x, y in room.coords()]
         rooms.append({"t": room.room_type.value, "c": coords, "a": q(area(room.coords()))})
-    b = [(q(x), q(y)) for x, y in plan.boundary.coords()]
+    b = [(q(x), q(y)) for x, y in plan.ensure_boundary().coords()]
     payload = {"b": b, "r": rooms}
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
 

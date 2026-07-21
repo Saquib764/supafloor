@@ -1,6 +1,13 @@
-"""Geometry package — Shapely-backed operations and helpers."""
+"""Geometry package — Shapely-backed operations and authoring helpers."""
 
 from . import ops
+from .authors import (
+    horizontal_opening,
+    make_door_line,
+    make_room,
+    make_window_line,
+    vertical_opening,
+)
 from .ops import (
     area,
     aspect_ratio,
@@ -39,7 +46,11 @@ __all__ = [
     "difference",
     "distance",
     "fit_polygon_in_boundary",
+    "horizontal_opening",
     "intersection",
+    "make_door_line",
+    "make_room",
+    "make_window_line",
     "min_width",
     "offset",
     "perimeter",
@@ -56,4 +67,5 @@ __all__ = [
     "touches",
     "translate",
     "union",
+    "vertical_opening",
 ]

@@ -1,11 +1,18 @@
-"""Mutation engine — diversify floor plans, then validate/repair/accept."""
+"""Mutation engine — diversify floor plans, then validate/accept.
+
+Creators always emit closed room polygons and door/window line segments.
+"""
 
 from __future__ import annotations
 
 import random
 from typing import Any, Callable, Optional
 
+from shapely import affinity
+from shapely.geometry import Point
+
 from floorplan.evaluator import is_valid, score_plan
+from floorplan.geometry.authors import make_door_line, make_room, make_window_line
 from floorplan.geometry.ops import (
     bounding_box,
     rect,
@@ -32,9 +39,26 @@ def _with_rooms(plan: FloorPlan, rooms: list[Room], **extra) -> FloorPlan:
     return FloorPlan(**data)
 
 
+def _boundary(plan: FloorPlan) -> Boundary:
+    return plan.ensure_boundary()
+
+
+def _mirror_point(p: Point2D, cx: float) -> Point2D:
+    return Point2D(x=2 * cx - p.x, y=p.y)
+
+
+def _rotate_point(p: Point2D, angle: float, origin: str | tuple[float, float] = "centroid") -> Point2D:
+    # origin as centroid of a dummy needs plan context; callers pass absolute origin coords
+    if origin == "centroid":
+        raise ValueError("rotate_point requires concrete origin coordinates")
+    pt = affinity.rotate(Point(p.x, p.y), angle, origin=origin)
+    return Point2D(x=float(pt.x), y=float(pt.y))
+
+
 def mutate_mirror(plan: FloorPlan, rng: random.Random) -> FloorPlan:
     """Mirror across vertical centerline of boundary."""
-    minx, miny, maxx, maxy = bounding_box(plan.boundary.coords())
+    boundary = _boundary(plan)
+    minx, miny, maxx, maxy = bounding_box(boundary.coords())
     cx = (minx + maxx) / 2
 
     def mirror_coords(coords):
@@ -44,22 +68,22 @@ def mutate_mirror(plan: FloorPlan, rng: random.Random) -> FloorPlan:
         room.model_copy(update={"polygon": to_points(mirror_coords(room.coords()))})
         for room in plan.rooms
     ]
-    boundary = plan.boundary.model_copy(update={"exterior": to_points(mirror_coords(plan.boundary.coords()))})
+    new_boundary = Boundary(exterior=to_points(mirror_coords(boundary.coords())))
     doors = [
-        d.model_copy(update={"position": Point2D(x=2 * cx - d.position.x, y=d.position.y)})
+        d.model_copy(update={"start": _mirror_point(d.start, cx), "end": _mirror_point(d.end, cx)})
         for d in plan.doors
     ]
     windows = [
-        w.model_copy(update={"position": Point2D(x=2 * cx - w.position.x, y=w.position.y)})
+        w.model_copy(update={"start": _mirror_point(w.start, cx), "end": _mirror_point(w.end, cx)})
         for w in plan.windows
     ]
     return _new_plan(
         name=plan.name,
-        boundary=boundary,
         rooms=rooms,
-        walls=plan.walls,
         doors=doors,
         windows=windows,
+        boundary=new_boundary,
+        walls=plan.walls,
         zones=plan.zones,
         constraint_graph=plan.constraint_graph,
         metadata={**plan.metadata, "mutation": "mirror"},
@@ -68,21 +92,40 @@ def mutate_mirror(plan: FloorPlan, rng: random.Random) -> FloorPlan:
 
 def mutate_rotate(plan: FloorPlan, rng: random.Random) -> FloorPlan:
     angle = rng.choice([90, 180, 270])
-    origin = "centroid"
+    boundary = _boundary(plan)
+    bx0, by0, bx1, by1 = bounding_box(boundary.coords())
+    origin = ((bx0 + bx1) / 2, (by0 + by1) / 2)
 
     def rot(coords):
         return rotate(coords, angle, origin=origin)
 
     rooms = [r.model_copy(update={"polygon": to_points(rot(r.coords()))}) for r in plan.rooms]
-    boundary = plan.boundary.model_copy(update={"exterior": to_points(rot(plan.boundary.coords()))})
-    # Approximate door/window rotation via shapely point rotate would be better; skip precise for V1
+    new_boundary = Boundary(exterior=to_points(rot(boundary.coords())))
+    doors = [
+        d.model_copy(
+            update={
+                "start": _rotate_point(d.start, angle, origin=origin),
+                "end": _rotate_point(d.end, angle, origin=origin),
+            }
+        )
+        for d in plan.doors
+    ]
+    windows = [
+        w.model_copy(
+            update={
+                "start": _rotate_point(w.start, angle, origin=origin),
+                "end": _rotate_point(w.end, angle, origin=origin),
+            }
+        )
+        for w in plan.windows
+    ]
     return _new_plan(
         name=plan.name,
-        boundary=boundary,
         rooms=rooms,
+        doors=doors,
+        windows=windows,
+        boundary=new_boundary,
         walls=plan.walls,
-        doors=plan.doors,
-        windows=plan.windows,
         zones=plan.zones,
         constraint_graph=plan.constraint_graph,
         metadata={**plan.metadata, "mutation": "rotate"},
@@ -150,35 +193,16 @@ def mutate_insert_closet(plan: FloorPlan, rng: random.Random) -> FloorPlan:
     bed = rng.choice(beds)
     minx, miny, maxx, maxy = bounding_box(bed.coords())
     cw, ch = 0.8, 0.6
-    # Place in corner of bedroom by carving conceptual overlay (non-destructive insert nearby)
-    closet_coords = rect(minx + 0.1, miny + 0.1, cw, ch)
-    # Shrink bedroom slightly conceptually: keep both (may overlap slightly — validator may reject)
-    closet = Room(
-        name=f"Closet-{bed.name}",
-        room_type=RoomType.CLOSET,
-        polygon=to_points(closet_coords),
-        zone=ZoneType.PRIVATE,
-    )
-    # Offset closet outside bedroom if possible along -x
     alt = rect(minx - cw - 0.05, miny + 0.1, cw, ch)
-    closet = Room(
-        name=f"Closet-{bed.name}",
-        room_type=RoomType.CLOSET,
-        polygon=to_points(alt),
-        zone=ZoneType.PRIVATE,
-    )
-    door = Door(
-        wall_id="internal",
-        position=Point2D(x=minx - 0.02, y=miny + 0.4),
-        connects=[bed.id, closet.id],
-    )
+    closet = make_room(f"Closet-{bed.name}", alt, room_type=RoomType.CLOSET, zone=ZoneType.PRIVATE)
+    door = make_door_line((minx - 0.05, miny + 0.2), (minx - 0.05, miny + 0.2 + 0.8), connects=[bed.id, closet.id])
     return _new_plan(
         name=plan.name,
-        boundary=plan.boundary,
         rooms=list(plan.rooms) + [closet],
-        walls=plan.walls,
         doors=list(plan.doors) + [door],
         windows=plan.windows,
+        boundary=plan.boundary,
+        walls=plan.walls,
         zones=plan.zones,
         constraint_graph=plan.constraint_graph,
         metadata={**plan.metadata, "mutation": "insert_closet"},
@@ -186,23 +210,23 @@ def mutate_insert_closet(plan: FloorPlan, rng: random.Random) -> FloorPlan:
 
 
 def mutate_insert_storage(plan: FloorPlan, rng: random.Random) -> FloorPlan:
-    minx, miny, maxx, maxy = bounding_box(plan.boundary.coords())
+    boundary = _boundary(plan)
+    minx, miny, maxx, maxy = bounding_box(boundary.coords())
     coords = rect(maxx - 1.0, maxy - 1.2, 0.9, 1.0)
-    storage = Room(name="Storage", room_type=RoomType.STORAGE, polygon=to_points(coords), zone=ZoneType.SERVICE)
-    # Connect to nearest circulation if any
+    storage = make_room("Storage", coords, room_type=RoomType.STORAGE, zone=ZoneType.SERVICE)
     circ = next((r for r in plan.rooms if r.room_type in (RoomType.HALLWAY, RoomType.ENTRY, RoomType.LIVING)), None)
     doors = list(plan.doors)
     if circ:
         doors.append(
-            Door(wall_id="internal", position=Point2D(x=maxx - 1.0, y=maxy - 0.6), connects=[circ.id, storage.id])
+            make_door_line((maxx - 1.0, maxy - 1.0), (maxx - 1.0, maxy - 0.2), connects=[circ.id, storage.id])
         )
     return _new_plan(
         name=plan.name,
-        boundary=plan.boundary,
         rooms=list(plan.rooms) + [storage],
-        walls=plan.walls,
         doors=doors,
         windows=plan.windows,
+        boundary=plan.boundary,
+        walls=plan.walls,
         zones=plan.zones,
         constraint_graph=plan.constraint_graph,
         metadata={**plan.metadata, "mutation": "insert_storage"},
@@ -216,26 +240,22 @@ def mutate_insert_balcony(plan: FloorPlan, rng: random.Random) -> FloorPlan:
     if not living:
         return plan
     minx, miny, maxx, maxy = bounding_box(living.coords())
-    # Attach outside living along max-y
     bcoords = rect(minx + 0.3, maxy, max(1.5, (maxx - minx) * 0.5), 1.2)
-    balcony = Room(name="Balcony", room_type=RoomType.BALCONY, polygon=to_points(bcoords), zone=ZoneType.OUTDOOR)
-    # Expand boundary to include balcony
-    bminx, bminy, bmaxx, bmaxy = bounding_box(plan.boundary.coords())
+    balcony = make_room("Balcony", bcoords, room_type=RoomType.BALCONY, zone=ZoneType.OUTDOOR)
+    boundary = _boundary(plan)
+    bminx, bminy, bmaxx, bmaxy = bounding_box(boundary.coords())
     new_b = rect(bminx, bminy, bmaxx - bminx, max(bmaxy, maxy + 1.2) - bminy)
-    boundary = Boundary(exterior=to_points(new_b))
-    door = Door(
-        wall_id="internal",
-        position=Point2D(x=(minx + maxx) / 2, y=maxy),
-        connects=[living.id, balcony.id],
-    )
-    win = Window(wall_id="ext", position=Point2D(x=(minx + maxx) / 2, y=maxy + 1.2), width=1.5)
+    new_boundary = Boundary(exterior=to_points(new_b))
+    cx = (minx + maxx) / 2
+    door = make_door_line((cx - 0.45, maxy), (cx + 0.45, maxy), connects=[living.id, balcony.id])
+    win = make_window_line((cx - 0.75, maxy + 1.2), (cx + 0.75, maxy + 1.2), room_ids=[balcony.id])
     return _new_plan(
         name=plan.name,
-        boundary=boundary,
         rooms=list(plan.rooms) + [balcony],
-        walls=plan.walls,
         doors=list(plan.doors) + [door],
         windows=list(plan.windows) + [win],
+        boundary=new_boundary,
+        walls=plan.walls,
         zones=plan.zones,
         constraint_graph=plan.constraint_graph,
         metadata={**plan.metadata, "mutation": "insert_balcony"},
@@ -250,15 +270,15 @@ def mutate_insert_toilet(plan: FloorPlan, rng: random.Random) -> FloorPlan:
         return plan
     minx, miny, maxx, maxy = bounding_box(hall.coords())
     coords = rect(maxx, miny, 1.2, 1.4)
-    powder = Room(name="Powder", room_type=RoomType.POWDER, polygon=to_points(coords), zone=ZoneType.WET)
-    door = Door(wall_id="internal", position=Point2D(x=maxx, y=miny + 0.7), connects=[hall.id, powder.id])
+    powder = make_room("Powder", coords, room_type=RoomType.POWDER, zone=ZoneType.WET)
+    door = make_door_line((maxx, miny + 0.3), (maxx, miny + 1.1), connects=[hall.id, powder.id])
     return _new_plan(
         name=plan.name,
-        boundary=plan.boundary,
         rooms=list(plan.rooms) + [powder],
-        walls=plan.walls,
         doors=list(plan.doors) + [door],
         windows=plan.windows,
+        boundary=plan.boundary,
+        walls=plan.walls,
         zones=plan.zones,
         constraint_graph=plan.constraint_graph,
         metadata={**plan.metadata, "mutation": "insert_toilet"},
@@ -266,7 +286,7 @@ def mutate_insert_toilet(plan: FloorPlan, rng: random.Random) -> FloorPlan:
 
 
 def mutate_move_wall(plan: FloorPlan, rng: random.Random) -> FloorPlan:
-    """Nudge a non-circulation room by a small translation (proxy for wall move)."""
+    """Nudge a non-entry room by a small translation (proxy for wall move)."""
     candidates = [r for r in plan.rooms if r.room_type not in (RoomType.ENTRY,)]
     if not candidates:
         return plan
@@ -340,9 +360,7 @@ def mutate_pipeline(
         meta["score"] = score_plan(mutated).overall
         history.append(meta)
         if require_valid and not valid:
-            # reject, keep current
             continue
         current = mutated
-        # accept first successful valid mutation
         return current, history, True
     return current, history, current.id != plan.id
