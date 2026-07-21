@@ -48,6 +48,16 @@ uv run floorplan dataset -n 20 --out ../floorplan_dataset
 
 Open the viewer: `frontend/public/floorplan-viewer.html` (expects API at `http://localhost:8000`).
 
+## Dev scripts
+
+```bash
+# Generate JSON + PNG into a folder
+uv run --directory backend python ../dev/generate_floorplans.py --out ../dev/output -n 5
+
+# Score that folder → README.md with embedded images + human-readable reports
+uv run --directory backend python ../dev/score_floorplans.py --dir ../dev/output
+```
+
 ## V1 capabilities
 
 | Capability | Status |
