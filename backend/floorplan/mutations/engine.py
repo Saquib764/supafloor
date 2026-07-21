@@ -16,6 +16,7 @@ from floorplan.geometry.authors import make_door_line, make_room, make_window_li
 from floorplan.geometry.ops import bounding_box, rect, rotate, scale, to_points, translate
 from floorplan.schemas.enums import MutationOp, RoomType, ZoneType
 from floorplan.schemas.models import Boundary, FloorPlan, Point2D, Room, _uid
+from floorplan.services.reconcile import reconcile_plan
 
 
 def _new_plan(**kwargs) -> FloorPlan:
@@ -326,10 +327,12 @@ def mutate_pipeline(
         if not meta.get("applied"):
             history.append(meta)
             continue
+        mutated = reconcile_plan(mutated)
         scores = score_plan(mutated)
         valid = not hard_failures(scores.rules)
         meta["valid"] = valid
         meta["score"] = scores.overall
+        meta["reconciled"] = True
         history.append(meta)
         if require_valid and not valid:
             continue

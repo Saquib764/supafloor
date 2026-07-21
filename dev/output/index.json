@@ -1,28 +1,46 @@
 [
   {
-    "id": "5d8872a8ebe9",
+    "id": "21945ddf9f28",
     "template_id": "studio",
     "name": "Studio",
-    "json": "5d8872a8ebe9.json",
-    "png": "5d8872a8ebe9.png",
+    "json": "21945ddf9f28.json",
+    "png": "21945ddf9f28.png",
     "valid": false,
     "room_count": 3
   },
   {
-    "id": "aea1372a8555",
+    "id": "48b5abc590e9",
     "template_id": "compact_2bed",
     "name": "Compact 2 Bedroom",
-    "json": "aea1372a8555.json",
-    "png": "aea1372a8555.png",
+    "json": "48b5abc590e9.json",
+    "png": "48b5abc590e9.png",
     "valid": true,
     "room_count": 7
   },
   {
-    "id": "ba92c036e2a3",
+    "id": "5de03137da2e",
     "template_id": "luxury_2bed",
     "name": "Luxury 2 Bedroom",
-    "json": "ba92c036e2a3.json",
-    "png": "ba92c036e2a3.png",
+    "json": "5de03137da2e.json",
+    "png": "5de03137da2e.png",
+    "valid": false,
+    "room_count": 10
+  },
+  {
+    "id": "22911d59fc4e",
+    "template_id": "3bed",
+    "name": "3 Bedroom",
+    "json": "22911d59fc4e.json",
+    "png": "22911d59fc4e.png",
+    "valid": false,
+    "room_count": 10
+  },
+  {
+    "id": "62e0579348e8",
+    "template_id": "3bed_corner",
+    "name": "3 Bedroom Corner",
+    "json": "62e0579348e8.json",
+    "png": "62e0579348e8.png",
     "valid": false,
     "room_count": 10
   }

@@ -11,6 +11,7 @@ from floorplan.renderer import render_plan
 from floorplan.schemas.enums import MutationOp
 from floorplan.schemas.models import Boundary, FloorPlan
 from floorplan.services.boundary_adapt import adapt_to_boundary, generate_boundary
+from floorplan.services.reconcile import reconcile_plan
 from floorplan.templates import get_template, instantiate_template, list_templates
 from floorplan.topology import build_adjacency, room_metrics
 
@@ -29,6 +30,9 @@ class FloorPlanEngine:
 
     def adapt(self, plan: FloorPlan, boundary: Boundary) -> FloorPlan:
         return adapt_to_boundary(plan, boundary)
+
+    def reconcile(self, plan: FloorPlan) -> FloorPlan:
+        return reconcile_plan(plan)
 
     def make_boundary(self, width: float = 10.0, depth: float = 8.0, shape: str = "rect") -> Boundary:
         return generate_boundary(width=width, depth=depth, shape=shape)

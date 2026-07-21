@@ -49,7 +49,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Not a directory: {target}", file=sys.stderr)
         return 1
 
-    json_files = sorted(p for p in target.glob("*.json") if p.name != "index.json")
+    json_files = sorted(
+        p
+        for p in target.glob("*.json")
+        if p.name not in ("index.json", "scores_index.json") and not p.name.endswith(".score.json")
+    )
     if not json_files:
         print(f"No plan JSON files found in {target}", file=sys.stderr)
         return 1

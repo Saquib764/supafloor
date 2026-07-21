@@ -12,6 +12,7 @@ from floorplan.renderer import render_plan
 from floorplan.schemas.enums import MutationOp
 from floorplan.schemas.models import DatasetSample, FloorPlan
 from floorplan.services.boundary_adapt import adapt_to_boundary, generate_boundary
+from floorplan.services.reconcile import reconcile_plan
 from floorplan.templates import get_template, instantiate_template, list_templates
 from floorplan.topology import (
     constraint_graph_from_plan,
@@ -31,11 +32,12 @@ def generate_sample(
     mutate: bool = True,
     include_renders: bool = True,
 ) -> DatasetSample:
-    """Choose Template → Boundary → Fit → Mutate → Validate → Evaluate → Render → Export."""
+    """Choose Template → Boundary → Fit → Reconcile → Mutate → Reconcile → Evaluate → Render."""
     template = get_template(template_id)
     plan = instantiate_template(template_id, width=width, depth=depth)
     boundary = generate_boundary(width=width, depth=depth, shape=boundary_shape)
     plan = adapt_to_boundary(plan, boundary)
+    plan = reconcile_plan(plan)
 
     history: list[dict[str, Any]] = []
     if mutate:
@@ -45,6 +47,7 @@ def generate_sample(
             seed=seed,
             require_valid=True,
         )
+        # mutate_pipeline already reconciles accepted mutations
 
     scores = score_plan(plan)
     topology = constraint_graph_from_plan(plan)
