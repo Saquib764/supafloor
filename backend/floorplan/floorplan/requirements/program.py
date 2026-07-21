@@ -9,7 +9,7 @@ from typing import Any
 def space_names_for(total_rooms: int, rng: random.Random) -> list[str]:
     """total_rooms = count of Room N (or Living/Sleeping when 1)."""
     n = max(1, int(total_rooms))
-    names: list[str] = ["Entry"]
+    names: list[str] = []
 
     if n == 1:
         names.append("Living/Sleeping")

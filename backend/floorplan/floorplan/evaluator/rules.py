@@ -122,12 +122,12 @@ def rule_boundary_containment(plan: FloorPlan) -> RuleResult:
 
 def rule_minimum_area(plan: FloorPlan) -> RuleResult:
     mins = {
-        RoomType.LIVING: 12.0,
-        RoomType.BEDROOM: 7.0,
-        RoomType.MASTER_BEDROOM: 10.0,
-        RoomType.KITCHEN: 4.0,
-        RoomType.BATHROOM: 3.0,
-        RoomType.DINING: 6.0,
+        RoomType.LIVING: 129.0,
+        RoomType.BEDROOM: 75.0,
+        RoomType.MASTER_BEDROOM: 108.0,
+        RoomType.KITCHEN: 43.0,
+        RoomType.BATHROOM: 32.0,
+        RoomType.DINING: 65.0,
     }
     fails = []
     for room in plan.rooms:
@@ -145,12 +145,12 @@ def rule_minimum_area(plan: FloorPlan) -> RuleResult:
 
 def rule_minimum_width(plan: FloorPlan) -> RuleResult:
     mins = {
-        RoomType.LIVING: 2.8,
-        RoomType.BEDROOM: 2.2,
-        RoomType.MASTER_BEDROOM: 2.6,
-        RoomType.BATHROOM: 1.2,
-        RoomType.KITCHEN: 1.6,
-        RoomType.HALLWAY: 0.9,
+        RoomType.LIVING: 9.2,
+        RoomType.BEDROOM: 7.2,
+        RoomType.MASTER_BEDROOM: 8.5,
+        RoomType.BATHROOM: 4.0,
+        RoomType.KITCHEN: 5.2,
+        RoomType.HALLWAY: 3.0,
     }
     fails = []
     for room in plan.rooms:
@@ -266,7 +266,7 @@ def rule_living_size(plan: FloorPlan) -> RuleResult:
     if not living:
         return _soft("living_size", "Living Size", 3.0, "No living room", "Add living room")
     a = max(area(r.coords()) for r in living)
-    score = min(10.0, a / 2.0)  # 20 ft² -> 10
+    score = min(10.0, a / 22.0)  # ~220 ft² living -> 10
     return _soft("living_size", "Living Size", score, f"Living area {a:.1f} ft²", "Expand living room")
 
 

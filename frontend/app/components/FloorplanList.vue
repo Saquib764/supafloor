@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { FLOORPLAN_AREA_UNIT, FLOORPLAN_TARGET_AREAS_SQFT } from '~/types/floorplan'
+
 export interface FloorplanEntry {
   id: string
   label: string
@@ -13,15 +15,17 @@ const props = defineProps<{
   deletingId?: string | null
   generating?: boolean
   roomOptions?: number[]
+  areaOptions?: number[]
 }>()
 
 const emit = defineEmits<{
   (e: 'select', id: string): void
-  (e: 'generate', totalRooms: number): void
+  (e: 'generate', payload: { totalRooms: number, targetArea: number }): void
   (e: 'delete', id: string): void
 }>()
 
 const rooms = ref(3)
+const targetArea = ref<number>(FLOORPLAN_TARGET_AREAS_SQFT[1])
 
 watch(
   () => props.items.find(i => i.id === props.selectedId)?.totalRooms,
@@ -56,11 +60,21 @@ watch(
           color="primary"
           :loading="generating"
           :disabled="generating"
-          @click="emit('generate', Number(rooms))"
+          @click="emit('generate', { totalRooms: Number(rooms), targetArea: Number(targetArea) })"
         >
           Generate
         </UButton>
       </div>
+
+      <USelect
+        v-model="targetArea"
+        :items="(areaOptions ?? [...FLOORPLAN_TARGET_AREAS_SQFT]).map(a => ({
+          label: `${a.toLocaleString()} ${FLOORPLAN_AREA_UNIT}`,
+          value: a,
+        }))"
+        value-key="value"
+        size="sm"
+      />
     </div>
 
     <ul class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">

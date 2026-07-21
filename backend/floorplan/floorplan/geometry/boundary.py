@@ -10,6 +10,7 @@ from shapely.geometry import Polygon, box
 from shapely.validation import make_valid
 
 from floorplan.geometry.ops import to_points
+from floorplan.constants import TARGET_AREAS_SQFT, pick_target_area
 from floorplan.schemas.models import Boundary
 
 _CORNERS = ("sw", "se", "ne", "nw")
@@ -124,13 +125,13 @@ def sample_boundary_params(
     rng: random.Random,
     *,
     target_area: Optional[float] = None,
-    area_min: float = 45.0,
-    area_max: float = 110.0,
+    area_min: float = TARGET_AREAS_SQFT[0],
+    area_max: float = TARGET_AREAS_SQFT[-1],
 ) -> dict[str, Any]:
     """Sample parameter-side choices for a notched boundary (no geometry output)."""
     if target_area is None:
-        target_area = float(rng.randint(int(area_min), int(area_max)))
-    target_area = max(float(target_area), 16.0)
+        target_area = pick_target_area(rng=rng)
+    target_area = max(float(target_area), float(TARGET_AREAS_SQFT[0]))
     aspect = rng.uniform(0.75, 1.4)
     w = max(6, int(round(math.sqrt(target_area * aspect))))
     h = max(6, int(round(target_area / w)))
@@ -157,8 +158,8 @@ def generate_notched_boundary(
     rng: random.Random,
     *,
     target_area: Optional[float] = None,
-    area_min: float = 45.0,
-    area_max: float = 110.0,
+    area_min: float = TARGET_AREAS_SQFT[0],
+    area_max: float = TARGET_AREAS_SQFT[-1],
     max_attempts: int = 24,
 ) -> tuple[Boundary, dict[str, Any]]:
     """Sample params + apply. Meta includes both parameter fields and generated polygon."""

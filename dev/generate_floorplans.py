@@ -37,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from floorplan.dataset import generate_sample
     from floorplan.renderer import render_png
+    from floorplan.constants import pick_target_area
 
     out: Path = args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -49,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         rooms = args.rooms if args.rooms is not None else 1 + (i % 4)
         sample = generate_sample(
             rooms,
-            target_area=args.area if args.area is not None else 45.0 + (i % 7) * 8.0,
+            target_area=args.area if args.area is not None else pick_target_area(index=i),
             seed=args.seed + i,
             mutate=not args.no_mutate,
             include_renders=False,

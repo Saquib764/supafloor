@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 # Keys are name roots: "Room 1" → "Room", "Living/Sleeping" → "Living/Sleeping"
+# Values are absolute ft²; one option is chosen at random when placing.
 AREA_OPTIONS: dict[str, tuple[float, float, float]] = {
-    "Living/Sleeping": (18.0, 22.0, 28.0),
-    "Living": (16.0, 20.0, 26.0),
-    "Room": (9.0, 12.0, 15.0),
-    "Toilet": (2.0, 3.0, 4.0),
-    "Bathroom": (4.0, 5.0, 6.0),
-    "Kitchen": (5.0, 7.0, 9.0),
-    "Dining": (6.0, 8.0, 10.0),
-    "Hall": (3.0, 4.0, 6.0),
-    "Entry": (1.5, 2.0, 3.0),
-    "Closet": (1.0, 2.0, 3.0),
-    "Balcony": (3.0, 5.0, 7.0),
-    "Laundry": (2.0, 3.0, 4.0),
-    "Garage": (10.0, 14.0, 18.0),
+    "Living/Sleeping": (200.0, 250.0, 320.0),
+    "Living": (180.0, 220.0, 280.0),
+    "Room": (100.0, 130.0, 160.0),
+    "Toilet": (25.0, 35.0, 45.0),
+    "Bathroom": (45.0, 60.0, 75.0),
+    "Kitchen": (80.0, 100.0, 120.0),
+    "Dining": (100.0, 120.0, 150.0),
+    "Hall": (35.0, 50.0, 70.0),
+    "Closet": (12.0, 20.0, 30.0),
+    "Balcony": (40.0, 60.0, 90.0),
+    "Laundry": (25.0, 35.0, 50.0),
+    "Garage": (200.0, 280.0, 360.0),
 }
 
 
@@ -29,4 +29,4 @@ def name_root(name: str) -> str:
 
 
 def area_options_for(name: str) -> tuple[float, float, float]:
-    return AREA_OPTIONS.get(name_root(name), (6.0, 8.0, 10.0))
+    return AREA_OPTIONS.get(name_root(name), (80.0, 100.0, 120.0))

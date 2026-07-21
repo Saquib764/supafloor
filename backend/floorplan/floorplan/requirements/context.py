@@ -7,7 +7,7 @@ import random
 from typing import Any
 from uuid import uuid4
 
-from shapely.geometry import Polygon, box
+from shapely.geometry import Point, Polygon, box
 from shapely.ops import unary_union
 
 from floorplan.geometry.authors import make_room
@@ -33,7 +33,6 @@ _NAME_TO_TYPE: dict[str, RoomType] = {
     "Kitchen": RoomType.KITCHEN,
     "Dining": RoomType.DINING,
     "Hall": RoomType.HALLWAY,
-    "Entry": RoomType.ENTRY,
     "Closet": RoomType.CLOSET,
     "Balcony": RoomType.BALCONY,
     "Laundry": RoomType.LAUNDRY,
@@ -49,7 +48,6 @@ _NAME_TO_ZONE: dict[str, ZoneType] = {
     "Kitchen": ZoneType.SERVICE,
     "Dining": ZoneType.PUBLIC,
     "Hall": ZoneType.CIRCULATION,
-    "Entry": ZoneType.CIRCULATION,
     "Closet": ZoneType.PRIVATE,
     "Balcony": ZoneType.OUTDOOR,
     "Laundry": ZoneType.SERVICE,
@@ -82,28 +80,348 @@ def _rect_for_area(area: float, rng: random.Random) -> tuple[int, int]:
     return w, h
 
 
-def _sample_rect(
+def _size_options(area: float, rng: random.Random) -> list[tuple[int, int]]:
+    w, h = _rect_for_area(area, rng)
+    if w == h:
+        return [(w, h)]
+    return [(w, h), (h, w)]
+
+
+def _pick_boundary_room(names: list[str], rng: random.Random) -> str:
+    options: list[str] = []
+    if "Hall" in names:
+        options.append("Hall")
+    if "Living" in names:
+        options.append("Living")
+    if "Living/Sleeping" in names:
+        options.append("Living/Sleeping")
+    return rng.choice(options) if options else "Living"
+
+
+def _rect_touches_boundary(rect: Polygon, boundary_poly: Polygon, tol: float = 1e-6) -> bool:
+    inter = rect.boundary.intersection(boundary_poly.boundary)
+    return inter.length > tol
+
+
+def _inward_probe(x0: float, y0: float, x1: float, y1: float, boundary_poly: Polygon) -> tuple[float, float]:
+    mx, my = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    dx, dy = x1 - x0, y1 - y0
+    nx, ny = -dy, dx
+    norm = math.hypot(nx, ny) or 1.0
+    nx, ny = nx / norm, ny / norm
+    if boundary_poly.contains(Point(mx + nx * 0.5, my + ny * 0.5)):
+        return nx, ny
+    return -nx, -ny
+
+
+def _sample_room_at_boundary(
     area: float,
     rng: random.Random,
-    bounds: tuple[float, float, float, float],
+    boundary_poly: Polygon,
 ) -> dict[str, Any]:
+    """Place a room flush against the unit boundary."""
+    coords = list(boundary_poly.exterior.coords)
+    candidates: list[dict[str, Any]] = []
+
+    for span, depth in _size_options(area, rng):
+        for i in range(len(coords) - 1):
+            x0, y0 = coords[i]
+            x1, y1 = coords[i + 1]
+            ix, iy = _inward_probe(x0, y0, x1, y1, boundary_poly)
+
+            if abs(y1 - y0) < 1e-9:
+                y_edge = y0
+                x_lo, x_hi = int(min(x0, x1)), int(max(x0, x1))
+                if x_hi - x_lo < span:
+                    continue
+                y0_in = y_edge if iy > 0 else y_edge - depth
+                y1_in = y_edge + depth if iy > 0 else y_edge
+                for x in range(x_lo, x_hi - span + 1):
+                    rect = box(x, y0_in, x + span, y1_in)
+                    if _rect_touches_boundary(rect, boundary_poly):
+                        candidates.append(
+                            {"x": x, "y": int(y0_in), "w": span, "h": depth, "area": float(span * depth)}
+                        )
+            elif abs(x1 - x0) < 1e-9:
+                x_edge = x0
+                y_lo, y_hi = int(min(y0, y1)), int(max(y0, y1))
+                if y_hi - y_lo < span:
+                    continue
+                x0_in = x_edge if ix > 0 else x_edge - depth
+                x1_in = x_edge + depth if ix > 0 else x_edge
+                for y in range(y_lo, y_hi - span + 1):
+                    rect = box(x0_in, y, x1_in, y + span)
+                    if _rect_touches_boundary(rect, boundary_poly):
+                        candidates.append(
+                            {"x": int(x0_in), "y": y, "w": depth, "h": span, "area": float(span * depth)}
+                        )
+
+    if candidates:
+        return rng.choice(candidates)
     w, h = _rect_for_area(area, rng)
-    minx, miny, maxx, maxy = bounds
-    x_lo = int(math.floor(minx - w * 0.25))
-    x_hi = int(math.ceil(maxx - w * 0.75))
-    y_lo = int(math.floor(miny - h * 0.25))
-    y_hi = int(math.ceil(maxy - h * 0.75))
-    if x_hi < x_lo:
-        x_lo, x_hi = int(minx), int(minx)
-    if y_hi < y_lo:
-        y_lo, y_hi = int(miny), int(miny)
-    return {
-        "x": rng.randint(x_lo, x_hi),
-        "y": rng.randint(y_lo, y_hi),
-        "w": w,
-        "h": h,
-        "area": float(w * h),
+    return {"x": 0, "y": 0, "w": w, "h": h, "area": float(w * h)}
+
+
+def _finalize_space_geom(geom: Polygon | None, name: str) -> dict[str, Any] | None:
+    if geom is None or geom.area < _MIN_SPACE_AREA:
+        return {"name": name, "polygon": [], "area": 0.0, "dropped": "invalid"}
+    if not is_manhattan(list(geom.exterior.coords[:-1])):
+        geom = _largest_polygon(Polygon(force_manhattan(list(geom.exterior.coords[:-1]))))
+    if geom is None or geom.area < _MIN_SPACE_AREA:
+        return {"name": name, "polygon": [], "area": 0.0, "dropped": "invalid"}
+    return {"name": name, "polygon": _poly_points(geom), "area": round(float(geom.area), 3)}
+
+
+def _place_rect_geom(
+    rect: dict[str, Any],
+    boundary_poly: Polygon,
+    occupied: list[Polygon],
+) -> tuple[Polygon | None, str | None]:
+    geom = box(rect["x"], rect["y"], rect["x"] + rect["w"], rect["y"] + rect["h"])
+    geom = _largest_polygon(geom.intersection(boundary_poly))
+    if geom is None:
+        return None, "outside_boundary"
+    if occupied:
+        geom = _largest_polygon(geom.difference(unary_union(occupied)))
+    if geom is None or geom.area < _MIN_SPACE_AREA:
+        return None, "overlap"
+    return geom, None
+
+
+def _rect_dict(x: int, y: int, w: int, h: int) -> dict[str, Any]:
+    return {"x": x, "y": y, "w": w, "h": h, "area": float(w * h)}
+
+
+def _box_from_rect(rect: dict[str, Any]) -> Polygon:
+    return box(rect["x"], rect["y"], rect["x"] + rect["w"], rect["y"] + rect["h"])
+
+
+def _placement_order(names: list[str], boundary_room: str) -> list[str]:
+    def sort_key(name: str) -> tuple[int, int]:
+        if name == boundary_room:
+            return (0, 0)
+        root = name_root(name)
+        fixed = {
+            "Living": 2,
+            "Living/Sleeping": 2,
+            "Kitchen": 3,
+            "Dining": 4,
+            "Hall": 5,
+            "Bathroom": 8,
+            "Toilet": 9,
+            "Closet": 10,
+            "Balcony": 11,
+            "Laundry": 12,
+            "Garage": 13,
+        }
+        if root == "Room":
+            parts = name.rsplit(" ", 1)
+            n = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
+            return (6, n)
+        return (fixed.get(root, 7), 0)
+
+    return sorted(names, key=sort_key)
+
+
+def _preferred_neighbors(name: str, boundary_room: str) -> list[str]:
+    root = name_root(name)
+    prefs: dict[str, list[str]] = {
+        "Kitchen": ["Living", "Living/Sleeping", "Dining", "Hall"],
+        "Dining": ["Living", "Living/Sleeping", "Kitchen"],
+        "Hall": ["Living", "Living/Sleeping", boundary_room],
+        "Bathroom": ["Hall", "Kitchen", boundary_room],
+        "Toilet": ["Bathroom", "Hall"],
+        "Room": ["Hall", "Living", "Living/Sleeping", boundary_room],
+        "Closet": ["Room", "Hall"],
+        "Balcony": ["Living", "Living/Sleeping", "Kitchen"],
+        "Laundry": ["Kitchen", "Bathroom"],
+        "Garage": [boundary_room, "Hall"],
     }
+    return prefs.get(root, [])
+
+
+def _needs_exterior(name: str) -> bool:
+    root = name_root(name)
+    return root in ("Room", "Living", "Living/Sleeping", "Balcony")
+
+
+def _free_polygon(boundary_poly: Polygon, occupied_rects: list[dict[str, Any]]) -> Polygon | None:
+    if not occupied_rects:
+        return boundary_poly
+    occupied = unary_union([_box_from_rect(r) for r in occupied_rects])
+    return _largest_polygon(boundary_poly.difference(occupied))
+
+
+def _enumerate_flush_in_free(
+    free_poly: Polygon,
+    span: int,
+    depth: int,
+    *,
+    boundary_poly: Polygon | None = None,
+    require_boundary: bool = False,
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    coords = list(free_poly.exterior.coords)
+
+    for i in range(len(coords) - 1):
+        x0, y0 = coords[i]
+        x1, y1 = coords[i + 1]
+        ix, iy = _inward_probe(x0, y0, x1, y1, free_poly)
+
+        if abs(y1 - y0) < 1e-9:
+            y_edge = y0
+            x_lo, x_hi = int(min(x0, x1)), int(max(x0, x1))
+            if x_hi - x_lo < span:
+                continue
+            y0_in = y_edge if iy > 0 else y_edge - depth
+            for x in range(x_lo, x_hi - span + 1):
+                rect = box(x, y0_in, x + span, y0_in + depth)
+                if not free_poly.covers(rect):
+                    continue
+                if require_boundary and boundary_poly is not None and not _rect_touches_boundary(rect, boundary_poly):
+                    continue
+                candidates.append(_rect_dict(x, int(y0_in), span, depth))
+        elif abs(x1 - x0) < 1e-9:
+            x_edge = x0
+            y_lo, y_hi = int(min(y0, y1)), int(max(y0, y1))
+            if y_hi - y_lo < span:
+                continue
+            x0_in = x_edge if ix > 0 else x_edge - depth
+            for y in range(y_lo, y_hi - span + 1):
+                rect = box(x0_in, y, x0_in + depth, y + span)
+                if not free_poly.covers(rect):
+                    continue
+                if require_boundary and boundary_poly is not None and not _rect_touches_boundary(rect, boundary_poly):
+                    continue
+                candidates.append(_rect_dict(int(x0_in), y, depth, span))
+
+    return candidates
+
+
+def _enumerate_against_rects(free_poly: Polygon, w: int, h: int, rects: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[int, int, int, int]] = set()
+
+    def add(x: int, y: int) -> None:
+        key = (x, y, w, h)
+        if key in seen:
+            return
+        rect = box(x, y, x + w, y + h)
+        if free_poly.covers(rect):
+            seen.add(key)
+            candidates.append(_rect_dict(x, y, w, h))
+
+    for occ in rects:
+        ox, oy, ow, oh = occ["x"], occ["y"], occ["w"], occ["h"]
+        x_right = ox + ow
+        for y in range(oy - h + 1, oy + oh):
+            add(x_right, y)
+        x_left = ox - w
+        for y in range(oy - h + 1, oy + oh):
+            add(x_left, y)
+        y_below = oy + oh
+        for x in range(ox - w + 1, ox + ow):
+            add(x, y_below)
+        y_above = oy - h
+        for x in range(ox - w + 1, ox + ow):
+            add(x, y_above)
+
+    return candidates
+
+
+def _score_rect_candidate(
+    rect: dict[str, Any],
+    name: str,
+    target_area: float,
+    boundary_poly: Polygon,
+    placed_polys: dict[str, Polygon],
+    preferred: list[str],
+) -> float:
+    geom = _box_from_rect(rect)
+    score = 0.0
+
+    area_ratio = geom.area / max(target_area, 1.0)
+    if 0.85 <= area_ratio <= 1.25:
+        score += 2.0
+    elif area_ratio < 0.85:
+        score += area_ratio * 1.5
+    else:
+        score += 1.0
+
+    if _needs_exterior(name):
+        if _rect_touches_boundary(geom, boundary_poly):
+            score += 3.0
+        else:
+            score -= 1.5
+
+    if name_root(name) == "Balcony" and not _rect_touches_boundary(geom, boundary_poly):
+        score -= 5.0
+
+    for pref in preferred:
+        pref_geom = placed_polys.get(pref)
+        if pref_geom is None:
+            continue
+        if geom.boundary.intersection(pref_geom.boundary).length > 0.5:
+            score += 4.0
+
+    return score
+
+
+def _fallback_rect(area: float, rng: random.Random, free_poly: Polygon) -> dict[str, Any]:
+    w, h = _rect_for_area(area, rng)
+    minx, miny, maxx, maxy = (int(v) for v in free_poly.bounds)
+    w = min(w, max(1, maxx - minx))
+    h = min(h, max(1, maxy - miny))
+    x_hi = max(minx, maxx - w)
+    y_hi = max(miny, maxy - h)
+    for _ in range(24):
+        x = rng.randint(minx, x_hi) if x_hi >= minx else minx
+        y = rng.randint(miny, y_hi) if y_hi >= miny else miny
+        if free_poly.covers(box(x, y, x + w, y + h)):
+            return _rect_dict(x, y, w, h)
+    return _rect_dict(minx, miny, w, h)
+
+
+def _best_rect_for_space(
+    name: str,
+    area: float,
+    free_poly: Polygon,
+    boundary_poly: Polygon,
+    placed_polys: dict[str, Polygon],
+    occupied_rects: list[dict[str, Any]],
+    boundary_room: str,
+    rng: random.Random,
+) -> dict[str, Any]:
+    preferred = _preferred_neighbors(name, boundary_room)
+    require_boundary = name_root(name) == "Balcony"
+    seen: set[tuple[int, int, int, int]] = set()
+    scored: list[tuple[float, dict[str, Any]]] = []
+
+    for w, h in _size_options(area, rng):
+        candidates = _enumerate_flush_in_free(
+            free_poly,
+            w,
+            h,
+            boundary_poly=boundary_poly,
+            require_boundary=require_boundary,
+        )
+        candidates.extend(_enumerate_against_rects(free_poly, w, h, occupied_rects))
+
+        for rect in candidates:
+            key = (rect["x"], rect["y"], rect["w"], rect["h"])
+            if key in seen:
+                continue
+            seen.add(key)
+            s = _score_rect_candidate(rect, name, area, boundary_poly, placed_polys, preferred)
+            scored.append((s, rect))
+
+    if not scored:
+        return _fallback_rect(area, rng, free_poly)
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    best = scored[0][0]
+    top = [rect for s, rect in scored if s >= best - 0.5][:5]
+    return rng.choice(top)
 
 
 def run_generation(parameters: dict[str, Any]) -> dict[str, Any]:
@@ -111,27 +429,51 @@ def run_generation(parameters: dict[str, Any]) -> dict[str, Any]:
     boundary, boundary_gen = boundary_from_params(parameters["start_rect"], parameters.get("notches") or [])
     boundary_poly = Polygon([(p.x, p.y) for p in boundary.exterior])
 
-    spaces: list[dict[str, Any]] = []
+    rectangles = parameters.get("rectangles") or []
+    boundary_room = parameters.get("boundary_room") or parameters.get("entry_host")
+    geoms: dict[str, Polygon] = {}
+    dropped: dict[str, str] = {}
     occupied: list[Polygon] = []
-    for rect in parameters.get("rectangles") or []:
+
+    def _place_room(rect: dict[str, Any]) -> None:
         name = rect["name"]
-        geom = box(rect["x"], rect["y"], rect["x"] + rect["w"], rect["y"] + rect["h"])
-        geom = _largest_polygon(geom.intersection(boundary_poly))
+        geom, reason = _place_rect_geom(rect, boundary_poly, occupied)
         if geom is None:
-            spaces.append({"name": name, "polygon": [], "area": 0.0, "dropped": "outside_boundary"})
+            dropped[name] = reason or "invalid"
+            return
+        geoms[name] = geom
+        occupied.append(geom)
+
+    for rect in rectangles:
+        name = rect["name"]
+        if name != boundary_room:
             continue
-        if occupied:
-            geom = _largest_polygon(geom.difference(unary_union(occupied)))
-        if geom is None or geom.area < _MIN_SPACE_AREA:
-            spaces.append({"name": name, "polygon": [], "area": 0.0, "dropped": "overlap"})
+        geom, reason = _place_rect_geom(rect, boundary_poly, occupied)
+        if geom is None or not _rect_touches_boundary(geom, boundary_poly):
+            dropped[name] = reason or "invalid"
+            break
+        geoms[name] = geom
+        occupied.append(geom)
+        break
+
+    for rect in rectangles:
+        name = rect["name"]
+        if name == boundary_room or name in dropped:
             continue
-        if not is_manhattan(list(geom.exterior.coords[:-1])):
-            geom = _largest_polygon(Polygon(force_manhattan(list(geom.exterior.coords[:-1]))))
-        if geom is None or geom.area < _MIN_SPACE_AREA:
+        _place_room(rect)
+
+    spaces: list[dict[str, Any]] = []
+    for rect in rectangles:
+        name = rect["name"]
+        if name in dropped:
+            spaces.append({"name": name, "polygon": [], "area": 0.0, "dropped": dropped[name]})
+            continue
+        geom = geoms.get(name)
+        if geom is None:
             spaces.append({"name": name, "polygon": [], "area": 0.0, "dropped": "invalid"})
             continue
-        spaces.append({"name": name, "polygon": _poly_points(geom), "area": round(float(geom.area), 3)})
-        occupied.append(geom)
+        finalized = _finalize_space_geom(geom, name)
+        spaces.append(finalized or {"name": name, "polygon": [], "area": 0.0, "dropped": "invalid"})
 
     return {"boundary": boundary_gen, "spaces": spaces}
 
@@ -145,19 +487,49 @@ def sample_parameters(
     """Sample all RNG choices needed to recreate geometry later."""
     rng = random.Random(seed)
     boundary_params = sample_boundary_params(rng, target_area=target_area)
-    # Bounds for placement use the start rect bbox (deterministic before notches)
-    sr = boundary_params["start_rect"]
-    bounds = (0.0, 0.0, float(sr["w"]), float(sr["h"]))
 
     names = space_names_for(total_rooms, rng)
+    boundary_room = _pick_boundary_room(names, rng)
+
+    boundary, _ = boundary_from_params(
+        boundary_params["start_rect"], boundary_params.get("notches") or []
+    )
+    boundary_poly = Polygon([(p.x, p.y) for p in boundary.exterior])
+
     selected_areas: dict[str, float] = {}
-    rectangles: list[dict[str, Any]] = []
     for name in names:
-        chosen = float(rng.choice(area_options_for(name)))
-        selected_areas[name] = chosen
-        rect = _sample_rect(chosen, rng, bounds)
+        selected_areas[name] = float(rng.choice(area_options_for(name)))
+
+    boundary_rect = _sample_room_at_boundary(selected_areas[boundary_room], rng, boundary_poly)
+    boundary_rect["name"] = boundary_room
+
+    rectangles_by_name: dict[str, dict[str, Any]] = {boundary_room: boundary_rect}
+    occupied_rects: list[dict[str, Any]] = [boundary_rect]
+    placed_polys: dict[str, Polygon] = {boundary_room: _box_from_rect(boundary_rect)}
+
+    for name in _placement_order(names, boundary_room):
+        if name in rectangles_by_name:
+            continue
+        free_poly = _free_polygon(boundary_poly, occupied_rects)
+        if free_poly is None or free_poly.area < selected_areas[name] * 0.4:
+            rect = _fallback_rect(selected_areas[name], rng, boundary_poly)
+        else:
+            rect = _best_rect_for_space(
+                name,
+                selected_areas[name],
+                free_poly,
+                boundary_poly,
+                placed_polys,
+                occupied_rects,
+                boundary_room,
+                rng,
+            )
         rect["name"] = name
-        rectangles.append(rect)
+        rectangles_by_name[name] = rect
+        occupied_rects.append(rect)
+        placed_polys[name] = _box_from_rect(rect)
+
+    rectangles = [rectangles_by_name[name] for name in names]
 
     return {
         "seed": seed,
@@ -167,6 +539,7 @@ def sample_parameters(
         "start_rect": boundary_params["start_rect"],
         "notches": boundary_params["notches"],
         "space_names": names,
+        "boundary_room": boundary_room,
         "selected_areas": selected_areas,
         "rectangles": rectangles,
         "area_library": {root: list(opts) for root, opts in AREA_OPTIONS.items()},

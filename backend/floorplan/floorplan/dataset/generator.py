@@ -14,6 +14,7 @@ from floorplan.requirements import (
     document_to_plan,
     recreate_document,
 )
+from floorplan.constants import pick_target_area
 from floorplan.schemas.models import DatasetSample
 from floorplan.topology import (
     constraint_graph_from_plan,
@@ -108,7 +109,7 @@ def generate_dataset(
         rooms = total_rooms if total_rooms is not None else 1 + (attempts % 4)
         sample = generate_sample(
             rooms,
-            target_area=45.0 + (attempts % 7) * 8.0,
+            target_area=pick_target_area(index=attempts),
             seed=seed + attempts,
             include_renders=include_renders,
             save=False,

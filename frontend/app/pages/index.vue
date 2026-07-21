@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FloorplanEntry } from '~/components/FloorplanList.vue'
+import { FLOORPLAN_TARGET_AREAS_SQFT } from '~/types/floorplan'
 
 const api = useFloorplanApi()
 
@@ -17,6 +18,7 @@ interface LoadedFloorplan {
 }
 
 const roomOptions = [1, 2, 3, 4]
+const areaOptions = [...FLOORPLAN_TARGET_AREAS_SQFT]
 const floorplans = ref<LoadedFloorplan[]>([])
 const selectedId = ref<string | null>(null)
 const loadingId = ref<string | null>(null)
@@ -136,12 +138,13 @@ async function onSelect(id: string) {
   }
 }
 
-async function onGenerate(totalRooms?: number) {
-  const rooms = totalRooms ?? selected.value?.totalRooms ?? 3
+async function onGenerate(payload?: { totalRooms?: number, targetArea?: number }) {
+  const rooms = payload?.totalRooms ?? selected.value?.totalRooms ?? 3
+  const targetArea = payload?.targetArea ?? FLOORPLAN_TARGET_AREAS_SQFT[1]
   acting.value = true
   error.value = null
   try {
-    const sample = await api.generate(rooms, Date.now() % 100000)
+    const sample = await api.generate(rooms, Date.now() % 100000, targetArea)
     await applySample(sample, true)
     await refreshList()
     selectedId.value = sample.id
@@ -227,7 +230,7 @@ onMounted(async () => {
   try {
     await refreshList()
     if (!floorplans.value.length) {
-      await onGenerate(3)
+      await onGenerate({ totalRooms: 3, targetArea: FLOORPLAN_TARGET_AREAS_SQFT[1] })
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -256,6 +259,7 @@ onMounted(async () => {
         :deleting-id="deletingId"
         :generating="acting"
         :room-options="roomOptions"
+        :area-options="areaOptions"
         @select="onSelect"
         @generate="onGenerate"
         @delete="onDelete"

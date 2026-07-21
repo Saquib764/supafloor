@@ -10,3 +10,5 @@ For any coding task in this repository (writing, editing, reviewing, or refactor
 `.cursor/skills/sde/SKILL.md`
 
 Do this as the first action on coding work. Apply its principles: keep logic simple, write only what was asked, prefer efficient solutions, and delete dead or no-op code.
+
+Do not write any tests
