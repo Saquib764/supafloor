@@ -66,9 +66,10 @@ Open the viewer: `frontend/public/floorplan-viewer.html` (expects API at `http:/
 
 ## Philosophy
 
-1. Geometry is always validated by code.
-2. Rules return **score + reason + severity + repair suggestion** (never only pass/fail).
-3. Dataset samples store boundary, requirements, topology, plan, scores, mutation history, SVG/PNG, and metadata.
+1. Geometry is always validated by code. Creators always emit **closed, valid room polygons**.
+2. A floor plan is primarily three separate lists: **rooms** (named polygons), **doors** (lines), and **windows** (lines).
+3. Rules return **score + reason + severity + repair suggestion** (never only pass/fail).
+4. Dataset samples store boundary, requirements, topology, plan, scores, mutation history, SVG/PNG, and metadata.
 
 ## API highlights
 
