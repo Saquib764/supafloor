@@ -1,12 +1,12 @@
 {
-  "id": "22911d59fc4e",
-  "template_id": "3bed",
+  "id": "005",
+  "template_id": "3bed_corner",
   "floor_plan": {
-    "id": "4065fd834fc9",
-    "name": "3 Bedroom",
+    "id": "c4ecbbe195ec",
+    "name": "3 Bedroom Corner",
     "rooms": [
       {
-        "id": "ec6ee69b0fd3",
+        "id": "a1653986c478",
         "name": "Living",
         "polygon": [
           {
@@ -15,14 +15,14 @@
           },
           {
             "x": 0.0,
-            "y": 5.5
+            "y": 3.8500000000000005
           },
           {
-            "x": 4.4,
-            "y": 5.5
+            "x": 4.800000000000001,
+            "y": 3.8500000000000005
           },
           {
-            "x": 4.4,
+            "x": 4.800000000000001,
             "y": 0.0
           }
         ],
@@ -32,24 +32,24 @@
         "metadata": {}
       },
       {
-        "id": "a4f09294f099",
+        "id": "a471de9275f7",
         "name": "Dining",
         "polygon": [
           {
-            "x": 2.42,
-            "y": 5.5
+            "x": 2.64,
+            "y": 3.8500000000000005
           },
           {
             "x": 0.0,
-            "y": 5.5
+            "y": 3.8500000000000005
           },
           {
             "x": 0.0,
-            "y": 10.0
+            "y": 7.0
           },
           {
-            "x": 2.42,
-            "y": 10.0
+            "x": 2.64,
+            "y": 7.0
           }
         ],
         "room_type": "dining",
@@ -58,24 +58,24 @@
         "metadata": {}
       },
       {
-        "id": "d4f36be1bfb2",
+        "id": "12a9c5d2a233",
         "name": "Kitchen",
         "polygon": [
           {
-            "x": 4.4,
-            "y": 5.5
+            "x": 4.800000000000001,
+            "y": 3.8500000000000005
           },
           {
-            "x": 2.42,
-            "y": 5.5
+            "x": 2.64,
+            "y": 3.8500000000000005
           },
           {
-            "x": 2.42,
-            "y": 10.0
+            "x": 2.64,
+            "y": 7.0
           },
           {
-            "x": 4.4,
-            "y": 10.0
+            "x": 4.800000000000001,
+            "y": 7.0
           }
         ],
         "room_type": "kitchen",
@@ -84,23 +84,23 @@
         "metadata": {}
       },
       {
-        "id": "8390e8d1b95e",
+        "id": "2df3da544ab1",
         "name": "Entry",
         "polygon": [
           {
-            "x": 4.4,
+            "x": 4.800000000000001,
             "y": 0.0
           },
           {
-            "x": 4.4,
-            "y": 2.2
+            "x": 4.800000000000001,
+            "y": 1.54
           },
           {
-            "x": 5.720000000000001,
-            "y": 2.2
+            "x": 6.24,
+            "y": 1.54
           },
           {
-            "x": 5.720000000000001,
+            "x": 6.24,
             "y": 0.0
           }
         ],
@@ -110,24 +110,24 @@
         "metadata": {}
       },
       {
-        "id": "3edbf2a8989a",
+        "id": "29de97b33136",
         "name": "Hall",
         "polygon": [
           {
-            "x": 4.4,
-            "y": 7.500000000000001
+            "x": 4.800000000000001,
+            "y": 5.25
           },
           {
-            "x": 5.720000000000001,
-            "y": 7.500000000000001
+            "x": 6.24,
+            "y": 5.25
           },
           {
-            "x": 5.720000000000001,
-            "y": 2.2
+            "x": 6.24,
+            "y": 1.54
           },
           {
-            "x": 4.4,
-            "y": 2.2
+            "x": 4.800000000000001,
+            "y": 1.54
           }
         ],
         "room_type": "hallway",
@@ -136,24 +136,24 @@
         "metadata": {}
       },
       {
-        "id": "f6d56c44c721",
+        "id": "5fc985163b1d",
         "name": "Bath 2",
         "polygon": [
           {
-            "x": 5.720000000000001,
-            "y": 7.5
+            "x": 6.24,
+            "y": 5.25
           },
           {
-            "x": 4.4,
-            "y": 7.5
+            "x": 4.800000000000001,
+            "y": 5.25
           },
           {
-            "x": 4.4,
-            "y": 10.0
+            "x": 4.800000000000001,
+            "y": 7.0
           },
           {
-            "x": 5.720000000000001,
-            "y": 10.0
+            "x": 6.24,
+            "y": 7.0
           }
         ],
         "room_type": "bathroom",
@@ -162,23 +162,23 @@
         "metadata": {}
       },
       {
-        "id": "56f781f7a9b1",
+        "id": "18b298da5da3",
         "name": "Master Bedroom",
         "polygon": [
           {
-            "x": 5.720000000000001,
+            "x": 6.24,
             "y": 0.0
           },
           {
-            "x": 5.720000000000001,
-            "y": 4.0
+            "x": 6.24,
+            "y": 2.8000000000000003
           },
           {
-            "x": 11.0,
-            "y": 4.0
+            "x": 12.0,
+            "y": 2.8000000000000003
           },
           {
-            "x": 11.0,
+            "x": 12.0,
             "y": 0.0
           }
         ],
@@ -188,32 +188,24 @@
         "metadata": {}
       },
       {
-        "id": "5a1cc2cc9b0a",
+        "id": "ac2a034be8f8",
         "name": "Master Bath",
         "polygon": [
           {
-            "x": 7.920000000000001,
-            "y": 4.0
+            "x": 6.24,
+            "y": 4.2
           },
           {
-            "x": 5.720000000000001,
-            "y": 4.0
+            "x": 8.64,
+            "y": 4.2
           },
           {
-            "x": 5.720000000000001,
-            "y": 6.0
+            "x": 8.64,
+            "y": 2.8000000000000003
           },
           {
-            "x": 6.050000000000001,
-            "y": 6.0
-          },
-          {
-            "x": 6.050000000000001,
-            "y": 5.5
-          },
-          {
-            "x": 7.920000000000001,
-            "y": 5.5
+            "x": 6.24,
+            "y": 2.8000000000000003
           }
         ],
         "room_type": "bathroom",
@@ -222,24 +214,24 @@
         "metadata": {}
       },
       {
-        "id": "963632bf7301",
+        "id": "84a19e818454",
         "name": "Bedroom 2",
         "polygon": [
           {
-            "x": 7.92,
-            "y": 4.0
+            "x": 8.64,
+            "y": 2.8000000000000003
           },
           {
-            "x": 7.92,
-            "y": 5.5
+            "x": 8.64,
+            "y": 4.9
           },
           {
-            "x": 11.0,
-            "y": 5.5
+            "x": 12.0,
+            "y": 4.9
           },
           {
-            "x": 11.0,
-            "y": 4.0
+            "x": 12.0,
+            "y": 2.8000000000000003
           }
         ],
         "room_type": "bedroom",
@@ -248,24 +240,32 @@
         "metadata": {}
       },
       {
-        "id": "f1fe90a94cee",
+        "id": "9d252c44372c",
         "name": "Bedroom 3",
         "polygon": [
           {
-            "x": 5.720000000000001,
-            "y": 6.0
+            "x": 6.24,
+            "y": 7.0
           },
           {
-            "x": 5.720000000000001,
-            "y": 10.0
+            "x": 12.0,
+            "y": 7.0
           },
           {
-            "x": 6.050000000000001,
-            "y": 10.0
+            "x": 12.0,
+            "y": 4.9
           },
           {
-            "x": 6.050000000000001,
-            "y": 6.0
+            "x": 8.64,
+            "y": 4.9
+          },
+          {
+            "x": 8.64,
+            "y": 4.2
+          },
+          {
+            "x": 6.24,
+            "y": 4.2
           }
         ],
         "room_type": "bedroom",
@@ -276,179 +276,179 @@
     ],
     "doors": [
       {
-        "id": "a5dba418b6e7",
+        "id": "cc6c4fe0ebc3",
         "start": {
-          "x": 4.61,
+          "x": 5.07,
           "y": 0.0
         },
         "end": {
-          "x": 5.510000000000001,
+          "x": 5.970000000000001,
           "y": 0.0
         },
         "connects": [
-          "8390e8d1b95e"
+          "2df3da544ab1"
         ],
         "is_exterior": true,
         "swing": "in",
         "metadata": {}
       },
       {
-        "id": "f5420f9ebc2d",
+        "id": "27a2484f2a40",
         "start": {
-          "x": 4.4,
-          "y": 0.55
+          "x": 4.800000000000001,
+          "y": 0.25000000000000006
         },
         "end": {
-          "x": 4.4,
-          "y": 1.45
+          "x": 4.800000000000001,
+          "y": 1.1500000000000001
         },
         "connects": [
-          "8390e8d1b95e",
-          "ec6ee69b0fd3"
+          "2df3da544ab1",
+          "a1653986c478"
         ],
         "is_exterior": false,
         "swing": "in",
         "metadata": {}
       },
       {
-        "id": "fc21f59b73ba",
+        "id": "6fb58a5fc538",
         "start": {
-          "x": 4.4,
+          "x": 4.800000000000001,
+          "y": 1.9999999999999998
+        },
+        "end": {
+          "x": 4.800000000000001,
+          "y": 2.9
+        },
+        "connects": [
+          "a1653986c478",
+          "29de97b33136"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "0d54b38959fe",
+        "start": {
+          "x": 0.8700000000000001,
+          "y": 3.8500000000000005
+        },
+        "end": {
+          "x": 1.77,
+          "y": 3.8500000000000005
+        },
+        "connects": [
+          "a1653986c478",
+          "a471de9275f7"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "436aefd0989c",
+        "start": {
+          "x": 2.64,
+          "y": 4.8
+        },
+        "end": {
+          "x": 2.64,
+          "y": 5.7
+        },
+        "connects": [
+          "a471de9275f7",
+          "12a9c5d2a233"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "3b7242a49503",
+        "start": {
+          "x": 6.24,
+          "y": 1.3
+        },
+        "end": {
+          "x": 6.24,
+          "y": 2.2
+        },
+        "connects": [
+          "29de97b33136",
+          "18b298da5da3"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "ea4d3f348130",
+        "start": {
+          "x": 6.799999999999999,
+          "y": 2.8000000000000003
+        },
+        "end": {
+          "x": 7.6,
+          "y": 2.8000000000000003
+        },
+        "connects": [
+          "18b298da5da3",
+          "ac2a034be8f8"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "536840889200",
+        "start": {
+          "x": 8.64,
           "y": 3.05
         },
         "end": {
-          "x": 4.4,
+          "x": 8.64,
           "y": 3.95
         },
         "connects": [
-          "ec6ee69b0fd3",
-          "3edbf2a8989a"
+          "29de97b33136",
+          "84a19e818454"
         ],
         "is_exterior": false,
         "swing": "in",
         "metadata": {}
       },
       {
-        "id": "7a2c50ae5f1d",
+        "id": "507745fbfb93",
         "start": {
-          "x": 0.76,
-          "y": 5.5
+          "x": 6.749999999999999,
+          "y": 4.2
         },
         "end": {
-          "x": 1.66,
-          "y": 5.5
+          "x": 7.6499999999999995,
+          "y": 4.2
         },
         "connects": [
-          "ec6ee69b0fd3",
-          "a4f09294f099"
+          "29de97b33136",
+          "9d252c44372c"
         ],
         "is_exterior": false,
         "swing": "in",
         "metadata": {}
       },
       {
-        "id": "20950359dfb7",
+        "id": "d9fc243206d2",
         "start": {
-          "x": 2.42,
-          "y": 7.05
+          "x": 6.24,
+          "y": 5.55
         },
         "end": {
-          "x": 2.42,
-          "y": 7.95
+          "x": 6.24,
+          "y": 6.3500000000000005
         },
         "connects": [
-          "a4f09294f099",
-          "d4f36be1bfb2"
-        ],
-        "is_exterior": false,
-        "swing": "in",
-        "metadata": {}
-      },
-      {
-        "id": "2f33331ed45a",
-        "start": {
-          "x": 5.720000000000001,
-          "y": 2.05
-        },
-        "end": {
-          "x": 5.720000000000001,
-          "y": 2.95
-        },
-        "connects": [
-          "3edbf2a8989a",
-          "56f781f7a9b1"
-        ],
-        "is_exterior": false,
-        "swing": "in",
-        "metadata": {}
-      },
-      {
-        "id": "88ad29c4834f",
-        "start": {
-          "x": 6.199999999999999,
-          "y": 4.0
-        },
-        "end": {
-          "x": 7.0,
-          "y": 4.0
-        },
-        "connects": [
-          "56f781f7a9b1",
-          "5a1cc2cc9b0a"
-        ],
-        "is_exterior": false,
-        "swing": "in",
-        "metadata": {}
-      },
-      {
-        "id": "87962b21bf47",
-        "start": {
-          "x": 7.92,
-          "y": 4.55
-        },
-        "end": {
-          "x": 7.92,
-          "y": 5.45
-        },
-        "connects": [
-          "3edbf2a8989a",
-          "963632bf7301"
-        ],
-        "is_exterior": false,
-        "swing": "in",
-        "metadata": {}
-      },
-      {
-        "id": "75d415bd2c2c",
-        "start": {
-          "x": 5.720000000000001,
-          "y": 8.1
-        },
-        "end": {
-          "x": 5.720000000000001,
-          "y": 8.9
-        },
-        "connects": [
-          "3edbf2a8989a",
-          "f6d56c44c721"
-        ],
-        "is_exterior": false,
-        "swing": "in",
-        "metadata": {}
-      },
-      {
-        "id": "2e61cd1f9fea",
-        "start": {
-          "x": 5.720000000000001,
-          "y": 6.300000000000001
-        },
-        "end": {
-          "x": 5.720000000000001,
-          "y": 7.2
-        },
-        "connects": [
-          "f1fe90a94cee",
-          "3edbf2a8989a"
+          "29de97b33136",
+          "5fc985163b1d"
         ],
         "is_exterior": false,
         "swing": "in",
@@ -457,68 +457,85 @@
     ],
     "windows": [
       {
-        "id": "c25474df46e4",
+        "id": "5a092a8526d7",
         "start": {
           "x": 0.0,
-          "y": 1.75
+          "y": 1.0
         },
         "end": {
           "x": 0.0,
-          "y": 3.25
+          "y": 2.5
         },
         "room_ids": [
-          "ec6ee69b0fd3"
+          "a1653986c478"
         ],
         "height": 1.4,
         "sill_height": 0.9,
         "metadata": {}
       },
       {
-        "id": "ceb8c282cf9e",
+        "id": "c33671f26866",
         "start": {
-          "x": 0.5000000000000001,
-          "y": 10.0
+          "x": 0.6000000000000002,
+          "y": 7.0
         },
         "end": {
-          "x": 1.7000000000000002,
-          "y": 10.0
+          "x": 1.8000000000000003,
+          "y": 7.0
         },
         "room_ids": [
-          "a4f09294f099"
+          "a471de9275f7"
         ],
         "height": 1.4,
         "sill_height": 0.9,
         "metadata": {}
       },
       {
-        "id": "377530467944",
+        "id": "ff4d09a1410a",
         "start": {
-          "x": 11.0,
-          "y": 1.3
+          "x": 12.0,
+          "y": 0.7000000000000002
         },
         "end": {
-          "x": 11.0,
-          "y": 2.7
+          "x": 12.0,
+          "y": 2.1
         },
         "room_ids": [
-          "56f781f7a9b1"
+          "18b298da5da3"
         ],
         "height": 1.4,
         "sill_height": 0.9,
         "metadata": {}
       },
       {
-        "id": "127c2d03c8d9",
+        "id": "fb7ed8f1a6b5",
         "start": {
-          "x": 11.0,
-          "y": 4.9
+          "x": 12.0,
+          "y": 3.2500000000000004
         },
         "end": {
-          "x": 11.0,
-          "y": 5.5
+          "x": 12.0,
+          "y": 4.45
         },
         "room_ids": [
-          "963632bf7301"
+          "84a19e818454"
+        ],
+        "height": 1.4,
+        "sill_height": 0.9,
+        "metadata": {}
+      },
+      {
+        "id": "bfaa2c33a8ce",
+        "start": {
+          "x": 12.0,
+          "y": 5.000000000000001
+        },
+        "end": {
+          "x": 12.0,
+          "y": 6.2
+        },
+        "room_ids": [
+          "9d252c44372c"
         ],
         "height": 1.4,
         "sill_height": 0.9,
@@ -526,31 +543,23 @@
       }
     ],
     "boundary": {
-      "id": "dc56a049c5f7",
+      "id": "311a0e71cbf2",
       "exterior": [
         {
           "x": 0.0,
           "y": 0.0
         },
         {
-          "x": 11.0,
+          "x": 12.0,
           "y": 0.0
         },
         {
-          "x": 11.0,
-          "y": 5.5
-        },
-        {
-          "x": 6.050000000000001,
-          "y": 5.5
-        },
-        {
-          "x": 6.050000000000001,
-          "y": 10.0
+          "x": 12.0,
+          "y": 7.0
         },
         {
           "x": 0.0,
-          "y": 10.0
+          "y": 7.0
         },
         {
           "x": 0.0,
@@ -564,37 +573,29 @@
     "zones": [],
     "constraint_graph": null,
     "metadata": {
-      "template_id": "3bed",
+      "template_id": "3bed_corner",
       "adapted": true,
       "reconciled": true
     }
   },
   "boundary": {
-    "id": "dc56a049c5f7",
+    "id": "311a0e71cbf2",
     "exterior": [
       {
         "x": 0.0,
         "y": 0.0
       },
       {
-        "x": 11.0,
+        "x": 12.0,
         "y": 0.0
       },
       {
-        "x": 11.0,
-        "y": 5.5
-      },
-      {
-        "x": 6.050000000000001,
-        "y": 5.5
-      },
-      {
-        "x": 6.050000000000001,
-        "y": 10.0
+        "x": 12.0,
+        "y": 7.0
       },
       {
         "x": 0.0,
-        "y": 10.0
+        "y": 7.0
       },
       {
         "x": 0.0,
@@ -605,8 +606,8 @@
     "units": "m"
   },
   "requirements": {
-    "template_id": "3bed",
-    "template_name": "3 Bedroom",
+    "template_id": "3bed_corner",
+    "template_name": "3 Bedroom Corner",
     "rooms": [
       {
         "room_type": "entry",
@@ -724,78 +725,81 @@
     {
       "op": "insert_closet",
       "applied": true,
-      "seed": 3,
+      "seed": 4,
       "attempt": 0,
       "valid": false,
-      "score": 4.23,
+      "score": 4.3,
       "reconciled": true
     },
     {
-      "op": "split_room",
-      "applied": false,
-      "reason": "unsupported",
-      "attempt": 1
-    },
-    {
-      "op": "swap_rooms",
+      "op": "mirror",
       "applied": true,
       "seed": 5,
-      "attempt": 2,
+      "attempt": 1,
       "valid": false,
-      "score": 5.44,
-      "reconciled": true
-    },
-    {
-      "op": "expand_living",
-      "applied": true,
-      "seed": 6,
-      "attempt": 3,
-      "valid": false,
-      "score": 5.44,
-      "reconciled": true
-    },
-    {
-      "op": "insert_closet",
-      "applied": true,
-      "seed": 7,
-      "attempt": 4,
-      "valid": false,
-      "score": 4.23,
+      "score": 5.51,
       "reconciled": true
     },
     {
       "op": "resize_room",
       "applied": true,
-      "seed": 8,
-      "attempt": 5,
+      "seed": 6,
+      "attempt": 2,
       "valid": false,
-      "score": 5.44,
+      "score": 5.36,
       "reconciled": true
     },
     {
-      "op": "move_wall",
+      "op": "reduce_hallway",
       "applied": true,
-      "seed": 9,
-      "attempt": 6,
+      "seed": 7,
+      "attempt": 3,
       "valid": false,
-      "score": 5.44,
+      "score": 5.51,
       "reconciled": true
     },
     {
       "op": "insert_closet",
       "applied": true,
+      "seed": 8,
+      "attempt": 4,
+      "valid": false,
+      "score": 4.3,
+      "reconciled": true
+    },
+    {
+      "op": "swap_rooms",
+      "applied": true,
+      "seed": 9,
+      "attempt": 5,
+      "valid": false,
+      "score": 5.51,
+      "reconciled": true
+    },
+    {
+      "op": "resize_room",
+      "applied": true,
       "seed": 10,
+      "attempt": 6,
+      "valid": false,
+      "score": 5.35,
+      "reconciled": true
+    },
+    {
+      "op": "resize_room",
+      "applied": true,
+      "seed": 11,
       "attempt": 7,
       "valid": false,
-      "score": 4.23,
+      "score": 5.51,
       "reconciled": true
     }
   ],
   "metadata": {
-    "seed": 3,
-    "topology_hash": "ace0a009a0e8fc2f",
-    "geometry_hash": "5501bd6c073ae4fd",
-    "room_ratio_signature": "d8973461fa7e9109",
+    "seed": 4,
+    "topology_hash": "4990331b8f663347",
+    "geometry_hash": "ba115de1afb01590",
+    "room_ratio_signature": "784b96d2ebf9a235",
     "hard_failures": [
       "minimum_area",
       "minimum_width"
@@ -803,7 +807,7 @@
     "valid": false
   },
   "files": {
-    "json": "22911d59fc4e.json",
-    "png": "22911d59fc4e.png"
+    "json": "005.json",
+    "png": "005.png"
   }
 }

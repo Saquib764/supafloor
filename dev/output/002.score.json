@@ -1,5 +1,5 @@
 {
-  "id": "48b5abc590e9",
+  "id": "002",
   "plan_name": "Compact 2 Bedroom",
   "overall": 9.37,
   "summary": "This floor plan scores **9.37/10 (Excellent)** for \u201cCompact 2 Bedroom\u201d with 7 rooms, 72.0 m\u00b2 total room area. It passes all hard validity rules. Strong areas include living size, bedroom ratio, natural light. Weaker areas include wet core compactness, storage adequacy. Highest category is geometry (10.0); lowest is circulation (9.0).",
@@ -14,6 +14,6 @@
     "architecture": 7.8
   },
   "hard_failures": [],
-  "report_file": "48b5abc590e9.score.md",
-  "image": "48b5abc590e9.png"
+  "report_file": "002.score.md",
+  "image": "002.png"
 }

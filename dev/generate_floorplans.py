@@ -7,9 +7,9 @@ Usage (from repo root or backend):
     uv run --directory backend python ../dev/generate_floorplans.py --out /tmp/plans --template compact_2bed --n 3
 
 Each sample writes:
-  <out>/<id>.json   — floor plan (+ metadata)
-  <out>/<id>.png    — rendered image
-  <out>/index.json  — listing of generated files
+  <out>/001.json   — floor plan (+ metadata)
+  <out>/001.png    — rendered image
+  <out>/index.json — listing of generated files
 """
 
 from __future__ import annotations
@@ -44,8 +44,10 @@ def main(argv: list[str] | None = None) -> int:
 
     template_ids = [args.template] if args.template else [t["id"] for t in list_templates()]
     index: list[dict] = []
+    width = max(3, len(str(args.count)))
 
     for i in range(args.count):
+        sample_id = f"{i + 1:0{width}d}"
         tid = template_ids[i % len(template_ids)]
         sample = generate_sample(
             tid,
@@ -63,11 +65,11 @@ def main(argv: list[str] | None = None) -> int:
             layers=["boundary", "rooms", "labels", "doors", "windows"],
         )
 
-        json_path = out / f"{sample.id}.json"
-        png_path = out / f"{sample.id}.png"
+        json_path = out / f"{sample_id}.json"
+        png_path = out / f"{sample_id}.png"
 
         payload = {
-            "id": sample.id,
+            "id": sample_id,
             "template_id": tid,
             "floor_plan": plan.model_dump(),
             "boundary": sample.boundary.model_dump() if sample.boundary else None,
@@ -81,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
 
         index.append(
             {
-                "id": sample.id,
+                "id": sample_id,
                 "template_id": tid,
                 "name": plan.name,
                 "json": json_path.name,
