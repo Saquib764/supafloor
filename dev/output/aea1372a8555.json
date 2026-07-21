@@ -1,0 +1,605 @@
+{
+  "id": "aea1372a8555",
+  "template_id": "compact_2bed",
+  "floor_plan": {
+    "id": "18c127166728",
+    "name": "Compact 2 Bedroom",
+    "rooms": [
+      {
+        "id": "c93dbce04e9d",
+        "name": "Living",
+        "polygon": [
+          {
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "x": 4.05,
+            "y": 0.0
+          },
+          {
+            "x": 4.05,
+            "y": 5.6
+          },
+          {
+            "x": 0.0,
+            "y": 5.6
+          },
+          {
+            "x": 0.0,
+            "y": 0.0
+          }
+        ],
+        "room_type": "living",
+        "zone": "public",
+        "level": 0,
+        "metadata": {}
+      },
+      {
+        "id": "646655d491f9",
+        "name": "Kitchen",
+        "polygon": [
+          {
+            "x": -0.030015655043202027,
+            "y": 5.582212945159584
+          },
+          {
+            "x": 4.080015655043201,
+            "y": 5.582212945159584
+          },
+          {
+            "x": 4.080015655043201,
+            "y": 8.017787054840415
+          },
+          {
+            "x": -0.030015655043202027,
+            "y": 8.017787054840415
+          },
+          {
+            "x": -0.030015655043202027,
+            "y": 5.582212945159584
+          }
+        ],
+        "room_type": "kitchen",
+        "zone": "service",
+        "level": 0,
+        "metadata": {}
+      },
+      {
+        "id": "3d2a40813fbd",
+        "name": "Entry",
+        "polygon": [
+          {
+            "x": 4.05,
+            "y": 0.0
+          },
+          {
+            "x": 5.3999999999999995,
+            "y": 0.0
+          },
+          {
+            "x": 5.3999999999999995,
+            "y": 2.0
+          },
+          {
+            "x": 4.05,
+            "y": 2.0
+          },
+          {
+            "x": 4.05,
+            "y": 0.0
+          }
+        ],
+        "room_type": "entry",
+        "zone": "circulation",
+        "level": 0,
+        "metadata": {}
+      },
+      {
+        "id": "756d7ebb541d",
+        "name": "Hall",
+        "polygon": [
+          {
+            "x": 4.05,
+            "y": 2.0
+          },
+          {
+            "x": 5.3999999999999995,
+            "y": 2.0
+          },
+          {
+            "x": 5.3999999999999995,
+            "y": 5.6
+          },
+          {
+            "x": 4.05,
+            "y": 5.6
+          },
+          {
+            "x": 4.05,
+            "y": 2.0
+          }
+        ],
+        "room_type": "hallway",
+        "zone": "circulation",
+        "level": 0,
+        "metadata": {}
+      },
+      {
+        "id": "4c3f0c7237a0",
+        "name": "Bathroom",
+        "polygon": [
+          {
+            "x": 4.05,
+            "y": 5.6
+          },
+          {
+            "x": 5.3999999999999995,
+            "y": 5.6
+          },
+          {
+            "x": 5.3999999999999995,
+            "y": 8.0
+          },
+          {
+            "x": 4.05,
+            "y": 8.0
+          },
+          {
+            "x": 4.05,
+            "y": 5.6
+          }
+        ],
+        "room_type": "bathroom",
+        "zone": "wet",
+        "level": 0,
+        "metadata": {}
+      },
+      {
+        "id": "447c201facb7",
+        "name": "Bedroom 1",
+        "polygon": [
+          {
+            "x": 5.3999999999999995,
+            "y": 0.0
+          },
+          {
+            "x": 9.0,
+            "y": 0.0
+          },
+          {
+            "x": 9.0,
+            "y": 4.0
+          },
+          {
+            "x": 5.3999999999999995,
+            "y": 4.0
+          },
+          {
+            "x": 5.3999999999999995,
+            "y": 0.0
+          }
+        ],
+        "room_type": "bedroom",
+        "zone": "private",
+        "level": 0,
+        "metadata": {}
+      },
+      {
+        "id": "9cd5b4d5ce34",
+        "name": "Bedroom 2",
+        "polygon": [
+          {
+            "x": 5.3999999999999995,
+            "y": 4.0
+          },
+          {
+            "x": 9.0,
+            "y": 4.0
+          },
+          {
+            "x": 9.0,
+            "y": 8.0
+          },
+          {
+            "x": 5.3999999999999995,
+            "y": 8.0
+          },
+          {
+            "x": 5.3999999999999995,
+            "y": 4.0
+          }
+        ],
+        "room_type": "bedroom",
+        "zone": "private",
+        "level": 0,
+        "metadata": {}
+      }
+    ],
+    "doors": [
+      {
+        "id": "7994129be97d",
+        "start": {
+          "x": 4.2299999999999995,
+          "y": 0.0
+        },
+        "end": {
+          "x": 5.13,
+          "y": 0.0
+        },
+        "connects": [
+          "3d2a40813fbd"
+        ],
+        "is_exterior": true,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "a65214ce6162",
+        "start": {
+          "x": 4.05,
+          "y": 0.51
+        },
+        "end": {
+          "x": 4.05,
+          "y": 1.41
+        },
+        "connects": [
+          "3d2a40813fbd",
+          "c93dbce04e9d"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "86f2d821e170",
+        "start": {
+          "x": 4.05,
+          "y": 2.75
+        },
+        "end": {
+          "x": 4.05,
+          "y": 3.6500000000000004
+        },
+        "connects": [
+          "c93dbce04e9d",
+          "756d7ebb541d"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "3b79c4d036a8",
+        "start": {
+          "x": 5.3999999999999995,
+          "y": 1.55
+        },
+        "end": {
+          "x": 5.3999999999999995,
+          "y": 2.45
+        },
+        "connects": [
+          "756d7ebb541d",
+          "447c201facb7"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "a54363be7e53",
+        "start": {
+          "x": 5.3999999999999995,
+          "y": 4.75
+        },
+        "end": {
+          "x": 5.3999999999999995,
+          "y": 5.65
+        },
+        "connects": [
+          "756d7ebb541d",
+          "9cd5b4d5ce34"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "0db682514049",
+        "start": {
+          "x": 5.3999999999999995,
+          "y": 6.0
+        },
+        "end": {
+          "x": 5.3999999999999995,
+          "y": 6.800000000000001
+        },
+        "connects": [
+          "756d7ebb541d",
+          "4c3f0c7237a0"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "50b693cba7c3",
+        "start": {
+          "x": 1.53,
+          "y": 5.6
+        },
+        "end": {
+          "x": 2.43,
+          "y": 5.6
+        },
+        "connects": [
+          "c93dbce04e9d",
+          "646655d491f9"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      }
+    ],
+    "windows": [
+      {
+        "id": "cbee14cab0d6",
+        "start": {
+          "x": 1.23,
+          "y": 8.0
+        },
+        "end": {
+          "x": 2.73,
+          "y": 8.0
+        },
+        "room_ids": [
+          "646655d491f9"
+        ],
+        "height": 1.4,
+        "sill_height": 0.9,
+        "metadata": {}
+      },
+      {
+        "id": "9f74bcd977aa",
+        "start": {
+          "x": 9.0,
+          "y": 1.4
+        },
+        "end": {
+          "x": 9.0,
+          "y": 2.6
+        },
+        "room_ids": [
+          "447c201facb7"
+        ],
+        "height": 1.4,
+        "sill_height": 0.9,
+        "metadata": {}
+      },
+      {
+        "id": "1b65d233201e",
+        "start": {
+          "x": 9.0,
+          "y": 5.4
+        },
+        "end": {
+          "x": 9.0,
+          "y": 6.6
+        },
+        "room_ids": [
+          "9cd5b4d5ce34"
+        ],
+        "height": 1.4,
+        "sill_height": 0.9,
+        "metadata": {}
+      },
+      {
+        "id": "28451e90e54e",
+        "start": {
+          "x": 0.0,
+          "y": 2.0999999999999996
+        },
+        "end": {
+          "x": 0.0,
+          "y": 3.5
+        },
+        "room_ids": [
+          "c93dbce04e9d"
+        ],
+        "height": 1.4,
+        "sill_height": 0.9,
+        "metadata": {}
+      }
+    ],
+    "boundary": {
+      "id": "6d488369ea1f",
+      "exterior": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 9.0,
+          "y": 0.0
+        },
+        {
+          "x": 9.0,
+          "y": 8.0
+        },
+        {
+          "x": 0.0,
+          "y": 8.0
+        },
+        {
+          "x": 0.0,
+          "y": 0.0
+        }
+      ],
+      "holes": [],
+      "units": "m"
+    },
+    "walls": [],
+    "zones": [],
+    "constraint_graph": null,
+    "metadata": {
+      "template_id": "compact_2bed",
+      "adapted": true
+    }
+  },
+  "boundary": {
+    "id": "6d488369ea1f",
+    "exterior": [
+      {
+        "x": 0.0,
+        "y": 0.0
+      },
+      {
+        "x": 9.0,
+        "y": 0.0
+      },
+      {
+        "x": 9.0,
+        "y": 8.0
+      },
+      {
+        "x": 0.0,
+        "y": 8.0
+      },
+      {
+        "x": 0.0,
+        "y": 0.0
+      }
+    ],
+    "holes": [],
+    "units": "m"
+  },
+  "requirements": {
+    "template_id": "compact_2bed",
+    "template_name": "Compact 2 Bedroom",
+    "rooms": [
+      {
+        "room_type": "entry",
+        "name": "Entry",
+        "required": true,
+        "min_area": 1.5,
+        "preferred_area": null,
+        "preferred_zone": "circulation",
+        "requires_exterior": false,
+        "min_width": 0.0
+      },
+      {
+        "room_type": "living",
+        "name": "Living",
+        "required": true,
+        "min_area": 14.0,
+        "preferred_area": 18.0,
+        "preferred_zone": "public",
+        "requires_exterior": true,
+        "min_width": 3.2
+      },
+      {
+        "room_type": "kitchen",
+        "name": "Kitchen",
+        "required": true,
+        "min_area": 5.0,
+        "preferred_area": 7.0,
+        "preferred_zone": "service",
+        "requires_exterior": false,
+        "min_width": 0.0
+      },
+      {
+        "room_type": "dining",
+        "name": "Dining",
+        "required": false,
+        "min_area": 6.0,
+        "preferred_area": 8.0,
+        "preferred_zone": "public",
+        "requires_exterior": false,
+        "min_width": 0.0
+      },
+      {
+        "room_type": "hallway",
+        "name": "Hall",
+        "required": true,
+        "min_area": 2.0,
+        "preferred_area": null,
+        "preferred_zone": "circulation",
+        "requires_exterior": false,
+        "min_width": 0.0
+      },
+      {
+        "room_type": "bedroom",
+        "name": "Bedroom 1",
+        "required": true,
+        "min_area": 9.0,
+        "preferred_area": 11.0,
+        "preferred_zone": "private",
+        "requires_exterior": true,
+        "min_width": 2.6
+      },
+      {
+        "room_type": "bedroom",
+        "name": "Bedroom 2",
+        "required": true,
+        "min_area": 8.0,
+        "preferred_area": 10.0,
+        "preferred_zone": "private",
+        "requires_exterior": true,
+        "min_width": 2.4
+      },
+      {
+        "room_type": "bathroom",
+        "name": "Bathroom",
+        "required": true,
+        "min_area": 3.5,
+        "preferred_area": null,
+        "preferred_zone": "wet",
+        "requires_exterior": false,
+        "min_width": 1.4
+      },
+      {
+        "room_type": "balcony",
+        "name": "Balcony",
+        "required": false,
+        "min_area": 3.0,
+        "preferred_area": null,
+        "preferred_zone": "outdoor",
+        "requires_exterior": true,
+        "min_width": 0.0
+      }
+    ]
+  },
+  "mutation_history": [
+    {
+      "op": "move_wall",
+      "applied": true,
+      "seed": 2,
+      "attempt": 0,
+      "valid": false,
+      "score": 7.57
+    },
+    {
+      "op": "resize_room",
+      "applied": true,
+      "seed": 3,
+      "attempt": 1,
+      "valid": true,
+      "score": 9.37
+    }
+  ],
+  "metadata": {
+    "seed": 2,
+    "topology_hash": "f43debfae2bbee70",
+    "geometry_hash": "734f3d6cfc0bc56f",
+    "adjacency_signature": "f43debfae2bbee70",
+    "room_ratio_signature": "d00cd89eb07bc7c5",
+    "hard_failures": [],
+    "valid": true
+  },
+  "files": {
+    "json": "aea1372a8555.json",
+    "png": "aea1372a8555.png"
+  }
+}
