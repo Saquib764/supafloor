@@ -1,9 +1,25 @@
 {
   "name": "supafloor-frontend",
+  "type": "module",
   "private": true,
-  "version": "1.0.0",
-  "description": "FloorPlan Engine viewer (Nuxt-style app sources + standalone HTML)",
   "scripts": {
-    "viewer": "python3 -m http.server 5173 --directory public"
+    "build": "nuxt build",
+    "dev": "nuxt dev --port 80 --public",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@nuxt/ui": "4.3.0",
+    "nuxt": "^4.4.6"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "1.12.1",
+    "eslint": "^9.0.0"
+  },
+  "resolutions": {
+    "entities": "^7.0.1",
+    "vue": "3.5.34",
+    "@vue/server-renderer": "3.5.34"
   }
 }

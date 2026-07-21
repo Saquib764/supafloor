@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Score generated floor plans in a target folder and write README reports.
 
-Usage:
+Usage (from repo root):
 
-    uv run --directory backend python ../dev/score_floorplans.py --dir ../dev/output
+    uv run --project backend/floorplan python dev/score_floorplans.py --dir dev/output
 
 For each ``*.json`` plan in the folder, writes:
   <id>.score.md   — human-readable Markdown report (image embedded)
@@ -38,9 +38,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--readme", type=str, default="README.md", help="Index README filename")
     args = parser.parse_args(argv)
 
-    backend = Path(__file__).resolve().parents[1] / "backend"
-    if str(backend) not in sys.path:
-        sys.path.insert(0, str(backend))
+    service_root = Path(__file__).resolve().parents[1] / "backend" / "floorplan"
+    if str(service_root) not in sys.path:
+        sys.path.insert(0, str(service_root))
 
     from floorplan.evaluator import score_plan
 

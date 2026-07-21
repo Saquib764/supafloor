@@ -1,6 +1,6 @@
 # Floor plan scores
 
-Scored **5** plan(s) in `/workspace/dev/output`.
+Scored **5** plan(s) in `/Users/saquib/project-12/supafloor/dev/output`.
 
 | Plan | Overall | Rating | Valid | Image |
 |---|---:|---|---|---|

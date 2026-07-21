@@ -1,0 +1,36 @@
+# FloorPlan Engine Service
+
+FastAPI backend for the Supafloor floor plan viewer and dataset engine.
+
+## Quick start
+
+Requires [uv](https://docs.astral.sh/uv/).
+
+```bash
+cd backend/floorplan
+uv sync --group dev
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Alternative via CLI:
+
+```bash
+uv run floorplan serve --reload --port 8000
+```
+
+## Tests
+
+```bash
+uv run pytest -q
+```
+
+## Layout
+
+```
+backend/floorplan/          # service root (this directory)
+  app/                      # FastAPI server shell
+  floorplan/                # floor plan purpose module
+    api/                    # /floorplan/* routes
+    dataset/                # sample generator
+    geometry/ topology/ …
+```

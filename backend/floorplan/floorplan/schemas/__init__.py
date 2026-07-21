@@ -17,6 +17,16 @@ from .models import (
     TemplateSpec,
     DatasetSample,
 )
+from .requests import (
+    AdaptRequest,
+    DatasetRequest,
+    EvaluateRequest,
+    GenerateRequest,
+    InspectRequest,
+    InstantiateRequest,
+    MutateRequest,
+    RenderRequest,
+)
 
 __all__ = [
     "RoomType",
@@ -37,4 +47,12 @@ __all__ = [
     "ScoreBreakdown",
     "TemplateSpec",
     "DatasetSample",
+    "AdaptRequest",
+    "DatasetRequest",
+    "EvaluateRequest",
+    "GenerateRequest",
+    "InspectRequest",
+    "InstantiateRequest",
+    "MutateRequest",
+    "RenderRequest",
 ]

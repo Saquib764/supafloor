@@ -1,0 +1,35 @@
+@theme {
+  /**
+   * Nuxt UI v4 already defines `primary-*` (via `--ui-color-primary-*`).
+   * Don't override `--color-primary-*` here: Tailwind v4 expects OKLCH tokens and
+   * overriding with RGB makes utilities (e.g. `border-primary-200`) fall back (black).
+   */
+
+  /** Map legacy `muted-*` utilities to Nuxt UI `neutral-*` tokens */
+  --color-muted-50: var(--color-neutral-50);
+  --color-muted-100: var(--color-neutral-100);
+  --color-muted-200: var(--color-neutral-200);
+  --color-muted-300: var(--color-neutral-300);
+  --color-muted-400: var(--color-neutral-400);
+  --color-muted-500: var(--color-neutral-500);
+  --color-muted-600: var(--color-neutral-600);
+  --color-muted-700: var(--color-neutral-700);
+  --color-muted-800: var(--color-neutral-800);
+  --color-muted-900: var(--color-neutral-900);
+  --color-muted-950: var(--color-neutral-950);
+  --color-muted-DEFAULT: var(--color-neutral-600);
+
+  /** Map `danger-*` utilities to Nuxt UI `error-*` tokens */
+  --color-danger-50: var(--color-error-50);
+  --color-danger-100: var(--color-error-100);
+  --color-danger-200: var(--color-error-200);
+  --color-danger-300: var(--color-error-300);
+  --color-danger-400: var(--color-error-400);
+  --color-danger-500: var(--color-error-500);
+  --color-danger-600: var(--color-error-600);
+  --color-danger-700: var(--color-error-700);
+  --color-danger-800: var(--color-error-800);
+  --color-danger-900: var(--color-error-900);
+  --color-danger-950: var(--color-error-950);
+  --color-danger-DEFAULT: var(--color-error-600);
+}

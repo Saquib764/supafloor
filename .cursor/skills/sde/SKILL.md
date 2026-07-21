@@ -73,24 +73,30 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │       └── sde/
 │           └── SKILL.md          # this skill
 │
-├── backend/                      # Python package root (uv)
-│   ├── pyproject.toml
-│   └── floorplan/                # FloorPlan Dataset Engine
-│       ├── api/                  # FastAPI app + routes
-│       ├── assets/               # static engine assets
-│       ├── dataset/              # sample / corpus generator
-│       ├── evaluator/            # rules, furniture, scoring
-│       ├── geometry/             # Shapely ops + authoring helpers
-│       ├── importer/             # BW image → FloorPlan
-│       ├── mutations/            # mutation ops + pipeline
-│       ├── renderer/             # SVG / PNG rendering
-│       ├── schemas/              # enums + immutable domain models
-│       ├── services/             # engine facade, boundary adapt
-│       ├── templates/            # apartment templates + instantiators
-│       ├── tests/                # pytest suite
-│       ├── topology/             # adjacency, reachability, hashes
-│       ├── cli.py                # CLI entry (uv run floorplan …)
-│       └── __init__.py
+├── backend/
+│   └── floorplan/                # Python service root (uv)
+│       ├── pyproject.toml
+│       ├── README.md
+│       ├── app/                  # FastAPI server shell
+│       │   ├── main.py           # app factory, CORS, router registration
+│       │   ├── config.py
+│       │   └── tests/
+│       └── floorplan/            # FloorPlan purpose module
+│           ├── api/              # /floorplan/* HTTP routes
+│           ├── assets/           # static engine assets
+│           ├── dataset/          # sample / corpus generator (generator.py)
+│           ├── evaluator/        # rules, furniture, scoring
+│           ├── geometry/         # Shapely ops + authoring helpers
+│           ├── importer/         # BW image → FloorPlan
+│           ├── mutations/        # mutation ops + pipeline
+│           ├── renderer/         # SVG / PNG rendering
+│           ├── schemas/          # enums, domain models, API request bodies
+│           ├── services/         # engine facade, boundary adapt
+│           ├── templates/        # apartment templates + instantiators
+│           ├── tests/            # pytest suite
+│           ├── topology/         # adjacency, reachability, hashes
+│           ├── cli.py            # CLI entry (uv run floorplan …)
+│           └── __init__.py
 │
 ├── frontend/                     # Viewer / debug UI
 │   ├── package.json
@@ -118,21 +124,22 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 
 | Change type | Put it in |
 |---|---|
-| Models / enums | `backend/floorplan/schemas/` |
-| Polygon / line helpers | `backend/floorplan/geometry/` |
-| Adjacency / hashes | `backend/floorplan/topology/` |
-| Templates / instantiate | `backend/floorplan/templates/` |
-| Mutate ops | `backend/floorplan/mutations/` |
-| Rules / scores | `backend/floorplan/evaluator/` |
-| SVG/PNG | `backend/floorplan/renderer/` |
-| HTTP API | `backend/floorplan/api/` |
-| Orchestration | `backend/floorplan/services/` |
-| Dataset export | `backend/floorplan/dataset/` |
+| Models / enums | `backend/floorplan/floorplan/schemas/` |
+| Polygon / line helpers | `backend/floorplan/floorplan/geometry/` |
+| Adjacency / hashes | `backend/floorplan/floorplan/topology/` |
+| Templates / instantiate | `backend/floorplan/floorplan/templates/` |
+| Mutate ops | `backend/floorplan/floorplan/mutations/` |
+| Rules / scores | `backend/floorplan/floorplan/evaluator/` |
+| SVG/PNG | `backend/floorplan/floorplan/renderer/` |
+| HTTP API | `backend/floorplan/floorplan/api/` |
+| Server shell | `backend/floorplan/app/` |
+| Orchestration | `backend/floorplan/floorplan/services/` |
+| Dataset export | `backend/floorplan/floorplan/dataset/` |
 | Manual scripts | `dev/` |
 | Viewer UI | `frontend/app/.../floorplan/` |
 
 ## Tooling
 
-- Backend: **uv** (`uv sync --group dev`, `uv run …`)
-- Tests: `uv run pytest -q` from `backend/`
+- Backend: **uv** from `backend/floorplan/` (`uv sync --group dev`, `uv run uvicorn app.main:app --reload`)
+- Tests: `uv run pytest -q` from `backend/floorplan/`
 - Dev checks: `dev/generate_floorplans.py`, `dev/score_floorplans.py`

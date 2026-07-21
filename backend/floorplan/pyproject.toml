@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "floorplan-engine"
 version = "1.0.0"
 description = "Deterministic residential floor plan dataset engine"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115.0",
@@ -30,11 +31,11 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["floorplan"]
+packages = ["app", "floorplan"]
 
 [tool.uv]
 package = true
 
 [tool.pytest.ini_options]
-testpaths = ["floorplan/tests"]
+testpaths = ["floorplan/tests", "app/tests"]
 pythonpath = ["."]

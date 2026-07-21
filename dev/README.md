@@ -2,16 +2,16 @@
 
 Manual utilities for inspecting floor-plan generation and scoring.
 
-Run from the repo with `uv` (backend package):
+Run from the repo with `uv` (service root: `backend/floorplan/`):
 
 ```bash
 # 1) Generate plans as JSON + PNG into a folder
-uv run --directory backend python ../dev/generate_floorplans.py \
-  --out ../dev/output --n 5
+uv run --project backend/floorplan python dev/generate_floorplans.py \
+  --out dev/output --count 5
 
 # 2) Score that folder; writes README.md + per-plan *.score.md with images embedded
-uv run --directory backend python ../dev/score_floorplans.py \
-  --dir ../dev/output
+uv run --project backend/floorplan python dev/score_floorplans.py \
+  --dir dev/output
 ```
 
 | Script | Purpose |

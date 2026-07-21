@@ -1,0 +1,40 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+@import "./colors.css";
+
+@source "../**/*.{vue,js,ts}";
+
+:root {
+  --tf-primary: #ec4899;
+  --tf-primary-muted: rgba(236, 72, 153, 0.15);
+  --fs-bg-canvas: #030712;
+  --fs-bg-panel: #111827;
+  --fs-border: #1f2937;
+  --fs-wire: #4f46e5;
+  --fs-wire-selected: #fbbf24;
+}
+
+@layer base {
+  body {
+    font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+      "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    background-color: var(--fs-bg-canvas);
+    color: #fff;
+  }
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #1f2937;
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #374151;
+}

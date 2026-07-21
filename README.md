@@ -7,18 +7,22 @@ Deterministic residential floor plan engine for generating, mutating, validating
 ## Layout
 
 ```
-backend/floorplan/
-  api/          FastAPI routes (POST /floorplan/render, …)
-  geometry/     Shapely-backed immutable geometry ops
-  topology/     Adjacency, reachability, diversity hashes
-  templates/    Studio → 4BR / duplex logical templates
-  mutations/    Mirror, resize, swap, insert, …
-  evaluator/    Hard/soft rules + weighted scoring + furniture
-  renderer/     SVG / PNG / layer overlays
-  importer/     BW image → FloorPlan (OpenCV)
-  dataset/      End-to-end sample & corpus generator
-  services/     Boundary adaptation + engine facade
-  tests/
+backend/floorplan/              # Python service root (uv project, like mission-pluto/thefluxtrain)
+  pyproject.toml
+  app/                          # FastAPI server shell (main.py, /health)
+  floorplan/                    # FloorPlan purpose module
+    api/                        # /floorplan/* routes
+    schemas/                    # domain models + API request bodies
+    geometry/                   # Shapely-backed immutable geometry ops
+    topology/                   # Adjacency, reachability, diversity hashes
+    templates/                  # Studio → 4BR / duplex logical templates
+    mutations/                  # Mirror, resize, swap, insert, …
+    evaluator/                  # Hard/soft rules + weighted scoring + furniture
+    renderer/                   # SVG / PNG / layer overlays
+    importer/                   # BW image → FloorPlan (OpenCV)
+    dataset/                    # End-to-end sample & corpus generator
+    services/                   # Boundary adaptation + engine facade
+    tests/
 
 frontend/app/
   pages/floorplan/           Nuxt-style viewer page
@@ -33,17 +37,17 @@ frontend/public/floorplan-viewer.html   Standalone Vue viewer
 Requires [uv](https://docs.astral.sh/uv/).
 
 ```bash
-cd backend
+cd backend/floorplan
 uv sync --group dev
 
-# API
-uv run floorplan serve --port 8000
+# API (same as mission-pluto: uvicorn on app.main)
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Tests
 uv run pytest -q
 
 # Generate a small dataset
-uv run floorplan dataset -n 20 --out ../floorplan_dataset
+uv run floorplan dataset -n 20 --out ../../floorplan_dataset
 ```
 
 Open the viewer: `frontend/public/floorplan-viewer.html` (expects API at `http://localhost:8000`).
@@ -52,10 +56,10 @@ Open the viewer: `frontend/public/floorplan-viewer.html` (expects API at `http:/
 
 ```bash
 # Generate JSON + PNG into a folder
-uv run --directory backend python ../dev/generate_floorplans.py --out ../dev/output -n 5
+uv run --project backend/floorplan python dev/generate_floorplans.py --out dev/output --count 5
 
 # Score that folder → README.md with embedded images + human-readable reports
-uv run --directory backend python ../dev/score_floorplans.py --dir ../dev/output
+uv run --project backend/floorplan python dev/score_floorplans.py --dir dev/output
 ```
 
 ## V1 capabilities
@@ -83,6 +87,7 @@ uv run --directory backend python ../dev/score_floorplans.py --dir ../dev/output
 
 ## API highlights
 
+- `GET  /health` — service health
 - `GET  /floorplan/templates`
 - `POST /floorplan/instantiate`
 - `POST /floorplan/render` → `{ svg, png, metadata }`

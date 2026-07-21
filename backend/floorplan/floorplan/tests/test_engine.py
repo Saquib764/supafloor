@@ -100,7 +100,7 @@ def test_engine_facade():
 
 def test_api_demo():
     from fastapi.testclient import TestClient
-    from floorplan.api.app import app
+    from app.main import app
 
     client = TestClient(app)
     r = client.get("/floorplan/health")
