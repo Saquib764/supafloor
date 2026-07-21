@@ -16,3 +16,4 @@ node_modules/
 .nuxt/
 .output/
 .env
+uv.lock
