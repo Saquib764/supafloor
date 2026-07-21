@@ -111,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
                 "furniture": scores.furniture,
                 "daylight": scores.daylight,
                 "architecture": scores.architecture,
+                "aesthetics": scores.aesthetics,
             },
             "hard_failures": [r.rule_id for r in scores.rules if r.hard and not r.passed],
             "report_file": score_md_name,

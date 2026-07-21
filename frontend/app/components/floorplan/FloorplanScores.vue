@@ -14,6 +14,7 @@ const categories = [
   'furniture',
   'daylight',
   'architecture',
+  'aesthetics',
 ] as const
 </script>
 

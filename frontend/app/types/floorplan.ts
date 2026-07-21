@@ -95,6 +95,7 @@ export interface ScoreBreakdown {
   furniture: number
   daylight: number
   architecture: number
+  aesthetics: number
   overall: number
   weights: Record<string, number>
   rules: RuleResult[]

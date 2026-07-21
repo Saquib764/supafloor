@@ -327,6 +327,7 @@ class ScoreBreakdown(BaseModel):
     furniture: float = 0.0
     daylight: float = 0.0
     architecture: float = 0.0
+    aesthetics: float = 0.0
     overall: float = 0.0
     weights: dict[str, float] = Field(default_factory=dict)
     rules: list[RuleResult] = Field(default_factory=list)
