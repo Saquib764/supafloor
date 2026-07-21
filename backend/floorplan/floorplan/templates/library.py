@@ -46,13 +46,7 @@ def _req(
 
 
 COMMON_MUTATIONS = [
-    MutationOp.MOVE_WALL,
-    MutationOp.RESIZE_ROOM,
-    MutationOp.SWAP_ROOMS,
     MutationOp.INSERT_CLOSET,
-    MutationOp.MIRROR,
-    MutationOp.EXPAND_LIVING,
-    MutationOp.REDUCE_HALLWAY,
 ]
 
 

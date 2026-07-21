@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from typing import Any, Optional
 
 from floorplan.evaluator import evaluate_rules, score_plan
@@ -10,6 +11,7 @@ from floorplan.mutations import apply_mutation, mutate_pipeline
 from floorplan.renderer import render_plan
 from floorplan.schemas.enums import MutationOp
 from floorplan.schemas.models import Boundary, FloorPlan
+from floorplan.geometry.boundary import generate_notched_boundary
 from floorplan.services.boundary_adapt import adapt_to_boundary, generate_boundary
 from floorplan.services.reconcile import reconcile_plan
 from floorplan.templates import get_template, instantiate_template, list_templates
@@ -36,6 +38,10 @@ class FloorPlanEngine:
 
     def make_boundary(self, width: float = 10.0, depth: float = 8.0, shape: str = "rect") -> Boundary:
         return generate_boundary(width=width, depth=depth, shape=shape)
+
+    def make_notched_boundary(self, seed: int = 0, target_area: float | None = None) -> Boundary:
+        boundary, _meta = generate_notched_boundary(random.Random(seed), target_area=target_area)
+        return boundary
 
     def mutate(self, plan: FloorPlan, op: str, seed: int = 0) -> tuple[FloorPlan, dict]:
         return apply_mutation(plan, MutationOp(op), seed=seed)
@@ -64,6 +70,16 @@ class FloorPlanEngine:
         from floorplan.dataset import generate_dataset
 
         return generate_dataset(n=n, **kwargs)
+
+    def recreate_sample(self, plan_id: str, **kwargs):
+        from floorplan.dataset import recreate_sample
+
+        return recreate_sample(plan_id, **kwargs)
+
+    def list_saved_plans(self):
+        from floorplan.dataset import list_saved_plans
+
+        return list_saved_plans()
 
     def inspect_room(self, plan: FloorPlan, room_id: str) -> dict[str, Any]:
         room = plan.room_by_id(room_id)

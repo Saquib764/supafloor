@@ -1,0 +1,12 @@
+---
+description: Use the SDE skill for all coding tasks in this repo
+alwaysApply: true
+---
+
+# Use SDE Skill for Coding Tasks
+
+For any coding task in this repository (writing, editing, reviewing, or refactoring backend, frontend, or dev-script code), **read and follow** the SDE skill before making changes:
+
+`.cursor/skills/sde/SKILL.md`
+
+Do this as the first action on coding work. Apply its principles: keep logic simple, write only what was asked, prefer efficient solutions, and delete dead or no-op code.

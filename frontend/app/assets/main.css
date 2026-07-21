@@ -16,6 +16,13 @@
 }
 
 @layer base {
+  html,
+  body,
+  #__nuxt {
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
     font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
       "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";

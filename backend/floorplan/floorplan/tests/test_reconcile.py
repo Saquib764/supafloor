@@ -77,10 +77,12 @@ def test_reconcile_ensures_door_per_room_and_drops_hanging():
 
 
 def test_generate_sample_reconciles_boundary_and_overlap():
-    sample = generate_sample("compact_2bed", seed=1, mutate=True, boundary_shape="l", include_renders=False)
+    sample = generate_sample(3, seed=1, include_renders=False, save=False)
     failures = {r.rule_id for r in hard_failures(sample.scores.rules)}
     assert "room_overlap" not in failures
     assert "boundary_containment" not in failures
-    covered = {c for d in sample.floor_plan.doors for c in d.connects}
-    for room in sample.floor_plan.rooms:
-        assert room.id in covered
+    assert sample.boundary is not None
+    assert sample.requirements["parameters"]["total_rooms"] == 3
+    assert sample.floor_plan.doors == []
+    assert sample.floor_plan.windows == []
+    assert sample.requirements["generated"]["spaces"]

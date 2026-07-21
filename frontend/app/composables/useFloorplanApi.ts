@@ -4,20 +4,6 @@ export function useFloorplanApi(baseUrl?: string) {
   const config = useRuntimeConfig()
   const apiBase = baseUrl ?? config.public.floorplanApi ?? DEFAULT_API
 
-  async function getDemo(templateId = 'compact_2bed') {
-    const res = await fetch(`${apiBase}/floorplan/demo?template_id=${encodeURIComponent(templateId)}`, {
-      method: 'POST',
-    })
-    if (!res.ok) throw new Error(await res.text())
-    return res.json()
-  }
-
-  async function listTemplates() {
-    const res = await fetch(`${apiBase}/floorplan/templates`)
-    if (!res.ok) throw new Error(await res.text())
-    return res.json()
-  }
-
   async function render(plan: unknown, layers?: string[]) {
     const res = await fetch(`${apiBase}/floorplan/render`, {
       method: 'POST',
@@ -58,15 +44,57 @@ export function useFloorplanApi(baseUrl?: string) {
     return res.json()
   }
 
-  async function generate(templateId: string, seed = 0) {
+  async function generate(totalRooms: number, seed = 0) {
     const res = await fetch(`${apiBase}/floorplan/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ template_id: templateId, seed, include_renders: true }),
+      body: JSON.stringify({
+        total_rooms: totalRooms,
+        seed,
+        include_renders: true,
+        save: true,
+      }),
     })
     if (!res.ok) throw new Error(await res.text())
     return res.json()
   }
 
-  return { getDemo, listTemplates, render, evaluate, mutate, inspect, generate }
+  async function listPlans() {
+    const res = await fetch(`${apiBase}/floorplan/plans`)
+    if (!res.ok) throw new Error(await res.text())
+    return res.json() as Promise<Array<{
+      id: string
+      label: string
+      total_rooms: number
+      seed: number
+      space_count: number
+    }>>
+  }
+
+  async function getPlan(planId: string) {
+    const res = await fetch(`${apiBase}/floorplan/plans/${encodeURIComponent(planId)}`)
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  }
+
+  async function loadPlan(planId: string) {
+    const res = await fetch(
+      `${apiBase}/floorplan/plans/${encodeURIComponent(planId)}/load?include_renders=true`,
+      { method: 'POST' },
+    )
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  }
+
+  async function recreate(planId: string) {
+    const res = await fetch(`${apiBase}/floorplan/plans/${encodeURIComponent(planId)}/recreate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ include_renders: true, save: true }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  }
+
+  return { render, evaluate, mutate, inspect, generate, listPlans, getPlan, loadPlan, recreate }
 }

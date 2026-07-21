@@ -1,4 +1,4 @@
-"""Boundary adaptation — fit a template layout into an arbitrary boundary."""
+"""Boundary adaptation — fit a layout into an arbitrary boundary."""
 
 from __future__ import annotations
 

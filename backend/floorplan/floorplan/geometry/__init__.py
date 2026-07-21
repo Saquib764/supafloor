@@ -8,6 +8,7 @@ from .authors import (
     make_window_line,
     vertical_opening,
 )
+from .boundary import force_manhattan, generate_notched_boundary, is_manhattan
 from .ops import (
     area,
     aspect_ratio,
@@ -44,7 +45,10 @@ __all__ = [
     "contains",
     "difference",
     "distance",
+    "force_manhattan",
+    "generate_notched_boundary",
     "horizontal_opening",
+    "is_manhattan",
     "intersection",
     "make_door_line",
     "make_room",

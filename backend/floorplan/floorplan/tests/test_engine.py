@@ -46,9 +46,9 @@ def test_adapt_boundary():
 
 def test_mutations():
     plan = instantiate_template("compact_2bed")
-    mirrored, meta = apply_mutation(plan, MutationOp.MIRROR, seed=1)
+    inserted, meta = apply_mutation(plan, MutationOp.INSERT_CLOSET, seed=1)
     assert meta["applied"]
-    assert mirrored.id != plan.id
+    assert inserted.id != plan.id
     mutated, history, _ = mutate_pipeline(plan, seed=42, max_attempts=6)
     assert history
     assert mutated.rooms
@@ -74,10 +74,12 @@ def test_importer():
 
 
 def test_dataset_generator(tmp_path):
-    sample = generate_sample("compact_2bed", seed=7, include_renders=True)
+    sample = generate_sample(3, seed=7, include_renders=True, save=False)
     assert sample.floor_plan
     assert sample.scores
     assert sample.svg
+    assert sample.requirements["parameters"]["total_rooms"] == 3
+    assert sample.requirements["generated"]["spaces"]
     assert sample.metadata["topology_hash"]
     samples = generate_dataset(n=3, seed=3, out_dir=tmp_path, include_renders=False)
     assert len(samples) == 3
@@ -88,7 +90,8 @@ def test_dataset_generator(tmp_path):
 
 def test_engine_facade():
     engine = FloorPlanEngine()
-    plan = engine.instantiate("3bed")
+    sample = engine.generate_sample(total_rooms=2, seed=1, mutate=False, include_renders=False)
+    plan = sample.floor_plan
     scores = engine.score(plan)
     assert scores.overall >= 0
     rendered = engine.render(plan)
@@ -96,6 +99,8 @@ def test_engine_facade():
     info = engine.inspect_room(plan, plan.rooms[0].id)
     assert "area" in info
     assert topology_hash(plan)
+    boundary = engine.make_notched_boundary(seed=2, target_area=70)
+    assert len(boundary.coords()) >= 4
 
 
 def test_api_demo():
@@ -105,16 +110,31 @@ def test_api_demo():
     client = TestClient(app)
     r = client.get("/floorplan/health")
     assert r.status_code == 200
-    r = client.get("/floorplan/templates")
-    assert r.status_code == 200
-    assert len(r.json()) >= 5
-    r = client.post("/floorplan/demo?template_id=compact_2bed")
+    r = client.post("/floorplan/demo?total_rooms=2&seed=1")
     assert r.status_code == 200
     data = r.json()
     assert "plan" in data and "scores" in data and "render" in data
+    assert "requirements" in data
     r = client.post("/floorplan/render", json={"plan": data["plan"]})
     assert r.status_code == 200
     assert "svg" in r.json()
     r = client.post("/floorplan/evaluate", json={"plan": data["plan"]})
     assert r.status_code == 200
     assert "overall" in r.json()
+    r = client.post(
+        "/floorplan/generate",
+        json={"total_rooms": 3, "seed": 5, "include_renders": False, "save": True},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["requirements"]["parameters"]["total_rooms"] == 3
+    plan_id = body["id"]
+    r = client.get("/floorplan/plans")
+    assert r.status_code == 200
+    assert any(p["id"] == plan_id for p in r.json())
+    r = client.get(f"/floorplan/plans/{plan_id}")
+    assert r.status_code == 200
+    assert "parameters" in r.json() and "generated" in r.json()
+    r = client.post(f"/floorplan/plans/{plan_id}/recreate", json={"include_renders": False, "save": True})
+    assert r.status_code == 200
+    assert r.json()["requirements"]["generated"]["spaces"] == body["requirements"]["generated"]["spaces"]

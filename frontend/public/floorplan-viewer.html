@@ -109,15 +109,13 @@
           <h1>FloorPlan Engine</h1>
         </div>
         <div class="controls">
-          <label>Template
-            <select v-model="templateId" @change="loadDemo">
-              <option v-for="t in templates" :key="t.id" :value="t.id">{{ t.name }}</option>
+          <label>Rooms
+            <select v-model.number="totalRooms" @change="loadDemo">
+              <option v-for="n in [1,2,3,4]" :key="n" :value="n">{{ n }}-room</option>
             </select>
           </label>
           <button @click="loadDemo">Reload</button>
           <button class="accent" @click="generate">Generate</button>
-          <button @click="mutate('mirror')">Mirror</button>
-          <button @click="mutate('swap_rooms')">Swap rooms</button>
         </div>
         <div class="toggles">
           <label><input type="checkbox" v-model="showLabels" @change="refreshRender" /> Labels</label>
@@ -184,8 +182,7 @@
       const API = localStorage.getItem('floorplanApi') || 'http://localhost:8000'
       createApp({
         setup() {
-          const templates = ref([])
-          const templateId = ref('compact_2bed')
+          const totalRooms = ref(3)
           const plan = ref(null)
           const scores = ref(null)
           const adjacency = ref({})
@@ -212,7 +209,7 @@
           async function loadDemo() {
             error.value = null
             try {
-              const res = await fetch(`${API}/floorplan/demo?template_id=${encodeURIComponent(templateId.value)}`, { method: 'POST' })
+              const res = await fetch(`${API}/floorplan/demo?total_rooms=${totalRooms.value}&seed=${totalRooms.value}`, { method: 'POST' })
               if (!res.ok) throw new Error(await res.text())
               const data = await res.json()
               plan.value = data.plan
@@ -235,8 +232,9 @@
           async function generate() {
             const res = await fetch(`${API}/floorplan/generate`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ template_id: templateId.value, seed: Date.now()%10000, include_renders: true })
+              body: JSON.stringify({ total_rooms: totalRooms.value, seed: Date.now()%10000, include_renders: true })
             })
+            if (!res.ok) throw new Error(await res.text())
             const sample = await res.json()
             plan.value = sample.floor_plan
             scores.value = sample.scores
@@ -278,16 +276,10 @@
           }
           function onUp() { dragging = false }
           onMounted(async () => {
-            try {
-              const res = await fetch(`${API}/floorplan/templates`)
-              templates.value = await res.json()
-            } catch {
-              templates.value = [{ id: 'compact_2bed', name: 'Compact 2 Bedroom' }]
-            }
             await loadDemo()
           })
           return {
-            templates, templateId, plan, scores, adjacency, svg, selectedRoomId, inspection, error,
+            totalRooms, plan, scores, adjacency, svg, selectedRoomId, inspection, error,
             showLabels, showDimensions, showTopology, jsonOpen, scale, pan, categories, pretty,
             loadDemo, refreshRender, generate, mutate, selectRoom, onWheel, onDown, onMove, onUp
           }

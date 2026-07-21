@@ -1,28 +1,44 @@
 <script setup lang="ts">
+import type { FloorplanEntry } from '~/components/FloorplanList.vue'
+
 const api = useFloorplanApi()
 
-const templates = ref<{ id: string; name: string }[]>([])
-const templateId = ref('compact_2bed')
-const plan = ref<FloorPlan | null>(null)
-const scores = ref<ScoreBreakdown | null>(null)
-const svg = ref('')
-const adjacency = ref<Record<string, string[]>>({})
+interface LoadedFloorplan {
+  id: string
+  label: string
+  totalRooms: number
+  plan: FloorPlan
+  scores: ScoreBreakdown
+  svg: string
+  document: {
+    parameters: Record<string, unknown>
+    generated: Record<string, unknown>
+  } | null
+}
+
+const roomOptions = [1, 2, 3, 4]
+const floorplans = ref<LoadedFloorplan[]>([])
+const selectedId = ref<string | null>(null)
+const loadingId = ref<string | null>(null)
+const acting = ref(false)
 const selectedRoomId = ref<string | null>(null)
-const inspection = ref<RoomInspection | null>(null)
-const inspecting = ref(false)
 const error = ref<string | null>(null)
 const showLabels = ref(true)
 const showDimensions = ref(false)
 const showTopology = ref(true)
 const showFurniture = ref(false)
-const jsonOpen = ref(true)
 
-const templateItems = computed(() =>
-  templates.value.map(t => ({ label: t.name, value: t.id })),
+const listItems = computed<FloorplanEntry[]>(() =>
+  floorplans.value.map(fp => ({
+    id: fp.id,
+    label: fp.label,
+    totalRooms: fp.totalRooms,
+    overall: fp.scores?.overall ?? null,
+  })),
 )
 
-const jsonPayload = computed(() =>
-  JSON.stringify({ plan: plan.value, scores: scores.value, adjacency: adjacency.value }, null, 2),
+const selected = computed(() =>
+  floorplans.value.find(fp => fp.id === selectedId.value) ?? null,
 )
 
 const layers = computed(() => {
@@ -34,199 +50,231 @@ const layers = computed(() => {
   return list
 })
 
-async function loadDemo() {
-  error.value = null
-  try {
-    const data = await api.getDemo(templateId.value)
-    plan.value = data.plan
-    scores.value = data.scores
-    adjacency.value = data.adjacency
-    selectedRoomId.value = data.plan.rooms[0]?.id ?? null
-    await refreshRender()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+async function refreshRender(entry: LoadedFloorplan) {
+  const rendered = await api.render(entry.plan, layers.value)
+  entry.svg = rendered.svg
+}
+
+async function refreshSelectedRender() {
+  if (!selected.value) return
+  await refreshRender(selected.value)
+}
+
+function entryFromSample(sample: Record<string, any>): LoadedFloorplan {
+  const params = sample.requirements?.parameters ?? {}
+  return {
+    id: sample.id,
+    label: sample.requirements?.label ?? `${params.total_rooms ?? '?'}-room`,
+    totalRooms: Number(params.total_rooms ?? 3),
+    plan: sample.floor_plan,
+    scores: sample.scores,
+    svg: sample.svg || '',
+    document: {
+      parameters: params,
+      generated: sample.requirements?.generated ?? {},
+    },
   }
 }
 
-async function refreshRender() {
-  if (!plan.value) return
-  const rendered = await api.render(plan.value, layers.value)
-  svg.value = rendered.svg
+async function applySample(sample: Record<string, any>, select = true) {
+  const entry = entryFromSample(sample)
+  const idx = floorplans.value.findIndex(fp => fp.id === entry.id)
+  if (idx >= 0) floorplans.value[idx] = entry
+  else floorplans.value.unshift(entry)
+  if (select) {
+    selectedId.value = entry.id
+    selectedRoomId.value = entry.plan.rooms[0]?.id ?? null
+  }
+  if (!entry.svg) await refreshRender(entry)
 }
 
-async function onGenerate() {
-  error.value = null
-  try {
-    const sample = await api.generate(templateId.value, Date.now() % 10000)
-    plan.value = sample.floor_plan
-    scores.value = sample.scores
-    svg.value = sample.svg || ''
-    selectedRoomId.value = sample.floor_plan.rooms[0]?.id ?? null
-    if (!sample.svg) await refreshRender()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+async function refreshList() {
+  const plans = await api.listPlans()
+  // Keep in-memory scores/svg when possible; rebuild list from disk order
+  const byId = new Map(floorplans.value.map(fp => [fp.id, fp]))
+  const next: LoadedFloorplan[] = []
+  for (const item of plans) {
+    const existing = byId.get(item.id)
+    if (existing) {
+      next.push(existing)
+      continue
+    }
+    next.push({
+      id: item.id,
+      label: item.label,
+      totalRooms: item.total_rooms,
+      plan: { id: item.id, name: item.label, rooms: [], doors: [], windows: [] } as unknown as FloorPlan,
+      scores: { overall: null } as unknown as ScoreBreakdown,
+      svg: '',
+      document: null,
+    })
+  }
+  floorplans.value = next
+  if (!selectedId.value && next.length) {
+    await onSelect(next[0].id)
   }
 }
 
-async function onMutate(op: string) {
-  if (!plan.value) return
-  const result = await api.mutate(plan.value, op, Date.now() % 1000)
-  plan.value = result.plan
-  scores.value = await api.evaluate(plan.value)
-  await refreshRender()
-}
-
-async function selectRoom(roomId: string) {
-  selectedRoomId.value = roomId
-  if (!plan.value) return
-  inspecting.value = true
+async function onSelect(id: string) {
+  selectedId.value = id
+  loadingId.value = id
+  error.value = null
   try {
-    inspection.value = await api.inspect(plan.value, roomId)
+    const entry = floorplans.value.find(fp => fp.id === id)
+    if (!entry?.document || !entry.plan.rooms?.length) {
+      const sample = await api.loadPlan(id)
+      await applySample(sample, true)
+    } else {
+      selectedRoomId.value = entry.plan.rooms[0]?.id ?? null
+      if (!entry.svg) await refreshRender(entry)
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
   } finally {
-    inspecting.value = false
+    loadingId.value = null
+  }
+}
+
+async function onGenerate(totalRooms?: number) {
+  const rooms = totalRooms ?? selected.value?.totalRooms ?? 3
+  acting.value = true
+  error.value = null
+  try {
+    const sample = await api.generate(rooms, Date.now() % 100000)
+    await applySample(sample, true)
+    await refreshList()
+    selectedId.value = sample.id
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    acting.value = false
+  }
+}
+
+async function onRecreate() {
+  const entry = selected.value
+  if (!entry) return
+  acting.value = true
+  error.value = null
+  try {
+    const sample = await api.recreate(entry.id)
+    await applySample(sample, true)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    acting.value = false
+  }
+}
+
+async function onAction(action: string) {
+  if (action === 'generate') {
+    await onGenerate()
+    return
+  }
+  if (action === 'recreate') {
+    await onRecreate()
+    return
+  }
+
+  const entry = selected.value
+  if (!entry || !entry.plan.rooms?.length) return
+
+  acting.value = true
+  error.value = null
+  try {
+    if (action === 'evaluate') {
+      entry.scores = await api.evaluate(entry.plan)
+      return
+    }
+
+    const result = await api.mutate(entry.plan, action, Date.now() % 1000)
+    entry.plan = result.plan
+    entry.scores = await api.evaluate(entry.plan)
+    await refreshRender(entry)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    acting.value = false
   }
 }
 
 watch(layers, () => {
-  refreshRender().catch(() => undefined)
-})
-
-watch(selectedRoomId, (id) => {
-  if (id) selectRoom(id)
+  refreshSelectedRender().catch(() => undefined)
 })
 
 onMounted(async () => {
   try {
-    templates.value = await api.listTemplates()
-  } catch {
-    templates.value = [{ id: 'compact_2bed', name: 'Compact 2 Bedroom' }]
+    await refreshList()
+    if (!floorplans.value.length) {
+      await onGenerate(3)
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
   }
-  await loadDemo()
 })
 </script>
 
 <template>
-  <div class="flex flex-col min-h-screen bg-gray-950 text-white">
-    <header class="flex flex-wrap gap-4 items-end justify-between p-4 border-b border-gray-800 bg-gray-900">
-      <div>
-        <p class="text-xs uppercase tracking-widest text-gray-500">
-          Supafloor
-        </p>
-        <h1 class="text-2xl font-bold">
-          FloorPlan Engine
-        </h1>
-      </div>
+  <div class="relative h-dvh w-full overflow-hidden bg-gray-950 text-white">
+    <FloorplanCanvas
+      class="absolute inset-0 z-0"
+      background
+      :svg="selected?.svg"
+      :plan="selected?.plan ?? null"
+      :highlight-room-id="selectedRoomId"
+    />
 
-      <div class="flex flex-wrap gap-2 items-center">
-        <USelect
-          v-model="templateId"
-          :items="templateItems"
-          class="min-w-48"
-          @update:model-value="loadDemo"
-        />
-        <UButton
-          variant="outline"
-          color="neutral"
-          @click="loadDemo"
-        >
-          Reload
-        </UButton>
-        <UButton
-          color="primary"
-          @click="onGenerate"
-        >
-          Generate
-        </UButton>
-        <UButton
-          variant="ghost"
-          color="neutral"
-          @click="onMutate('mirror')"
-        >
-          Mirror
-        </UButton>
-        <UButton
-          variant="ghost"
-          color="neutral"
-          @click="onMutate('swap_rooms')"
-        >
-          Swap rooms
-        </UButton>
-      </div>
+    <aside
+      class="absolute left-0 top-0 bottom-0 z-10 w-72 flex flex-col border-r border-gray-800/80 bg-gray-950/85 backdrop-blur-md"
+    >
+      <FloorplanList
+        class="min-h-0 flex-1"
+        :items="listItems"
+        :selected-id="selectedId"
+        :loading-id="loadingId"
+        :generating="acting"
+        :room-options="roomOptions"
+        @select="onSelect"
+        @generate="onGenerate"
+      />
+      <FloorplanActions
+        :disabled="!selected"
+        :busy="acting"
+        @action="onAction"
+      />
+    </aside>
 
-      <div class="flex flex-wrap gap-3 items-center">
-        <UCheckbox
-          v-model="showLabels"
-          label="Labels"
-        />
-        <UCheckbox
-          v-model="showDimensions"
-          label="Dimensions"
-        />
-        <UCheckbox
-          v-model="showTopology"
-          label="Topology"
-        />
-        <UCheckbox
-          v-model="showFurniture"
-          label="Circulation"
-        />
-      </div>
-    </header>
+    <aside
+      class="absolute right-0 top-0 bottom-0 z-10 w-80 flex flex-col border-l border-gray-800/80 bg-gray-950/85 backdrop-blur-md"
+    >
+      <FloorplanScores :scores="selected?.scores ?? null" />
+    </aside>
+
+    <div class="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 flex flex-wrap gap-2 px-3 py-2 rounded-full border border-gray-800/80 bg-gray-950/85 backdrop-blur-md">
+      <UCheckbox
+        v-model="showLabels"
+        label="Labels"
+      />
+      <UCheckbox
+        v-model="showDimensions"
+        label="Dimensions"
+      />
+      <UCheckbox
+        v-model="showTopology"
+        label="Topology"
+      />
+      <UCheckbox
+        v-model="showFurniture"
+        label="Circulation"
+      />
+    </div>
 
     <UAlert
       v-if="error"
       color="error"
       variant="soft"
       :title="error"
-      class="mx-4 mt-4"
+      class="absolute top-4 left-1/2 z-20 w-[min(28rem,calc(100%-24rem))] -translate-x-1/2"
     />
-
-    <div class="flex-1 grid grid-cols-1 lg:grid-cols-[1.4fr_0.7fr_0.8fr] min-h-[520px]">
-      <section class="flex flex-col min-w-0">
-        <FloorplanCanvas
-          :svg="svg"
-          :plan="plan"
-          :highlight-room-id="selectedRoomId"
-          @select-room="selectRoom"
-        />
-        <div
-          v-if="plan"
-          class="flex flex-wrap gap-2 p-3 border-t border-gray-800 bg-gray-900"
-        >
-          <UButton
-            v-for="room in plan.rooms"
-            :key="room.id"
-            size="sm"
-            :variant="room.id === selectedRoomId ? 'solid' : 'outline'"
-            :color="room.id === selectedRoomId ? 'primary' : 'neutral'"
-            @click="selectRoom(room.id)"
-          >
-            {{ room.name }}
-          </UButton>
-        </div>
-      </section>
-
-      <FloorplanInspector
-        :inspection="inspection"
-        :loading="inspecting"
-      />
-      <FloorplanScores :scores="scores" />
-    </div>
-
-    <div class="border-t border-gray-800 bg-gray-900">
-      <UButton
-        variant="ghost"
-        color="neutral"
-        block
-        class="justify-start rounded-none"
-        @click="jsonOpen = !jsonOpen; void 0"
-      >
-        {{ jsonOpen ? 'Hide' : 'Show' }} JSON
-      </UButton>
-      <pre
-        v-if="jsonOpen"
-        class="p-4 text-xs overflow-auto max-h-56 text-gray-300 custom-scrollbar"
-      >{{ jsonPayload }}</pre>
-    </div>
   </div>
 </template>

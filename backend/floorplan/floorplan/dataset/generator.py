@@ -1,4 +1,4 @@
-"""Dataset generator pipeline."""
+"""Dataset generator — parameters → generated → FloorPlan; optional disk save."""
 
 from __future__ import annotations
 
@@ -6,14 +6,15 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
+from floorplan.dataset.store import list_documents, load_document, save_document
 from floorplan.evaluator import hard_failures, score_plan
-from floorplan.mutations import mutate_pipeline
 from floorplan.renderer import render_plan
-from floorplan.schemas.enums import MutationOp
-from floorplan.schemas.models import DatasetSample, FloorPlan
-from floorplan.services.boundary_adapt import adapt_to_boundary, generate_boundary
-from floorplan.services.reconcile import reconcile_plan
-from floorplan.templates import get_template, instantiate_template, list_templates
+from floorplan.requirements import (
+    build_document,
+    document_to_plan,
+    recreate_document,
+)
+from floorplan.schemas.models import DatasetSample
 from floorplan.topology import (
     constraint_graph_from_plan,
     geometry_hash,
@@ -22,33 +23,8 @@ from floorplan.topology import (
 )
 
 
-def generate_sample(
-    template_id: str = "compact_2bed",
-    *,
-    width: float = 10.0,
-    depth: float = 8.0,
-    boundary_shape: str = "rect",
-    seed: int = 0,
-    mutate: bool = True,
-    include_renders: bool = True,
-) -> DatasetSample:
-    """Choose Template → Boundary → Fit → Reconcile → Mutate (+ reconcile) → Evaluate → Render."""
-    template = get_template(template_id)
-    plan = instantiate_template(template_id, width=width, depth=depth)
-    boundary = generate_boundary(width=width, depth=depth, shape=boundary_shape)
-    plan = adapt_to_boundary(plan, boundary)
-    plan = reconcile_plan(plan)
-
-    history: list[dict[str, Any]] = []
-    if mutate:
-        plan, history, _ = mutate_pipeline(
-            plan,
-            ops=template.mutation_rules or list(MutationOp)[:5],
-            seed=seed,
-            require_valid=True,
-        )
-        # mutate_pipeline already reconciles accepted mutations
-
+def _sample_from_document(document: dict[str, Any], *, include_renders: bool = True) -> DatasetSample:
+    plan = document_to_plan(document)
     scores = score_plan(plan)
     topology = constraint_graph_from_plan(plan)
     failures = hard_failures(scores.rules)
@@ -60,81 +36,107 @@ def generate_sample(
         svg = rendered["svg"]
         png_b64 = rendered["png"]
 
+    params = document["parameters"]
     return DatasetSample(
+        id=document["id"],
         boundary=plan.ensure_boundary(),
         requirements={
-            "template_id": template.id,
-            "template_name": template.name,
-            "rooms": [r.model_dump() for r in template.rooms],
+            "parameters": params,
+            "generated": document["generated"],
+            "id": document["id"],
+            "label": document.get("label"),
         },
         topology=topology,
         floor_plan=plan,
         scores=scores,
         rule_breakdown=scores.rules,
-        mutation_history=history,
+        mutation_history=[],
         svg=svg,
         png_b64=png_b64,
         metadata={
-            "seed": seed,
+            "seed": params.get("seed"),
+            "total_rooms": params.get("total_rooms"),
+            "target_area": params.get("target_area"),
             "topology_hash": topology_hash(plan),
             "geometry_hash": geometry_hash(plan),
             "room_ratio_signature": room_ratio_signature(plan),
             "hard_failures": [r.rule_id for r in failures],
             "valid": len(failures) == 0,
+            "plan_id": document["id"],
         },
     )
 
 
+def generate_sample(
+    total_rooms: int = 3,
+    *,
+    target_area: float | None = None,
+    seed: int = 0,
+    mutate: bool = False,
+    include_renders: bool = True,
+    save: bool = False,
+) -> DatasetSample:
+    """Sample parameters → run generation → FloorPlan. Optionally persist JSON."""
+    del mutate
+    document = build_document(total_rooms, target_area=target_area, seed=seed)
+    if save:
+        save_document(document)
+    return _sample_from_document(document, include_renders=include_renders)
+
+
+def recreate_sample(plan_id: str, *, include_renders: bool = True, save: bool = True) -> DatasetSample:
+    """Load saved parameters, re-run generation algorithm, optionally overwrite JSON."""
+    document = recreate_document(load_document(plan_id))
+    if save:
+        save_document(document)
+    return _sample_from_document(document, include_renders=include_renders)
+
+
 def generate_dataset(
     n: int = 10,
-    template_ids: Optional[list[str]] = None,
     *,
+    total_rooms: int | None = None,
     seed: int = 0,
     out_dir: Optional[str | Path] = None,
     include_renders: bool = False,
 ) -> list[DatasetSample]:
-    template_ids = template_ids or [t["id"] for t in list_templates()]
     samples: list[DatasetSample] = []
     seen_hashes: set[str] = set()
 
-    i = 0
     attempts = 0
     while len(samples) < n and attempts < n * 5:
-        tid = template_ids[attempts % len(template_ids)]
-        w = 8.0 + (attempts % 5)
-        d = 7.0 + (attempts % 4)
-        shape = "rect" if attempts % 3 else "l"
+        rooms = total_rooms if total_rooms is not None else 1 + (attempts % 4)
         sample = generate_sample(
-            tid,
-            width=w,
-            depth=d,
-            boundary_shape=shape if tid != "studio" else "rect",
+            rooms,
+            target_area=45.0 + (attempts % 7) * 8.0,
             seed=seed + attempts,
-            mutate=True,
             include_renders=include_renders,
+            save=False,
         )
         attempts += 1
-        ghash = sample.metadata.get("geometry_hash")
-        thash = sample.metadata.get("topology_hash")
-        key = f"{thash}:{ghash}"
+        key = f"{sample.metadata.get('topology_hash')}:{sample.metadata.get('geometry_hash')}"
         if key in seen_hashes:
             continue
-        # Prefer valid samples but allow some invalid for diversity of failures
         seen_hashes.add(key)
         samples.append(sample)
-        i += 1
 
     if out_dir:
         path = Path(out_dir)
         path.mkdir(parents=True, exist_ok=True)
         for sample in samples:
-            (path / f"{sample.id}.json").write_text(sample.model_dump_json(indent=2))
+            doc = {
+                "id": sample.id,
+                "label": sample.requirements.get("label"),
+                "parameters": sample.requirements.get("parameters"),
+                "generated": sample.requirements.get("generated"),
+            }
+            (path / f"{sample.id}.json").write_text(json.dumps(doc, indent=2))
             if sample.svg:
                 (path / f"{sample.id}.svg").write_text(sample.svg)
         index = [
             {
                 "id": s.id,
-                "template": s.requirements.get("template_id"),
+                "total_rooms": (s.requirements.get("parameters") or {}).get("total_rooms"),
                 "overall": s.scores.overall if s.scores else None,
                 "valid": s.metadata.get("valid"),
                 "topology_hash": s.metadata.get("topology_hash"),
@@ -144,3 +146,16 @@ def generate_dataset(
         (path / "index.json").write_text(json.dumps(index, indent=2))
 
     return samples
+
+
+def list_saved_plans() -> list[dict[str, Any]]:
+    return list_documents()
+
+
+def get_saved_plan(plan_id: str) -> dict[str, Any]:
+    return load_document(plan_id)
+
+
+def load_sample(plan_id: str, *, include_renders: bool = True) -> DatasetSample:
+    """Load saved JSON and materialize geometry from generated (no recompute)."""
+    return _sample_from_document(load_document(plan_id), include_renders=include_renders)

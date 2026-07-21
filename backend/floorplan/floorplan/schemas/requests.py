@@ -29,7 +29,7 @@ class AdaptRequest(BaseModel):
 
 class MutateRequest(BaseModel):
     plan: FloorPlan
-    op: str = "mirror"
+    op: str = "insert_closet"
     seed: int = 0
 
 
@@ -39,18 +39,22 @@ class EvaluateRequest(BaseModel):
 
 
 class GenerateRequest(BaseModel):
-    template_id: str = "compact_2bed"
-    width: float = 10.0
-    depth: float = 8.0
-    boundary_shape: str = "rect"
+    total_rooms: int = Field(default=3, ge=1, le=8)
+    target_area: Optional[float] = Field(default=None, gt=0)
     seed: int = 0
-    mutate: bool = True
+    mutate: bool = False
     include_renders: bool = True
+    save: bool = True
+
+
+class RecreateRequest(BaseModel):
+    include_renders: bool = True
+    save: bool = True
 
 
 class DatasetRequest(BaseModel):
     n: int = Field(default=5, ge=1, le=100)
-    template_ids: Optional[list[str]] = None
+    total_rooms: Optional[int] = Field(default=None, ge=1, le=8)
     seed: int = 0
     include_renders: bool = False
 

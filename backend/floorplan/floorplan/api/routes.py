@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from floorplan.dataset import get_saved_plan, list_saved_plans, load_sample, recreate_sample
 from floorplan.schemas.requests import (
     AdaptRequest,
     DatasetRequest,
@@ -14,9 +15,11 @@ from floorplan.schemas.requests import (
     InspectRequest,
     InstantiateRequest,
     MutateRequest,
+    RecreateRequest,
     RenderRequest,
 )
 from floorplan.services.engine import FloorPlanEngine
+from floorplan.topology import build_adjacency
 
 router = APIRouter(prefix="/floorplan", tags=["floorplan"])
 engine = FloorPlanEngine()
@@ -96,14 +99,46 @@ async def import_image(
 @router.post("/generate")
 def generate(body: GenerateRequest) -> dict:
     sample = engine.generate_sample(
-        template_id=body.template_id,
-        width=body.width,
-        depth=body.depth,
-        boundary_shape=body.boundary_shape,
+        total_rooms=body.total_rooms,
+        target_area=body.target_area,
         seed=body.seed,
         mutate=body.mutate,
         include_renders=body.include_renders,
+        save=body.save,
     )
+    return sample.model_dump()
+
+
+@router.get("/plans")
+def plans() -> list[dict]:
+    return list_saved_plans()
+
+
+@router.get("/plans/{plan_id}")
+def plan_detail(plan_id: str) -> dict:
+    try:
+        return get_saved_plan(plan_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"Plan not found: {plan_id}") from exc
+
+
+@router.post("/plans/{plan_id}/load")
+def plan_load(plan_id: str, include_renders: bool = True) -> dict:
+    """Materialize FloorPlan from saved generated section (for listing/view)."""
+    try:
+        return load_sample(plan_id, include_renders=include_renders).model_dump()
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"Plan not found: {plan_id}") from exc
+
+
+@router.post("/plans/{plan_id}/recreate")
+def plan_recreate(plan_id: str, body: RecreateRequest | None = None) -> dict:
+    """Re-run generation from saved parameters (algorithm test path)."""
+    body = body or RecreateRequest()
+    try:
+        sample = recreate_sample(plan_id, include_renders=body.include_renders, save=body.save)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"Plan not found: {plan_id}") from exc
     return sample.model_dump()
 
 
@@ -111,7 +146,7 @@ def generate(body: GenerateRequest) -> dict:
 def dataset(body: DatasetRequest) -> dict:
     samples = engine.generate_dataset(
         n=body.n,
-        template_ids=body.template_ids,
+        total_rooms=body.total_rooms,
         seed=body.seed,
         include_renders=body.include_renders,
     )
@@ -122,7 +157,7 @@ def dataset(body: DatasetRequest) -> dict:
                 "id": s.id,
                 "overall": s.scores.overall if s.scores else None,
                 "valid": s.metadata.get("valid"),
-                "template": s.requirements.get("template_id"),
+                "total_rooms": (s.requirements.get("parameters") or {}).get("total_rooms"),
                 "topology_hash": s.metadata.get("topology_hash"),
                 "plan": s.floor_plan.model_dump(),
                 "scores": s.scores.model_dump() if s.scores else None,
@@ -141,14 +176,22 @@ def inspect(body: InspectRequest) -> dict:
 
 
 @router.post("/demo")
-def demo(template_id: str = "compact_2bed") -> dict:
-    """Convenience: instantiate + score + render for the viewer."""
-    plan = engine.instantiate(template_id)
-    scores = engine.score(plan)
+def demo(total_rooms: int = 3, seed: int = 0) -> dict:
+    """Convenience: generate from scratch + score + render for the viewer."""
+    sample = engine.generate_sample(
+        total_rooms=total_rooms,
+        seed=seed,
+        mutate=False,
+        include_renders=True,
+        save=False,
+    )
+    plan = sample.floor_plan
+    scores = sample.scores
     rendered = engine.render(plan, layers=["boundary", "rooms", "labels", "doors", "windows", "topology"])
     return {
         "plan": plan.model_dump(),
-        "scores": scores.model_dump(),
+        "scores": scores.model_dump() if scores else None,
         "render": rendered,
-        "adjacency": __import__("floorplan.topology", fromlist=["build_adjacency"]).build_adjacency(plan),
+        "requirements": sample.requirements,
+        "adjacency": build_adjacency(plan),
     }

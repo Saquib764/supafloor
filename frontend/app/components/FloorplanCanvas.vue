@@ -1,9 +1,12 @@
 <script setup lang="ts">
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   svg?: string
   plan?: FloorPlan | null
   highlightRoomId?: string | null
-}>()
+  background?: boolean
+}>(), {
+  background: false,
+})
 
 const emit = defineEmits<{
   (e: 'select-room', roomId: string): void
@@ -44,11 +47,21 @@ function onSvgClick() {
   if (!props.plan) return
   emit('select-room', props.highlightRoomId || props.plan.rooms[0]?.id)
 }
+
+defineExpose({ resetView })
 </script>
 
 <template>
-  <div class="flex flex-col h-full min-h-[420px] bg-gray-950 border-r border-gray-800">
-    <div class="flex items-center gap-3 p-3 border-b border-gray-800">
+  <div
+    class="flex flex-col h-full"
+    :class="background
+      ? 'bg-gray-950/40'
+      : 'min-h-[420px] bg-gray-950 border-r border-gray-800'"
+  >
+    <div
+      v-if="!background"
+      class="flex items-center gap-3 p-3 border-b border-gray-800"
+    >
       <UButton
         size="sm"
         color="neutral"
@@ -63,6 +76,7 @@ function onSvgClick() {
     </div>
     <div
       class="flex-1 overflow-hidden cursor-grab active:cursor-grabbing grid place-items-center"
+      :class="background ? 'opacity-90' : ''"
       @wheel="onWheel"
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
@@ -71,7 +85,8 @@ function onSvgClick() {
       @click="onSvgClick"
     >
       <div
-        class="origin-center transition-transform duration-75 [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:block [&_svg]:drop-shadow-lg"
+        class="origin-center transition-transform duration-75 [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:block"
+        :class="background ? '[&_svg]:drop-shadow-2xl' : '[&_svg]:drop-shadow-lg'"
         :style="{
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
         }"

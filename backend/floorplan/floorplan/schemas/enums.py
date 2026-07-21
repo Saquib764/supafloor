@@ -39,9 +39,6 @@ class Severity(str, Enum):
 
 
 class MutationOp(str, Enum):
-    MOVE_WALL = "move_wall"
-    RESIZE_ROOM = "resize_room"
-    SWAP_ROOMS = "swap_rooms"
     INSERT_BALCONY = "insert_balcony"
     INSERT_TOILET = "insert_toilet"
     INSERT_CLOSET = "insert_closet"
@@ -50,7 +47,3 @@ class MutationOp(str, Enum):
     MERGE_ROOMS = "merge_rooms"
     SPLIT_ROOM = "split_room"
     SHIFT_WET_CORE = "shift_wet_core"
-    MIRROR = "mirror"
-    ROTATE = "rotate"
-    EXPAND_LIVING = "expand_living"
-    REDUCE_HALLWAY = "reduce_hallway"
