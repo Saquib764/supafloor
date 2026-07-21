@@ -329,6 +329,8 @@ class ScoreBreakdown(BaseModel):
     overall: float = 0.0
     weights: dict[str, float] = Field(default_factory=dict)
     rules: list[RuleResult] = Field(default_factory=list)
+    summary: str = ""
+    report: str = ""
 
 
 class RoomRequirement(BaseModel):
