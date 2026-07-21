@@ -17,11 +17,11 @@ from floorplan.geometry.authors import make_door_line
 from floorplan.geometry.ops import polygon_from_boundary, polygon_from_room, shared_edge, to_points
 from floorplan.schemas.models import Door, FloorPlan, Point2D, Room, Window, _uid
 
-MIN_ROOM_AREA = 0.05  # m²
-MIN_LINE_LEN = 0.05  # m
-MIN_OVERLAP = 0.01  # m²
-DOOR_LEN = 0.9
-EDGE_TOL = 0.08
+MIN_ROOM_AREA = 0.5  # sqft
+MIN_LINE_LEN = 0.16  # ft
+MIN_OVERLAP = 0.1  # sqft
+DOOR_LEN = 3.0  # ft
+EDGE_TOL = 0.26  # ft
 
 
 def _longest_line(geom):

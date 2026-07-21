@@ -23,8 +23,8 @@ class RenderRequest(BaseModel):
 
 class InstantiateRequest(BaseModel):
     template_id: str = "compact_2bed"
-    width: float = 10.0
-    depth: float = 8.0
+    width: float = 32.81
+    depth: float = 26.25
 
 
 class AdaptRequest(BaseModel):
@@ -127,11 +127,11 @@ def render(body: RenderRequest) -> dict[str, Any]:
 @router.post("/import")
 async def import_image(
     file: UploadFile = File(...),
-    meters_per_pixel: float = 0.05,
+    feet_per_pixel: float = 0.164,
 ) -> dict:
     data = await file.read()
     try:
-        plan = engine.import_image(data, meters_per_pixel=meters_per_pixel)
+        plan = engine.import_image(data, feet_per_pixel=feet_per_pixel)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return plan.model_dump()

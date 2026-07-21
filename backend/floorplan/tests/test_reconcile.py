@@ -57,7 +57,7 @@ def test_reconcile_carves_overlap_from_larger_room():
     from floorplan.geometry.ops import intersection
 
     inter = intersection(by_name["Big"].coords(), by_name["Small"].coords())
-    assert inter.area < 0.05
+    assert inter.area < 0.5
 
 
 def test_reconcile_ensures_door_per_room_and_drops_hanging():

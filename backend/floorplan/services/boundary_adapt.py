@@ -37,7 +37,7 @@ def adapt_to_boundary(plan: FloorPlan, boundary: Boundary) -> FloorPlan:
     )
 
 
-def generate_boundary(width: float = 10.0, depth: float = 8.0, shape: str = "rect") -> Boundary:
+def generate_boundary(width: float = 32.81, depth: float = 26.25, shape: str = "rect") -> Boundary:
     if shape == "l":
         coords = [
             (0, 0),

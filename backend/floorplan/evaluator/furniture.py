@@ -1,4 +1,7 @@
-"""Furniture placement simulator — decreases score when placement is impossible."""
+"""Furniture placement simulator — decreases score when placement is impossible.
+
+Furniture sizes are in feet.
+"""
 
 from __future__ import annotations
 
@@ -14,35 +17,35 @@ class FurnitureItem:
     name: str
     width: float
     depth: float
-    clearance: float = 0.4
+    clearance: float = 1.3
 
 
 FURNITURE_BY_ROOM: dict[RoomType, list[FurnitureItem]] = {
     RoomType.BEDROOM: [
-        FurnitureItem("Bed", 1.6, 2.0, 0.5),
-        FurnitureItem("Wardrobe", 1.2, 0.6, 0.4),
+        FurnitureItem("Bed", 5.25, 6.5, 1.6),
+        FurnitureItem("Wardrobe", 4.0, 2.0, 1.3),
     ],
     RoomType.MASTER_BEDROOM: [
-        FurnitureItem("Bed", 1.8, 2.0, 0.6),
-        FurnitureItem("Wardrobe", 1.6, 0.6, 0.4),
+        FurnitureItem("Bed", 6.0, 6.5, 2.0),
+        FurnitureItem("Wardrobe", 5.25, 2.0, 1.3),
     ],
     RoomType.LIVING: [
-        FurnitureItem("Sofa", 2.2, 0.9, 0.6),
-        FurnitureItem("TV", 1.2, 0.4, 1.5),
+        FurnitureItem("Sofa", 7.2, 3.0, 2.0),
+        FurnitureItem("TV", 4.0, 1.3, 5.0),
     ],
     RoomType.DINING: [
-        FurnitureItem("Dining", 1.4, 0.9, 0.7),
+        FurnitureItem("Dining", 4.6, 3.0, 2.3),
     ],
     RoomType.KITCHEN: [
-        FurnitureItem("Kitchen counter", 2.4, 0.6, 1.0),
+        FurnitureItem("Kitchen counter", 8.0, 2.0, 3.3),
     ],
     RoomType.BATHROOM: [
-        FurnitureItem("Shower", 0.9, 0.9, 0.3),
-        FurnitureItem("Toilet", 0.5, 0.7, 0.4),
-        FurnitureItem("Sink", 0.6, 0.45, 0.4),
+        FurnitureItem("Shower", 3.0, 3.0, 1.0),
+        FurnitureItem("Toilet", 1.6, 2.3, 1.3),
+        FurnitureItem("Sink", 2.0, 1.5, 1.3),
     ],
     RoomType.UTILITY: [
-        FurnitureItem("Washing machine", 0.6, 0.6, 0.5),
+        FurnitureItem("Washing machine", 2.0, 2.0, 1.6),
     ],
 }
 

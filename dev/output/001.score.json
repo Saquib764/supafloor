@@ -1,22 +1,19 @@
 {
   "id": "001",
   "plan_name": "Studio",
-  "overall": 5.18,
-  "summary": "This floor plan scores **5.18/10 (Weak)** for \u201cStudio\u201d with 3 rooms, 44.7 m\u00b2 total room area. It fails 2 hard rule(s): Minimum Area, Minimum Width. Strong areas include living size, natural light, privacy. Weaker areas include bedroom ratio, circulation efficiency. Highest category is privacy (10.0); lowest is circulation (5.0).",
+  "overall": 8.69,
+  "summary": "This floor plan scores **8.69/10 (Good)** for \u201cStudio\u201d with 3 rooms, 6000 sqft total room area. It passes all hard validity rules. Strong areas include living size, natural light, privacy. Weaker areas include bedroom ratio, circulation efficiency, wet core compactness. Highest category is geometry (10.0); lowest is circulation (5.0).",
   "categories": {
-    "geometry": 6.0,
+    "geometry": 10.0,
     "topology": 10.0,
-    "construction": 8.4,
+    "construction": 5.84,
     "privacy": 10.0,
     "circulation": 5.0,
-    "furniture": 8.33,
+    "furniture": 10.0,
     "daylight": 10.0,
     "architecture": 7.4
   },
-  "hard_failures": [
-    "minimum_area",
-    "minimum_width"
-  ],
+  "hard_failures": [],
   "report_file": "001.score.md",
   "image": "001.png"
 }

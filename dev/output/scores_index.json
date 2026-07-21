@@ -2,39 +2,36 @@
   {
     "id": "001",
     "plan_name": "Studio",
-    "overall": 5.18,
-    "summary": "This floor plan scores **5.18/10 (Weak)** for \u201cStudio\u201d with 3 rooms, 44.7 m\u00b2 total room area. It fails 2 hard rule(s): Minimum Area, Minimum Width. Strong areas include living size, natural light, privacy. Weaker areas include bedroom ratio, circulation efficiency. Highest category is privacy (10.0); lowest is circulation (5.0).",
+    "overall": 8.69,
+    "summary": "This floor plan scores **8.69/10 (Good)** for \u201cStudio\u201d with 3 rooms, 6000 sqft total room area. It passes all hard validity rules. Strong areas include living size, natural light, privacy. Weaker areas include bedroom ratio, circulation efficiency, wet core compactness. Highest category is geometry (10.0); lowest is circulation (5.0).",
     "categories": {
-      "geometry": 6.0,
+      "geometry": 10.0,
       "topology": 10.0,
-      "construction": 8.4,
+      "construction": 5.84,
       "privacy": 10.0,
       "circulation": 5.0,
-      "furniture": 8.33,
+      "furniture": 10.0,
       "daylight": 10.0,
       "architecture": 7.4
     },
-    "hard_failures": [
-      "minimum_area",
-      "minimum_width"
-    ],
+    "hard_failures": [],
     "report_file": "001.score.md",
     "image": "001.png"
   },
   {
     "id": "002",
     "plan_name": "Compact 2 Bedroom",
-    "overall": 9.37,
-    "summary": "This floor plan scores **9.37/10 (Excellent)** for \u201cCompact 2 Bedroom\u201d with 7 rooms, 72.0 m\u00b2 total room area. It passes all hard validity rules. Strong areas include living size, bedroom ratio, natural light. Weaker areas include wet core compactness, storage adequacy. Highest category is geometry (10.0); lowest is circulation (9.0).",
+    "overall": 9.01,
+    "summary": "This floor plan scores **9.01/10 (Excellent)** for \u201cCompact 2 Bedroom\u201d with 7 rooms, 2000 sqft total room area. It passes all hard validity rules. Strong areas include bedroom ratio, natural light, privacy. Weaker areas include living size, wet core compactness, storage adequacy. Highest category is geometry (10.0); lowest is circulation (9.0).",
     "categories": {
       "geometry": 10.0,
       "topology": 10.0,
-      "construction": 7.97,
+      "construction": 6.53,
       "privacy": 10.0,
       "circulation": 9.0,
       "furniture": 10.0,
       "daylight": 10.0,
-      "architecture": 7.8
+      "architecture": 6.39
     },
     "hard_failures": [],
     "report_file": "002.score.md",
@@ -43,38 +40,36 @@
   {
     "id": "003",
     "plan_name": "Luxury 2 Bedroom",
-    "overall": 7.45,
-    "summary": "This floor plan scores **7.45/10 (Fair)** for \u201cLuxury 2 Bedroom\u201d with 10 rooms, 90.0 m\u00b2 total room area. It fails 1 hard rule(s): Minimum Area. Strong areas include living size, natural light, privacy. Weaker areas include wet core compactness, storage adequacy. Highest category is privacy (10.0); lowest is geometry (8.0).",
+    "overall": 8.97,
+    "summary": "This floor plan scores **8.97/10 (Good)** for \u201cLuxury 2 Bedroom\u201d with 10 rooms, 5980 sqft total room area. It passes all hard validity rules. Strong areas include natural light, privacy, circulation efficiency. Weaker areas include wet core compactness, storage adequacy. Highest category is geometry (10.0); lowest is circulation (9.0).",
     "categories": {
-      "geometry": 8.0,
+      "geometry": 10.0,
       "topology": 10.0,
-      "construction": 7.56,
+      "construction": 5.93,
       "privacy": 10.0,
       "circulation": 9.0,
       "furniture": 10.0,
       "daylight": 10.0,
-      "architecture": 7.28
+      "architecture": 6.51
     },
-    "hard_failures": [
-      "minimum_area"
-    ],
+    "hard_failures": [],
     "report_file": "003.score.md",
     "image": "003.png"
   },
   {
     "id": "004",
     "plan_name": "3 Bedroom",
-    "overall": 5.44,
-    "summary": "This floor plan scores **5.44/10 (Weak)** for \u201c3 Bedroom\u201d with 10 rooms, 87.7 m\u00b2 total room area. It fails 2 hard rule(s): Minimum Area, Minimum Width. Strong areas include living size, bedroom ratio, natural light. Weaker areas include wet core compactness, storage adequacy. Highest category is privacy (10.0); lowest is geometry (6.0).",
+    "overall": 5.11,
+    "summary": "This floor plan scores **5.11/10 (Weak)** for \u201c3 Bedroom\u201d with 10 rooms, 2000 sqft total room area. It fails 2 hard rule(s): Minimum Area, Minimum Width. Strong areas include bedroom ratio, natural light, privacy. Weaker areas include living size, wet core compactness, storage adequacy. Highest category is privacy (10.0); lowest is geometry (6.0).",
     "categories": {
       "geometry": 6.0,
       "topology": 10.0,
-      "construction": 7.22,
+      "construction": 6.08,
       "privacy": 10.0,
       "circulation": 9.0,
       "furniture": 8.12,
       "daylight": 10.0,
-      "architecture": 7.4
+      "architecture": 5.91
     },
     "hard_failures": [
       "minimum_area",
@@ -86,22 +81,19 @@
   {
     "id": "005",
     "plan_name": "3 Bedroom Corner",
-    "overall": 5.51,
-    "summary": "This floor plan scores **5.51/10 (Weak)** for \u201c3 Bedroom Corner\u201d with 10 rooms, 84.0 m\u00b2 total room area. It fails 2 hard rule(s): Minimum Area, Minimum Width. Strong areas include living size, natural light, privacy. Weaker areas include wet core compactness, storage adequacy. Highest category is privacy (10.0); lowest is geometry (6.0).",
+    "overall": 8.92,
+    "summary": "This floor plan scores **8.92/10 (Good)** for \u201c3 Bedroom Corner\u201d with 10 rooms, 2000 sqft total room area. It passes all hard validity rules. Strong areas include natural light, privacy, circulation efficiency. Weaker areas include living size, wet core compactness, storage adequacy. Highest category is geometry (10.0); lowest is circulation (9.0).",
     "categories": {
-      "geometry": 6.0,
+      "geometry": 10.0,
       "topology": 10.0,
-      "construction": 7.58,
+      "construction": 6.59,
       "privacy": 10.0,
       "circulation": 9.0,
-      "furniture": 8.75,
+      "furniture": 10.0,
       "daylight": 10.0,
-      "architecture": 7.15
+      "architecture": 5.71
     },
-    "hard_failures": [
-      "minimum_area",
-      "minimum_width"
-    ],
+    "hard_failures": [],
     "report_file": "005.score.md",
     "image": "005.png"
   }

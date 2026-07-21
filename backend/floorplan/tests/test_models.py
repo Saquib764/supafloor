@@ -22,11 +22,11 @@ def test_room_rejects_degenerate_polygon():
 
 
 def test_door_and_window_are_lines():
-    door = make_door_line((0, 0), (0.9, 0), connects=["a", "b"])
-    window = make_window_line((0, 3), (1.2, 3), room_ids=["a"])
-    assert door.length() == pytest.approx(0.9)
-    assert window.length() == pytest.approx(1.2)
-    assert door.midpoint().x == pytest.approx(0.45)
+    door = make_door_line((0, 0), (3.0, 0), connects=["a", "b"])
+    window = make_window_line((0, 10), (4.0, 10), room_ids=["a"])
+    assert door.length() == pytest.approx(3.0)
+    assert window.length() == pytest.approx(4.0)
+    assert door.midpoint().x == pytest.approx(1.5)
     with pytest.raises(ValidationError):
         Door(start=Point2D(x=1, y=1), end=Point2D(x=1, y=1))
     with pytest.raises(ValidationError):

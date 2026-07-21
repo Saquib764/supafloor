@@ -18,7 +18,7 @@ from floorplan.geometry import (
 from floorplan.schemas.models import ConstraintGraph, FloorPlan, Room
 
 
-def build_adjacency(plan: FloorPlan, tol: float = 0.08) -> dict[str, list[str]]:
+def build_adjacency(plan: FloorPlan, tol: float = 0.26) -> dict[str, list[str]]:
     """Undirected adjacency from touching rooms (shared usable edge)."""
     adj: dict[str, set[str]] = defaultdict(set)
     rooms = plan.rooms
@@ -63,7 +63,7 @@ def reachable(plan: FloorPlan, start_id: Optional[str] = None) -> set[str]:
     return seen
 
 
-def exterior_touching_rooms(plan: FloorPlan, tol: float = 0.08) -> list[str]:
+def exterior_touching_rooms(plan: FloorPlan, tol: float = 0.26) -> list[str]:
     boundary = polygon_from_boundary(plan.ensure_boundary())
     result = []
     for room in plan.rooms:

@@ -38,10 +38,10 @@ def test_instantiate_and_score():
 
 
 def test_adapt_boundary():
-    plan = instantiate_template("studio", width=7, depth=5.5)
-    boundary = generate_boundary(width=12, depth=9, shape="rect")
+    plan = instantiate_template("studio", width=23.0, depth=18.0)
+    boundary = generate_boundary(width=39.0, depth=30.0, shape="rect")
     adapted = adapt_to_boundary(plan, boundary)
-    assert adapted.ensure_boundary().coords()[1][0] == 12
+    assert adapted.ensure_boundary().coords()[1][0] == 39.0
 
 
 def test_mutations():
@@ -67,7 +67,7 @@ def test_renderer():
 
 def test_importer():
     png = synthesize_bw_fixture()
-    plan = import_bw_image(png, meters_per_pixel=0.05)
+    plan = import_bw_image(png, feet_per_pixel=0.164)
     assert len(plan.rooms) >= 3
     adj = build_adjacency(plan)
     assert isinstance(adj, dict)

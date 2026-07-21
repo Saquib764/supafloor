@@ -1,4 +1,4 @@
-"""Apartment template library — logical topology, not coordinates."""
+"""Apartment template library — logical topology; sizes in feet / sqft."""
 
 from __future__ import annotations
 
@@ -62,11 +62,11 @@ def studio_template() -> TemplateSpec:
         name="Studio",
         description="Compact studio with open living/sleeping and wet core.",
         rooms=[
-            _req(RoomType.ENTRY, "Entry", min_area=1.5, preferred_zone=ZoneType.CIRCULATION),
-            _req(RoomType.LIVING, "Living/Sleep", min_area=16, preferred_area=22, requires_exterior=True, min_width=3.0),
-            _req(RoomType.KITCHEN, "Kitchen", min_area=4, preferred_area=6, preferred_zone=ZoneType.SERVICE),
-            _req(RoomType.BATHROOM, "Bathroom", min_area=3.5, preferred_zone=ZoneType.WET, min_width=1.4),
-            _req(RoomType.CLOSET, "Closet", required=False, min_area=1.0, preferred_zone=ZoneType.PRIVATE),
+            _req(RoomType.ENTRY, "Entry", min_area=16.1, preferred_zone=ZoneType.CIRCULATION),
+            _req(RoomType.LIVING, "Living/Sleep", min_area=172.2, preferred_area=236.8, requires_exterior=True, min_width=9.84),
+            _req(RoomType.KITCHEN, "Kitchen", min_area=43.1, preferred_area=64.6, preferred_zone=ZoneType.SERVICE),
+            _req(RoomType.BATHROOM, "Bathroom", min_area=37.7, preferred_zone=ZoneType.WET, min_width=4.59),
+            _req(RoomType.CLOSET, "Closet", required=False, min_area=10.8, preferred_zone=ZoneType.PRIVATE),
         ],
         preferred_adjacency=[
             ("Entry", "Living/Sleep"),
@@ -86,15 +86,15 @@ def compact_2bed_template() -> TemplateSpec:
         name="Compact 2 Bedroom",
         description="Efficient 2BR with shared bath and compact wet core.",
         rooms=[
-            _req(RoomType.ENTRY, "Entry", min_area=1.5, preferred_zone=ZoneType.CIRCULATION),
-            _req(RoomType.LIVING, "Living", min_area=14, preferred_area=18, requires_exterior=True, min_width=3.2),
-            _req(RoomType.KITCHEN, "Kitchen", min_area=5, preferred_area=7, preferred_zone=ZoneType.SERVICE),
-            _req(RoomType.DINING, "Dining", required=False, min_area=6, preferred_area=8),
-            _req(RoomType.HALLWAY, "Hall", min_area=2, preferred_zone=ZoneType.CIRCULATION),
-            _req(RoomType.BEDROOM, "Bedroom 1", min_area=9, preferred_area=11, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=2.6),
-            _req(RoomType.BEDROOM, "Bedroom 2", min_area=8, preferred_area=10, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=2.4),
-            _req(RoomType.BATHROOM, "Bathroom", min_area=3.5, preferred_zone=ZoneType.WET, min_width=1.4),
-            _req(RoomType.BALCONY, "Balcony", required=False, min_area=3, preferred_zone=ZoneType.OUTDOOR, requires_exterior=True),
+            _req(RoomType.ENTRY, "Entry", min_area=16.1, preferred_zone=ZoneType.CIRCULATION),
+            _req(RoomType.LIVING, "Living", min_area=150.7, preferred_area=193.8, requires_exterior=True, min_width=10.5),
+            _req(RoomType.KITCHEN, "Kitchen", min_area=53.8, preferred_area=75.3, preferred_zone=ZoneType.SERVICE),
+            _req(RoomType.DINING, "Dining", required=False, min_area=64.6, preferred_area=86.1),
+            _req(RoomType.HALLWAY, "Hall", min_area=21.5, preferred_zone=ZoneType.CIRCULATION),
+            _req(RoomType.BEDROOM, "Bedroom 1", min_area=96.9, preferred_area=118.4, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=8.53),
+            _req(RoomType.BEDROOM, "Bedroom 2", min_area=86.1, preferred_area=107.6, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=7.87),
+            _req(RoomType.BATHROOM, "Bathroom", min_area=37.7, preferred_zone=ZoneType.WET, min_width=4.59),
+            _req(RoomType.BALCONY, "Balcony", required=False, min_area=32.3, preferred_zone=ZoneType.OUTDOOR, requires_exterior=True),
         ],
         preferred_adjacency=[
             ("Entry", "Living"),
@@ -118,17 +118,17 @@ def luxury_2bed_template() -> TemplateSpec:
         name="Luxury 2 Bedroom",
         description="2BR with master ensuite, powder room, and open living.",
         rooms=[
-            _req(RoomType.ENTRY, "Entry", min_area=2, preferred_zone=ZoneType.CIRCULATION),
-            _req(RoomType.LIVING, "Living", min_area=20, preferred_area=28, requires_exterior=True, min_width=3.6),
-            _req(RoomType.DINING, "Dining", min_area=8, preferred_area=12),
-            _req(RoomType.KITCHEN, "Kitchen", min_area=8, preferred_area=12, preferred_zone=ZoneType.SERVICE),
-            _req(RoomType.MASTER_BEDROOM, "Master Bedroom", min_area=14, preferred_area=18, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=3.0),
-            _req(RoomType.BATHROOM, "Master Bath", min_area=5, preferred_zone=ZoneType.WET, min_width=1.6),
-            _req(RoomType.CLOSET, "Walk-in Closet", min_area=3, preferred_zone=ZoneType.PRIVATE),
-            _req(RoomType.BEDROOM, "Bedroom 2", min_area=10, preferred_area=12, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=2.6),
-            _req(RoomType.POWDER, "Powder", min_area=2, preferred_zone=ZoneType.WET),
-            _req(RoomType.BALCONY, "Balcony", min_area=5, preferred_zone=ZoneType.OUTDOOR, requires_exterior=True),
-            _req(RoomType.UTILITY, "Utility", required=False, min_area=2, preferred_zone=ZoneType.SERVICE),
+            _req(RoomType.ENTRY, "Entry", min_area=21.5, preferred_zone=ZoneType.CIRCULATION),
+            _req(RoomType.LIVING, "Living", min_area=215.3, preferred_area=301.4, requires_exterior=True, min_width=11.81),
+            _req(RoomType.DINING, "Dining", min_area=86.1, preferred_area=129.2),
+            _req(RoomType.KITCHEN, "Kitchen", min_area=86.1, preferred_area=129.2, preferred_zone=ZoneType.SERVICE),
+            _req(RoomType.MASTER_BEDROOM, "Master Bedroom", min_area=150.7, preferred_area=193.8, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=9.84),
+            _req(RoomType.BATHROOM, "Master Bath", min_area=53.8, preferred_zone=ZoneType.WET, min_width=5.25),
+            _req(RoomType.CLOSET, "Walk-in Closet", min_area=32.3, preferred_zone=ZoneType.PRIVATE),
+            _req(RoomType.BEDROOM, "Bedroom 2", min_area=107.6, preferred_area=129.2, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=8.53),
+            _req(RoomType.POWDER, "Powder", min_area=21.5, preferred_zone=ZoneType.WET),
+            _req(RoomType.BALCONY, "Balcony", min_area=53.8, preferred_zone=ZoneType.OUTDOOR, requires_exterior=True),
+            _req(RoomType.UTILITY, "Utility", required=False, min_area=21.5, preferred_zone=ZoneType.SERVICE),
         ],
         preferred_adjacency=[
             ("Entry", "Living"),
@@ -151,17 +151,17 @@ def three_bed_template() -> TemplateSpec:
         name="3 Bedroom",
         description="Family 3BR with living, kitchen, and two baths.",
         rooms=[
-            _req(RoomType.ENTRY, "Entry", min_area=2, preferred_zone=ZoneType.CIRCULATION),
-            _req(RoomType.LIVING, "Living", min_area=16, preferred_area=22, requires_exterior=True, min_width=3.4),
-            _req(RoomType.KITCHEN, "Kitchen", min_area=7, preferred_area=9, preferred_zone=ZoneType.SERVICE),
-            _req(RoomType.DINING, "Dining", min_area=7, preferred_area=9),
-            _req(RoomType.HALLWAY, "Hall", min_area=3, preferred_zone=ZoneType.CIRCULATION),
-            _req(RoomType.MASTER_BEDROOM, "Master Bedroom", min_area=12, preferred_area=15, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=2.8),
-            _req(RoomType.BATHROOM, "Master Bath", min_area=4, preferred_zone=ZoneType.WET),
-            _req(RoomType.BEDROOM, "Bedroom 2", min_area=9, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=2.5),
-            _req(RoomType.BEDROOM, "Bedroom 3", min_area=8, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=2.4),
-            _req(RoomType.BATHROOM, "Bath 2", min_area=3.5, preferred_zone=ZoneType.WET),
-            _req(RoomType.BALCONY, "Balcony", required=False, min_area=4, preferred_zone=ZoneType.OUTDOOR),
+            _req(RoomType.ENTRY, "Entry", min_area=21.5, preferred_zone=ZoneType.CIRCULATION),
+            _req(RoomType.LIVING, "Living", min_area=172.2, preferred_area=236.8, requires_exterior=True, min_width=11.15),
+            _req(RoomType.KITCHEN, "Kitchen", min_area=75.3, preferred_area=96.9, preferred_zone=ZoneType.SERVICE),
+            _req(RoomType.DINING, "Dining", min_area=75.3, preferred_area=96.9),
+            _req(RoomType.HALLWAY, "Hall", min_area=32.3, preferred_zone=ZoneType.CIRCULATION),
+            _req(RoomType.MASTER_BEDROOM, "Master Bedroom", min_area=129.2, preferred_area=161.5, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=9.19),
+            _req(RoomType.BATHROOM, "Master Bath", min_area=43.1, preferred_zone=ZoneType.WET),
+            _req(RoomType.BEDROOM, "Bedroom 2", min_area=96.9, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=8.2),
+            _req(RoomType.BEDROOM, "Bedroom 3", min_area=86.1, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=7.87),
+            _req(RoomType.BATHROOM, "Bath 2", min_area=37.7, preferred_zone=ZoneType.WET),
+            _req(RoomType.BALCONY, "Balcony", required=False, min_area=43.1, preferred_zone=ZoneType.OUTDOOR),
         ],
         preferred_adjacency=[
             ("Entry", "Living"),
@@ -199,19 +199,19 @@ def four_bed_template() -> TemplateSpec:
         name="4 Bedroom",
         description="Large family 4BR layout.",
         rooms=[
-            _req(RoomType.ENTRY, "Entry", min_area=2.5, preferred_zone=ZoneType.CIRCULATION),
-            _req(RoomType.LIVING, "Living", min_area=20, preferred_area=28, requires_exterior=True, min_width=3.6),
-            _req(RoomType.DINING, "Dining", min_area=9, preferred_area=12),
-            _req(RoomType.KITCHEN, "Kitchen", min_area=9, preferred_area=12, preferred_zone=ZoneType.SERVICE),
-            _req(RoomType.HALLWAY, "Hall", min_area=4, preferred_zone=ZoneType.CIRCULATION),
-            _req(RoomType.MASTER_BEDROOM, "Master Bedroom", min_area=14, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=3.0),
-            _req(RoomType.BATHROOM, "Master Bath", min_area=5, preferred_zone=ZoneType.WET),
-            _req(RoomType.BEDROOM, "Bedroom 2", min_area=10, preferred_zone=ZoneType.PRIVATE, requires_exterior=True),
-            _req(RoomType.BEDROOM, "Bedroom 3", min_area=9, preferred_zone=ZoneType.PRIVATE, requires_exterior=True),
-            _req(RoomType.BEDROOM, "Bedroom 4", min_area=9, preferred_zone=ZoneType.PRIVATE, requires_exterior=True),
-            _req(RoomType.BATHROOM, "Bath 2", min_area=4, preferred_zone=ZoneType.WET),
-            _req(RoomType.UTILITY, "Utility", min_area=2.5, preferred_zone=ZoneType.SERVICE),
-            _req(RoomType.BALCONY, "Balcony", min_area=5, preferred_zone=ZoneType.OUTDOOR),
+            _req(RoomType.ENTRY, "Entry", min_area=26.9, preferred_zone=ZoneType.CIRCULATION),
+            _req(RoomType.LIVING, "Living", min_area=215.3, preferred_area=301.4, requires_exterior=True, min_width=11.81),
+            _req(RoomType.DINING, "Dining", min_area=96.9, preferred_area=129.2),
+            _req(RoomType.KITCHEN, "Kitchen", min_area=96.9, preferred_area=129.2, preferred_zone=ZoneType.SERVICE),
+            _req(RoomType.HALLWAY, "Hall", min_area=43.1, preferred_zone=ZoneType.CIRCULATION),
+            _req(RoomType.MASTER_BEDROOM, "Master Bedroom", min_area=150.7, preferred_zone=ZoneType.PRIVATE, requires_exterior=True, min_width=9.84),
+            _req(RoomType.BATHROOM, "Master Bath", min_area=53.8, preferred_zone=ZoneType.WET),
+            _req(RoomType.BEDROOM, "Bedroom 2", min_area=107.6, preferred_zone=ZoneType.PRIVATE, requires_exterior=True),
+            _req(RoomType.BEDROOM, "Bedroom 3", min_area=96.9, preferred_zone=ZoneType.PRIVATE, requires_exterior=True),
+            _req(RoomType.BEDROOM, "Bedroom 4", min_area=96.9, preferred_zone=ZoneType.PRIVATE, requires_exterior=True),
+            _req(RoomType.BATHROOM, "Bath 2", min_area=43.1, preferred_zone=ZoneType.WET),
+            _req(RoomType.UTILITY, "Utility", min_area=26.9, preferred_zone=ZoneType.SERVICE),
+            _req(RoomType.BALCONY, "Balcony", min_area=53.8, preferred_zone=ZoneType.OUTDOOR),
         ],
         preferred_adjacency=[
             ("Entry", "Living"),
@@ -236,16 +236,16 @@ def duplex_template() -> TemplateSpec:
         name="Duplex",
         description="Two-level duplex: public below, private above (logical).",
         rooms=[
-            _req(RoomType.ENTRY, "Entry", min_area=2, preferred_zone=ZoneType.CIRCULATION),
-            _req(RoomType.LIVING, "Living", min_area=18, preferred_area=24, requires_exterior=True),
-            _req(RoomType.KITCHEN, "Kitchen", min_area=8, preferred_zone=ZoneType.SERVICE),
-            _req(RoomType.DINING, "Dining", min_area=8),
-            _req(RoomType.POWDER, "Powder", min_area=2, preferred_zone=ZoneType.WET),
-            _req(RoomType.HALLWAY, "Upper Hall", min_area=3, preferred_zone=ZoneType.CIRCULATION),
-            _req(RoomType.MASTER_BEDROOM, "Master Bedroom", min_area=14, preferred_zone=ZoneType.PRIVATE, requires_exterior=True),
-            _req(RoomType.BATHROOM, "Master Bath", min_area=5, preferred_zone=ZoneType.WET),
-            _req(RoomType.BEDROOM, "Bedroom 2", min_area=10, preferred_zone=ZoneType.PRIVATE, requires_exterior=True),
-            _req(RoomType.BATHROOM, "Bath 2", min_area=3.5, preferred_zone=ZoneType.WET),
+            _req(RoomType.ENTRY, "Entry", min_area=21.5, preferred_zone=ZoneType.CIRCULATION),
+            _req(RoomType.LIVING, "Living", min_area=193.8, preferred_area=258.3, requires_exterior=True),
+            _req(RoomType.KITCHEN, "Kitchen", min_area=86.1, preferred_zone=ZoneType.SERVICE),
+            _req(RoomType.DINING, "Dining", min_area=86.1),
+            _req(RoomType.POWDER, "Powder", min_area=21.5, preferred_zone=ZoneType.WET),
+            _req(RoomType.HALLWAY, "Upper Hall", min_area=32.3, preferred_zone=ZoneType.CIRCULATION),
+            _req(RoomType.MASTER_BEDROOM, "Master Bedroom", min_area=150.7, preferred_zone=ZoneType.PRIVATE, requires_exterior=True),
+            _req(RoomType.BATHROOM, "Master Bath", min_area=53.8, preferred_zone=ZoneType.WET),
+            _req(RoomType.BEDROOM, "Bedroom 2", min_area=107.6, preferred_zone=ZoneType.PRIVATE, requires_exterior=True),
+            _req(RoomType.BATHROOM, "Bath 2", min_area=37.7, preferred_zone=ZoneType.WET),
         ],
         preferred_adjacency=[
             ("Entry", "Living"),
@@ -313,7 +313,7 @@ def _vwin(x: float, yc: float, length: float, room_ids: list[str] | None = None)
     return make_window_line(a, b, room_ids=room_ids)
 
 
-def instantiate_compact_2bed(width: float = 10.0, depth: float = 8.0) -> FloorPlan:
+def instantiate_compact_2bed(width: float = 32.81, depth: float = 26.25) -> FloorPlan:
     """Deterministic rectangular compact 2BR: rooms + door lines + window lines."""
     w, d = width, depth
     living = rect(0, 0, w * 0.45, d * 0.70)
@@ -338,20 +338,20 @@ def instantiate_compact_2bed(width: float = 10.0, depth: float = 8.0) -> FloorPl
     id_map = {r.name: r.id for r in rooms}
 
     doors = [
-        _hdoor(w * 0.52, 0.0, 0.9, [id_map["Entry"]], exterior=True),
-        _vdoor(w * 0.45, d * 0.12, 0.9, [id_map["Entry"], id_map["Living"]]),
-        _vdoor(w * 0.45, d * 0.40, 0.9, [id_map["Living"], id_map["Hall"]]),
-        _vdoor(w * 0.60, d * 0.25, 0.9, [id_map["Hall"], id_map["Bedroom 1"]]),
-        _vdoor(w * 0.60, d * 0.65, 0.9, [id_map["Hall"], id_map["Bedroom 2"]]),
-        _vdoor(w * 0.60, d * 0.80, 0.8, [id_map["Hall"], id_map["Bathroom"]]),
-        _hdoor(w * 0.22, d * 0.70, 0.9, [id_map["Living"], id_map["Kitchen"]]),
+        _hdoor(w * 0.52, 0.0, 2.95, [id_map["Entry"]], exterior=True),
+        _vdoor(w * 0.45, d * 0.12, 2.95, [id_map["Entry"], id_map["Living"]]),
+        _vdoor(w * 0.45, d * 0.40, 2.95, [id_map["Living"], id_map["Hall"]]),
+        _vdoor(w * 0.60, d * 0.25, 2.95, [id_map["Hall"], id_map["Bedroom 1"]]),
+        _vdoor(w * 0.60, d * 0.65, 2.95, [id_map["Hall"], id_map["Bedroom 2"]]),
+        _vdoor(w * 0.60, d * 0.80, 2.62, [id_map["Hall"], id_map["Bathroom"]]),
+        _hdoor(w * 0.22, d * 0.70, 2.95, [id_map["Living"], id_map["Kitchen"]]),
     ]
 
     windows = [
-        _hwin(w * 0.22, d, 1.5, [id_map["Kitchen"]]),
-        _vwin(w, d * 0.25, 1.2, [id_map["Bedroom 1"]]),
-        _vwin(w, d * 0.75, 1.2, [id_map["Bedroom 2"]]),
-        _vwin(0.0, d * 0.35, 1.4, [id_map["Living"]]),
+        _hwin(w * 0.22, d, 4.92, [id_map["Kitchen"]]),
+        _vwin(w, d * 0.25, 3.94, [id_map["Bedroom 1"]]),
+        _vwin(w, d * 0.75, 3.94, [id_map["Bedroom 2"]]),
+        _vwin(0.0, d * 0.35, 4.59, [id_map["Living"]]),
     ]
 
     return FloorPlan(
@@ -364,7 +364,7 @@ def instantiate_compact_2bed(width: float = 10.0, depth: float = 8.0) -> FloorPl
     )
 
 
-def instantiate_studio(width: float = 7.0, depth: float = 5.5) -> FloorPlan:
+def instantiate_studio(width: float = 22.97, depth: float = 18.04) -> FloorPlan:
     w, d = width, depth
     living = rect(0, 0, w * 0.70, d)
     kitchen = rect(w * 0.70, d * 0.40, w * 0.30, d * 0.60)
@@ -377,13 +377,13 @@ def instantiate_studio(width: float = 7.0, depth: float = 5.5) -> FloorPlan:
     boundary = Boundary(exterior=to_points(rect(0, 0, w, d)))
     id_map = {r.name: r.id for r in rooms}
     doors = [
-        _hdoor(w * 0.20, 0.0, 0.9, [id_map["Living/Sleep"]], exterior=True),
-        _vdoor(w * 0.70, d * 0.20, 0.8, [id_map["Living/Sleep"], id_map["Bathroom"]]),
-        _vdoor(w * 0.70, d * 0.55, 0.9, [id_map["Living/Sleep"], id_map["Kitchen"]]),
+        _hdoor(w * 0.20, 0.0, 2.95, [id_map["Living/Sleep"]], exterior=True),
+        _vdoor(w * 0.70, d * 0.20, 2.62, [id_map["Living/Sleep"], id_map["Bathroom"]]),
+        _vdoor(w * 0.70, d * 0.55, 2.95, [id_map["Living/Sleep"], id_map["Kitchen"]]),
     ]
     windows = [
-        _hwin(w * 0.35, d, 1.8, [id_map["Living/Sleep"]]),
-        _vwin(0.0, d * 0.50, 1.2, [id_map["Living/Sleep"]]),
+        _hwin(w * 0.35, d, 5.91, [id_map["Living/Sleep"]]),
+        _vwin(0.0, d * 0.50, 3.94, [id_map["Living/Sleep"]]),
     ]
     return FloorPlan(
         name="Studio",
@@ -395,7 +395,7 @@ def instantiate_studio(width: float = 7.0, depth: float = 5.5) -> FloorPlan:
     )
 
 
-def instantiate_3bed(width: float = 12.0, depth: float = 9.0) -> FloorPlan:
+def instantiate_3bed(width: float = 39.37, depth: float = 29.53) -> FloorPlan:
     w, d = width, depth
     living = rect(0, 0, w * 0.40, d * 0.55)
     dining = rect(0, d * 0.55, w * 0.22, d * 0.45)
@@ -423,23 +423,23 @@ def instantiate_3bed(width: float = 12.0, depth: float = 9.0) -> FloorPlan:
     boundary = Boundary(exterior=to_points(rect(0, 0, w, d)))
     id_map = {r.name: r.id for r in rooms}
     doors = [
-        _hdoor(w * 0.46, 0.0, 0.9, [id_map["Entry"]], exterior=True),
-        _vdoor(w * 0.40, d * 0.10, 0.9, [id_map["Entry"], id_map["Living"]]),
-        _vdoor(w * 0.40, d * 0.35, 0.9, [id_map["Living"], id_map["Hall"]]),
-        _hdoor(w * 0.11, d * 0.55, 0.9, [id_map["Living"], id_map["Dining"]]),
-        _vdoor(w * 0.22, d * 0.75, 0.9, [id_map["Dining"], id_map["Kitchen"]]),
-        _vdoor(w * 0.52, d * 0.25, 0.9, [id_map["Hall"], id_map["Master Bedroom"]]),
-        _hdoor(w * 0.60, d * 0.40, 0.8, [id_map["Master Bedroom"], id_map["Master Bath"]]),
-        _vdoor(w * 0.72, d * 0.50, 0.9, [id_map["Hall"], id_map["Bedroom 2"]]),
-        _hdoor(w * 0.60, d * 0.60, 0.9, [id_map["Hall"], id_map["Bedroom 3"]]),
-        _vdoor(w * 0.52, d * 0.85, 0.8, [id_map["Hall"], id_map["Bath 2"]]),
+        _hdoor(w * 0.46, 0.0, 2.95, [id_map["Entry"]], exterior=True),
+        _vdoor(w * 0.40, d * 0.10, 2.95, [id_map["Entry"], id_map["Living"]]),
+        _vdoor(w * 0.40, d * 0.35, 2.95, [id_map["Living"], id_map["Hall"]]),
+        _hdoor(w * 0.11, d * 0.55, 2.95, [id_map["Living"], id_map["Dining"]]),
+        _vdoor(w * 0.22, d * 0.75, 2.95, [id_map["Dining"], id_map["Kitchen"]]),
+        _vdoor(w * 0.52, d * 0.25, 2.95, [id_map["Hall"], id_map["Master Bedroom"]]),
+        _hdoor(w * 0.60, d * 0.40, 2.62, [id_map["Master Bedroom"], id_map["Master Bath"]]),
+        _vdoor(w * 0.72, d * 0.50, 2.95, [id_map["Hall"], id_map["Bedroom 2"]]),
+        _hdoor(w * 0.60, d * 0.60, 2.95, [id_map["Hall"], id_map["Bedroom 3"]]),
+        _vdoor(w * 0.52, d * 0.85, 2.62, [id_map["Hall"], id_map["Bath 2"]]),
     ]
     windows = [
-        _vwin(0.0, d * 0.25, 1.5, [id_map["Living"]]),
-        _hwin(w * 0.10, d, 1.2, [id_map["Dining"]]),
-        _vwin(w, d * 0.20, 1.4, [id_map["Master Bedroom"]]),
-        _vwin(w, d * 0.55, 1.2, [id_map["Bedroom 2"]]),
-        _vwin(w, d * 0.80, 1.2, [id_map["Bedroom 3"]]),
+        _vwin(0.0, d * 0.25, 4.92, [id_map["Living"]]),
+        _hwin(w * 0.10, d, 3.94, [id_map["Dining"]]),
+        _vwin(w, d * 0.20, 4.59, [id_map["Master Bedroom"]]),
+        _vwin(w, d * 0.55, 3.94, [id_map["Bedroom 2"]]),
+        _vwin(w, d * 0.80, 3.94, [id_map["Bedroom 3"]]),
     ]
     return FloorPlan(
         name="3 Bedroom",
@@ -454,17 +454,17 @@ def instantiate_3bed(width: float = 12.0, depth: float = 9.0) -> FloorPlan:
 INSTANTIATORS = {
     "studio": instantiate_studio,
     "compact_2bed": instantiate_compact_2bed,
-    "luxury_2bed": lambda w=12.0, d=9.5: instantiate_3bed(w, d).model_copy(
+    "luxury_2bed": lambda w=39.37, d=31.17: instantiate_3bed(w, d).model_copy(
         update={"name": "Luxury 2 Bedroom", "metadata": {"template_id": "luxury_2bed"}}
     ),
     "3bed": instantiate_3bed,
-    "3bed_corner": lambda w=12.0, d=9.0: instantiate_3bed(w, d).model_copy(
+    "3bed_corner": lambda w=39.37, d=29.53: instantiate_3bed(w, d).model_copy(
         update={"name": "3 Bedroom Corner", "metadata": {"template_id": "3bed_corner"}}
     ),
-    "4bed": lambda w=14.0, d=10.0: instantiate_3bed(w, d).model_copy(
+    "4bed": lambda w=45.93, d=32.81: instantiate_3bed(w, d).model_copy(
         update={"name": "4 Bedroom", "metadata": {"template_id": "4bed"}}
     ),
-    "duplex": lambda w=10.0, d=8.0: instantiate_compact_2bed(w, d).model_copy(
+    "duplex": lambda w=32.81, d=26.25: instantiate_compact_2bed(w, d).model_copy(
         update={"name": "Duplex", "metadata": {"template_id": "duplex"}}
     ),
 }

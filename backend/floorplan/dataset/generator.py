@@ -25,7 +25,6 @@ from floorplan.topology import (
 # Target total floor areas (sqft). Generation picks one at random unless overridden.
 TARGET_AREAS_SQFT: tuple[int, ...] = (900, 2000, 2500, 3000, 4000, 5000, 6000)
 
-_SQFT_TO_M2 = 0.09290304
 # L-boundary footprint vs bounding rect (see generate_boundary shape="l").
 _L_FOOTPRINT_FACTOR = 0.7975
 
@@ -36,13 +35,13 @@ def dims_from_area_sqft(
     aspect: float = 1.25,
     boundary_shape: str = "rect",
 ) -> tuple[float, float]:
-    """Return (width_m, depth_m) so the plan footprint ≈ ``sqft`` square feet."""
-    area_m2 = float(sqft) * _SQFT_TO_M2
+    """Return (width_ft, depth_ft) so the plan footprint ≈ ``sqft`` square feet."""
+    area = float(sqft)
     if boundary_shape == "l":
-        area_m2 /= _L_FOOTPRINT_FACTOR
+        area /= _L_FOOTPRINT_FACTOR
     aspect = max(0.6, min(2.0, float(aspect)))
-    width = (area_m2 * aspect) ** 0.5
-    depth = area_m2 / width
+    width = (area * aspect) ** 0.5
+    depth = area / width
     return width, depth
 
 
@@ -54,7 +53,7 @@ def resolve_plan_dims(
     target_area_sqft: int | None = None,
     boundary_shape: str = "rect",
 ) -> tuple[float, float, int]:
-    """Resolve width/depth and target area (sqft) for generation.
+    """Resolve width/depth (ft) and target area (sqft) for generation.
 
     When both ``width`` and ``depth`` are set, they win and footprint sqft is derived.
     Otherwise a target area is taken from ``target_area_sqft`` or randomly from
@@ -63,7 +62,7 @@ def resolve_plan_dims(
     rng = random.Random(seed)
     if width is not None and depth is not None:
         factor = _L_FOOTPRINT_FACTOR if boundary_shape == "l" else 1.0
-        sqft = int(round(width * depth * factor / _SQFT_TO_M2))
+        sqft = int(round(width * depth * factor))
         return float(width), float(depth), sqft
 
     sqft = int(target_area_sqft) if target_area_sqft is not None else int(rng.choice(TARGET_AREAS_SQFT))
@@ -73,12 +72,12 @@ def resolve_plan_dims(
         w, d = dims_from_area_sqft(sqft, aspect=aspect, boundary_shape=boundary_shape)
         return w, d, sqft
 
-    area_m2 = sqft * _SQFT_TO_M2
+    area = float(sqft)
     if boundary_shape == "l":
-        area_m2 /= _L_FOOTPRINT_FACTOR
+        area /= _L_FOOTPRINT_FACTOR
     if width is None:
-        return area_m2 / float(depth), float(depth), sqft
-    return float(width), area_m2 / float(width), sqft
+        return area / float(depth), float(depth), sqft
+    return float(width), area / float(width), sqft
 
 
 def generate_sample(
@@ -94,8 +93,8 @@ def generate_sample(
 ) -> DatasetSample:
     """Choose Template → Boundary → Fit → Reconcile → Mutate (+ reconcile) → Evaluate → Render.
 
-    Total footprint area defaults to a random choice from ``TARGET_AREAS_SQFT``
-    unless ``width``+``depth`` or ``target_area_sqft`` is provided.
+    Coordinates are feet; total footprint defaults to a random choice from
+    ``TARGET_AREAS_SQFT`` unless ``width``+``depth`` or ``target_area_sqft`` is provided.
     """
     template = get_template(template_id)
     width, depth, area_sqft = resolve_plan_dims(
@@ -149,8 +148,8 @@ def generate_sample(
         metadata={
             "seed": seed,
             "target_area_sqft": area_sqft,
-            "width_m": round(width, 3),
-            "depth_m": round(depth, 3),
+            "width_ft": round(width, 3),
+            "depth_ft": round(depth, 3),
             "topology_hash": topology_hash(plan),
             "geometry_hash": geometry_hash(plan),
             "room_ratio_signature": room_ratio_signature(plan),

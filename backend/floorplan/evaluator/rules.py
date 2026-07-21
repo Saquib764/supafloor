@@ -78,13 +78,13 @@ def rule_room_overlap(plan: FloorPlan) -> RuleResult:
     overlaps = []
     rooms = plan.rooms
     for i, a in enumerate(rooms):
-        pa = polygon_from_room(a).buffer(-0.02)
+        pa = polygon_from_room(a).buffer(-0.07)
         for b in rooms[i + 1 :]:
-            pb = polygon_from_room(b).buffer(-0.02)
+            pb = polygon_from_room(b).buffer(-0.07)
             if pa.is_empty or pb.is_empty:
                 continue
             inter = pa.intersection(pb)
-            if not inter.is_empty and inter.area > 0.05:
+            if not inter.is_empty and inter.area > 0.5:
                 overlaps.append(f"{a.name}/{b.name}")
     return _hard(
         "room_overlap",
@@ -96,13 +96,13 @@ def rule_room_overlap(plan: FloorPlan) -> RuleResult:
 
 
 def rule_boundary_containment(plan: FloorPlan) -> RuleResult:
-    boundary = polygon_from_boundary(plan.ensure_boundary()).buffer(0.05)
+    boundary = polygon_from_boundary(plan.ensure_boundary()).buffer(0.16)
     outside = []
     for room in plan.rooms:
         poly = polygon_from_room(room)
         if not boundary.covers(poly):
             diff = poly.difference(boundary)
-            if diff.area > 0.1:
+            if diff.area > 1.0:
                 outside.append(room.name)
     return _hard(
         "boundary_containment",
@@ -115,18 +115,18 @@ def rule_boundary_containment(plan: FloorPlan) -> RuleResult:
 
 def rule_minimum_area(plan: FloorPlan) -> RuleResult:
     mins = {
-        RoomType.LIVING: 12.0,
-        RoomType.BEDROOM: 7.0,
-        RoomType.MASTER_BEDROOM: 10.0,
-        RoomType.KITCHEN: 4.0,
-        RoomType.BATHROOM: 3.0,
-        RoomType.DINING: 6.0,
+        RoomType.LIVING: 130.0,
+        RoomType.BEDROOM: 75.0,
+        RoomType.MASTER_BEDROOM: 110.0,
+        RoomType.KITCHEN: 45.0,
+        RoomType.BATHROOM: 35.0,
+        RoomType.DINING: 65.0,
     }
     fails = []
     for room in plan.rooms:
         m = mins.get(room.room_type)
         if m and area(room.coords()) < m:
-            fails.append(f"{room.name} ({area(room.coords()):.1f}<{m})")
+            fails.append(f"{room.name} ({area(room.coords()):.0f}<{m:.0f} sqft)")
     return _hard(
         "minimum_area",
         "Minimum Area",
@@ -138,12 +138,12 @@ def rule_minimum_area(plan: FloorPlan) -> RuleResult:
 
 def rule_minimum_width(plan: FloorPlan) -> RuleResult:
     mins = {
-        RoomType.LIVING: 2.8,
-        RoomType.BEDROOM: 2.2,
-        RoomType.MASTER_BEDROOM: 2.6,
-        RoomType.BATHROOM: 1.2,
-        RoomType.KITCHEN: 1.6,
-        RoomType.HALLWAY: 0.9,
+        RoomType.LIVING: 9.0,
+        RoomType.BEDROOM: 7.0,
+        RoomType.MASTER_BEDROOM: 8.5,
+        RoomType.BATHROOM: 4.0,
+        RoomType.KITCHEN: 5.0,
+        RoomType.HALLWAY: 3.0,
     }
     fails = []
     for room in plan.rooms:
@@ -259,8 +259,8 @@ def rule_living_size(plan: FloorPlan) -> RuleResult:
     if not living:
         return _soft("living_size", "Living Size", 3.0, "No living room", "Add living room")
     a = max(area(r.coords()) for r in living)
-    score = min(10.0, a / 2.0)  # 20m2 -> 10
-    return _soft("living_size", "Living Size", score, f"Living area {a:.1f} m²", "Expand living room")
+    score = min(10.0, a / 215.0)  # ~215 sqft -> 10
+    return _soft("living_size", "Living Size", score, f"Living area {a:.0f} sqft", "Expand living room")
 
 
 def rule_bedroom_ratio(plan: FloorPlan) -> RuleResult:
@@ -340,8 +340,8 @@ def rule_wet_core_compactness(plan: FloorPlan) -> RuleResult:
             bx, by = centers[j]
             dists.append(((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5)
     avg = sum(dists) / len(dists)
-    score = max(2.0, 10.0 - avg * 1.5)
-    return _soft("wet_core", "Wet Core Compactness", score, f"Avg wet-room distance {avg:.2f} m", "Cluster wet rooms for shared plumbing")
+    score = max(2.0, 10.0 - avg * 0.45)
+    return _soft("wet_core", "Wet Core Compactness", score, f"Avg wet-room distance {avg:.1f} ft", "Cluster wet rooms for shared plumbing")
 
 
 def rule_rectangularity(plan: FloorPlan) -> RuleResult:
@@ -378,8 +378,8 @@ def rule_balcony_usability(plan: FloorPlan) -> RuleResult:
     if not bals:
         return _soft("balcony", "Balcony Usability", 6.0, "No balcony in plan")
     a = max(area(r.coords()) for r in bals)
-    score = min(10.0, a * 1.5)
-    return _soft("balcony", "Balcony Usability", score, f"Balcony {a:.1f} m²", "Enlarge balcony to ≥4 m²")
+    score = min(10.0, a / 4.3)  # ~43 sqft -> 10
+    return _soft("balcony", "Balcony Usability", score, f"Balcony {a:.0f} sqft", "Enlarge balcony to ≥45 sqft")
 
 
 HARD_RULES: list[RuleFn] = [

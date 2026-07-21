@@ -75,7 +75,7 @@ def _avg(vals: list[float]) -> float:
 def _plan_blurb(plan: FloorPlan | None) -> str:
     if plan is None:
         return ""
-    rooms = ", ".join(f"{r.name} ({area(r.coords()):.1f} m²)" for r in plan.rooms)
+    rooms = ", ".join(f"{r.name} ({area(r.coords()):.0f} sqft)" for r in plan.rooms)
     return (
         f"**Plan:** {plan.name}  \n"
         f"**Rooms ({len(plan.rooms)}):** {rooms}  \n"
@@ -169,7 +169,7 @@ def build_summary(scores: ScoreBreakdown, *, plan: FloorPlan | None = None) -> s
     if plan is not None:
         plan_bits.append(f"“{plan.name}” with {len(plan.rooms)} rooms")
         total_area = sum(area(r.coords()) for r in plan.rooms)
-        plan_bits.append(f"{total_area:.1f} m² total room area")
+        plan_bits.append(f"{total_area:.0f} sqft total room area")
 
     head = "This floor plan scores "
     head += f"**{scores.overall:.2f}/10 ({score_label(scores.overall)})**"

@@ -2,6 +2,8 @@
 
 Manual utilities for inspecting floor-plan generation and scoring.
 
+All engine geometry, rules, and reports use **feet / sqft**.
+
 Run from the repo with `uv` (backend package):
 
 ```bash

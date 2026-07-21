@@ -1,17 +1,17 @@
 {
   "id": "004",
   "plan_name": "3 Bedroom",
-  "overall": 5.44,
-  "summary": "This floor plan scores **5.44/10 (Weak)** for \u201c3 Bedroom\u201d with 10 rooms, 87.7 m\u00b2 total room area. It fails 2 hard rule(s): Minimum Area, Minimum Width. Strong areas include living size, bedroom ratio, natural light. Weaker areas include wet core compactness, storage adequacy. Highest category is privacy (10.0); lowest is geometry (6.0).",
+  "overall": 5.11,
+  "summary": "This floor plan scores **5.11/10 (Weak)** for \u201c3 Bedroom\u201d with 10 rooms, 2000 sqft total room area. It fails 2 hard rule(s): Minimum Area, Minimum Width. Strong areas include bedroom ratio, natural light, privacy. Weaker areas include living size, wet core compactness, storage adequacy. Highest category is privacy (10.0); lowest is geometry (6.0).",
   "categories": {
     "geometry": 6.0,
     "topology": 10.0,
-    "construction": 7.22,
+    "construction": 6.08,
     "privacy": 10.0,
     "circulation": 9.0,
     "furniture": 8.12,
     "daylight": 10.0,
-    "architecture": 7.4
+    "architecture": 5.91
   },
   "hard_failures": [
     "minimum_area",

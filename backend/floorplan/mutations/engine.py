@@ -162,11 +162,11 @@ def mutate_insert_closet(plan: FloorPlan, rng: random.Random) -> FloorPlan:
     minx, miny, _, _ = bounding_box(bed.coords())
     closet = make_room(
         f"Closet-{bed.name}",
-        rect(minx - 0.85, miny + 0.1, 0.8, 0.6),
+        rect(minx - 2.8, miny + 0.3, 2.6, 2.0),
         room_type=RoomType.CLOSET,
         zone=ZoneType.PRIVATE,
     )
-    door = make_door_line((minx - 0.05, miny + 0.2), (minx - 0.05, miny + 1.0), connects=[bed.id, closet.id])
+    door = make_door_line((minx - 0.16, miny + 0.7), (minx - 0.16, miny + 3.3), connects=[bed.id, closet.id])
     return _new_plan(
         name=plan.name,
         rooms=list(plan.rooms) + [closet],
@@ -183,7 +183,7 @@ def mutate_insert_storage(plan: FloorPlan, rng: random.Random) -> FloorPlan:
     _, _, maxx, maxy = bounding_box(plan.ensure_boundary().coords())
     storage = make_room(
         "Storage",
-        rect(maxx - 1.0, maxy - 1.2, 0.9, 1.0),
+        rect(maxx - 3.3, maxy - 3.9, 3.0, 3.3),
         room_type=RoomType.STORAGE,
         zone=ZoneType.SERVICE,
     )
@@ -191,7 +191,7 @@ def mutate_insert_storage(plan: FloorPlan, rng: random.Random) -> FloorPlan:
     circ = next((r for r in plan.rooms if r.room_type in (RoomType.HALLWAY, RoomType.ENTRY, RoomType.LIVING)), None)
     if circ:
         doors.append(
-            make_door_line((maxx - 1.0, maxy - 1.0), (maxx - 1.0, maxy - 0.2), connects=[circ.id, storage.id])
+            make_door_line((maxx - 3.3, maxy - 3.3), (maxx - 3.3, maxy - 0.7), connects=[circ.id, storage.id])
         )
     return _new_plan(
         name=plan.name,
@@ -212,22 +212,23 @@ def mutate_insert_balcony(plan: FloorPlan, rng: random.Random) -> FloorPlan:
     if not living:
         return plan
     minx, _, maxx, maxy = bounding_box(living.coords())
+    depth = 4.0
     balcony = make_room(
         "Balcony",
-        rect(minx + 0.3, maxy, max(1.5, (maxx - minx) * 0.5), 1.2),
+        rect(minx + 1.0, maxy, max(5.0, (maxx - minx) * 0.5), depth),
         room_type=RoomType.BALCONY,
         zone=ZoneType.OUTDOOR,
     )
     bminx, bminy, bmaxx, bmaxy = bounding_box(plan.ensure_boundary().coords())
-    boundary = Boundary(exterior=to_points(rect(bminx, bminy, bmaxx - bminx, max(bmaxy, maxy + 1.2) - bminy)))
+    boundary = Boundary(exterior=to_points(rect(bminx, bminy, bmaxx - bminx, max(bmaxy, maxy + depth) - bminy)))
     cx = (minx + maxx) / 2
     return _new_plan(
         name=plan.name,
         rooms=list(plan.rooms) + [balcony],
         doors=list(plan.doors)
-        + [make_door_line((cx - 0.45, maxy), (cx + 0.45, maxy), connects=[living.id, balcony.id])],
+        + [make_door_line((cx - 1.5, maxy), (cx + 1.5, maxy), connects=[living.id, balcony.id])],
         windows=list(plan.windows)
-        + [make_window_line((cx - 0.75, maxy + 1.2), (cx + 0.75, maxy + 1.2), room_ids=[balcony.id])],
+        + [make_window_line((cx - 2.5, maxy + depth), (cx + 2.5, maxy + depth), room_ids=[balcony.id])],
         boundary=boundary,
         zones=plan.zones,
         constraint_graph=plan.constraint_graph,
@@ -242,8 +243,8 @@ def mutate_insert_toilet(plan: FloorPlan, rng: random.Random) -> FloorPlan:
     if not hall:
         return plan
     _, miny, maxx, _ = bounding_box(hall.coords())
-    powder = make_room("Powder", rect(maxx, miny, 1.2, 1.4), room_type=RoomType.POWDER, zone=ZoneType.WET)
-    door = make_door_line((maxx, miny + 0.3), (maxx, miny + 1.1), connects=[hall.id, powder.id])
+    powder = make_room("Powder", rect(maxx, miny, 4.0, 4.6), room_type=RoomType.POWDER, zone=ZoneType.WET)
+    door = make_door_line((maxx, miny + 1.0), (maxx, miny + 3.6), connects=[hall.id, powder.id])
     return _new_plan(
         name=plan.name,
         rooms=list(plan.rooms) + [powder],
@@ -262,7 +263,7 @@ def mutate_move_wall(plan: FloorPlan, rng: random.Random) -> FloorPlan:
     if not candidates:
         return plan
     target = rng.choice(candidates)
-    dx, dy = rng.uniform(-0.15, 0.15), rng.uniform(-0.15, 0.15)
+    dx, dy = rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5)
     new_poly = translate(target.coords(), dx, dy)
     rooms = [
         r.model_copy(update={"polygon": to_points(new_poly)}) if r.id == target.id else r

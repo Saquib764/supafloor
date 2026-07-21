@@ -4,6 +4,8 @@ A FloorPlan is primarily three separate lists:
   - rooms: each has a name and a closed, geometrically valid polygon
   - doors: line segments
   - windows: line segments
+
+All linear coordinates and sizes are in feet; areas are in square feet.
 """
 
 from __future__ import annotations
@@ -75,7 +77,7 @@ class Boundary(BaseModel):
     id: str = Field(default_factory=_uid)
     exterior: list[Point2D]
     holes: list[list[Point2D]] = Field(default_factory=list)
-    units: str = "m"
+    units: str = "ft"
 
     @field_validator("exterior", mode="before")
     @classmethod
@@ -193,8 +195,8 @@ class Window(BaseModel):
     start: Point2D
     end: Point2D
     room_ids: list[str] = Field(default_factory=list)
-    height: float = 1.4
-    sill_height: float = 0.9
+    height: float = 4.6
+    sill_height: float = 3.0
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -223,7 +225,7 @@ class Wall(BaseModel):
     id: str = Field(default_factory=_uid)
     start: Point2D
     end: Point2D
-    thickness: float = 0.15
+    thickness: float = 0.5
     is_exterior: bool = False
     room_ids: list[str] = Field(default_factory=list)
 

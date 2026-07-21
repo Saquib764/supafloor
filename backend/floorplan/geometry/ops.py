@@ -86,7 +86,7 @@ def _longest_line(geom) -> Optional[LineString]:
     return None
 
 
-def shared_edge(a: CoordSeq, b: CoordSeq, tol: float = 0.05) -> Optional[LineString]:
+def shared_edge(a: CoordSeq, b: CoordSeq, tol: float = 0.16) -> Optional[LineString]:
     """Return shared boundary segment between two polygons, if any."""
     ga = points_to_polygon(a)
     gb = points_to_polygon(b)
@@ -101,7 +101,7 @@ def contains(outer: CoordSeq, inner: CoordSeq) -> bool:
     return points_to_polygon(outer).covers(points_to_polygon(inner))
 
 
-def touches(a: CoordSeq, b: CoordSeq, tol: float = 0.05) -> bool:
+def touches(a: CoordSeq, b: CoordSeq, tol: float = 0.16) -> bool:
     """True when polygons share a usable edge (or near-touch within tol)."""
     ga = points_to_polygon(a)
     gb = points_to_polygon(b)
@@ -116,8 +116,8 @@ def distance(a: CoordSeq, b: CoordSeq) -> float:
     return float(points_to_polygon(a).distance(points_to_polygon(b)))
 
 
-def offset(coords: CoordSeq, distance_m: float) -> list[Coord]:
-    poly = points_to_polygon(coords).buffer(distance_m, join_style=2)
+def offset(coords: CoordSeq, distance: float) -> list[Coord]:
+    poly = points_to_polygon(coords).buffer(distance, join_style=2)
     if poly.is_empty:
         return list(coords)
     if poly.geom_type == "MultiPolygon":
@@ -125,7 +125,7 @@ def offset(coords: CoordSeq, distance_m: float) -> list[Coord]:
     return list(poly.exterior.coords[:-1])
 
 
-def simplify(coords: CoordSeq, tolerance: float = 0.05) -> list[Coord]:
+def simplify(coords: CoordSeq, tolerance: float = 0.16) -> list[Coord]:
     poly = points_to_polygon(coords).simplify(tolerance, preserve_topology=True)
     if poly.is_empty or poly.geom_type != "Polygon":
         return list(coords)

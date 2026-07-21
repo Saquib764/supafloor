@@ -121,7 +121,7 @@ def render_svg(
                 a = area(room.coords())
                 parts.append(
                     f'<text x="{px:.1f}" y="{py + 14:.1f}" text-anchor="middle" '
-                    f'font-family="Georgia, serif" font-size="9" fill="#555">{a:.1f} m²</text>'
+                    f'font-family="Georgia, serif" font-size="9" fill="#555">{a:.0f} sqft</text>'
                 )
         parts.append("</g>")
 
@@ -151,12 +151,12 @@ def render_svg(
         parts.append('<g id="layer-dimensions">')
         minx, miny, maxx, maxy = bounding_box(plan.ensure_boundary().coords())
         # Width dimension along bottom
-        x0, y0 = _transform(minx, miny - 0.3, bounds, size)
-        x1, y1 = _transform(maxx, miny - 0.3, bounds, size)
+        x0, y0 = _transform(minx, miny - 1.0, bounds, size)
+        x1, y1 = _transform(maxx, miny - 1.0, bounds, size)
         parts.append(f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="#666" stroke-width="1"/>')
         parts.append(
             f'<text x="{(x0 + x1) / 2:.1f}" y="{y0 + 14:.1f}" text-anchor="middle" '
-            f'font-family="Georgia, serif" font-size="10" fill="#444">{maxx - minx:.2f} m</text>'
+            f'font-family="Georgia, serif" font-size="10" fill="#444">{maxx - minx:.1f} ft</text>'
         )
         parts.append("</g>")
 

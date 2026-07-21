@@ -34,7 +34,7 @@ class FloorPlanEngine:
     def reconcile(self, plan: FloorPlan) -> FloorPlan:
         return reconcile_plan(plan)
 
-    def make_boundary(self, width: float = 10.0, depth: float = 8.0, shape: str = "rect") -> Boundary:
+    def make_boundary(self, width: float = 32.81, depth: float = 26.25, shape: str = "rect") -> Boundary:
         return generate_boundary(width=width, depth=depth, shape=shape)
 
     def mutate(self, plan: FloorPlan, op: str, seed: int = 0) -> tuple[FloorPlan, dict]:

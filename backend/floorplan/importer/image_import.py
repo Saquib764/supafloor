@@ -17,18 +17,18 @@ def _order_rooms_by_area(contours_data: list[dict]) -> list[dict]:
     return sorted(contours_data, key=lambda c: c["area"], reverse=True)
 
 
-def _guess_room_type(area_m2: float, ar: float, touching_exterior: bool, rank: int) -> RoomType:
-    if area_m2 < 2.5:
+def _guess_room_type(area_sqft: float, ar: float, touching_exterior: bool, rank: int) -> RoomType:
+    if area_sqft < 27.0:
         return RoomType.CLOSET
-    if area_m2 < 4.5 and ar < 2.2:
+    if area_sqft < 48.0 and ar < 2.2:
         return RoomType.BATHROOM
-    if area_m2 < 6 and ar > 2.5:
+    if area_sqft < 65.0 and ar > 2.5:
         return RoomType.HALLWAY
     if rank == 0 and touching_exterior:
         return RoomType.LIVING
-    if area_m2 >= 8 and touching_exterior:
+    if area_sqft >= 86.0 and touching_exterior:
         return RoomType.BEDROOM
-    if 4 <= area_m2 < 10:
+    if 43.0 <= area_sqft < 108.0:
         return RoomType.KITCHEN
     return RoomType.OTHER
 
@@ -36,11 +36,14 @@ def _guess_room_type(area_m2: float, ar: float, touching_exterior: bool, rank: i
 def import_bw_image(
     image_bytes: bytes,
     *,
-    meters_per_pixel: float = 0.05,
-    min_area_m2: float = 1.0,
+    feet_per_pixel: float = 0.164,
+    min_area_sqft: float = 10.8,
     simplify_epsilon_px: float = 2.0,
 ) -> FloorPlan:
-    """Pipeline: grayscale → threshold → connected components → contours → rooms."""
+    """Pipeline: grayscale → threshold → connected components → contours → rooms.
+
+    Output coordinates and areas are in feet / square feet.
+    """
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
     if img is None:
@@ -54,8 +57,8 @@ def import_bw_image(
     candidates: list[dict[str, Any]] = []
     for label in range(1, num_labels):  # skip background 0
         x, y, bw, bh, pixel_area = stats[label]
-        area_m2 = float(pixel_area) * (meters_per_pixel**2)
-        if area_m2 < min_area_m2:
+        area_sqft = float(pixel_area) * (feet_per_pixel**2)
+        if area_sqft < min_area_sqft:
             continue
         mask = (labels == label).astype(np.uint8) * 255
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -67,12 +70,12 @@ def import_bw_image(
         if len(coords_px) < 3:
             continue
         # Convert image coords (y down) to plan coords (y up)
-        coords = [(x * meters_per_pixel, (h - y) * meters_per_pixel) for x, y in coords_px]
+        coords = [(x * feet_per_pixel, (h - y) * feet_per_pixel) for x, y in coords_px]
         touching_exterior = x <= 1 or y <= 1 or x + bw >= w - 1 or y + bh >= h - 1
         candidates.append(
             {
                 "coords": coords,
-                "area": area_m2,
+                "area": area_sqft,
                 "bbox": bounding_box(coords),
                 "aspect_ratio": aspect_ratio(coords),
                 "touching_exterior": touching_exterior,
@@ -106,9 +109,9 @@ def import_bw_image(
         exterior=to_points(
             [
                 (0, 0),
-                (w * meters_per_pixel, 0),
-                (w * meters_per_pixel, h * meters_per_pixel),
-                (0, h * meters_per_pixel),
+                (w * feet_per_pixel, 0),
+                (w * feet_per_pixel, h * feet_per_pixel),
+                (0, h * feet_per_pixel),
             ]
         )
     )
@@ -119,7 +122,7 @@ def import_bw_image(
         rooms=rooms,
         metadata={
             "source": "bw_image",
-            "meters_per_pixel": meters_per_pixel,
+            "feet_per_pixel": feet_per_pixel,
             "image_size": [w, h],
             "room_candidates": len(rooms),
         },

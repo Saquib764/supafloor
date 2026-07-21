@@ -17,9 +17,9 @@ defineProps<{
       <dl>
         <div><dt>Type</dt><dd>{{ inspection.room_type }}</dd></div>
         <div><dt>Zone</dt><dd>{{ inspection.zone }}</dd></div>
-        <div><dt>Area</dt><dd>{{ inspection.area.toFixed(2) }} m²</dd></div>
+        <div><dt>Area</dt><dd>{{ inspection.area.toFixed(0) }} sqft</dd></div>
         <div><dt>Aspect</dt><dd>{{ inspection.aspect_ratio.toFixed(2) }}</dd></div>
-        <div><dt>Perimeter</dt><dd>{{ inspection.perimeter.toFixed(2) }} m</dd></div>
+        <div><dt>Perimeter</dt><dd>{{ inspection.perimeter.toFixed(1) }} ft</dd></div>
         <div><dt>Plan score</dt><dd>{{ inspection.plan_overall.toFixed(2) }}</dd></div>
       </dl>
       <h4>Adjacent rooms</h4>
