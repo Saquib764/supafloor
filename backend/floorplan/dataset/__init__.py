@@ -1,5 +1,17 @@
 """Dataset package."""
 
-from .generator import generate_dataset, generate_sample
+from .generator import (
+    TARGET_AREAS_SQFT,
+    dims_from_area_sqft,
+    generate_dataset,
+    generate_sample,
+    resolve_plan_dims,
+)
 
-__all__ = ["generate_dataset", "generate_sample"]
+__all__ = [
+    "TARGET_AREAS_SQFT",
+    "dims_from_area_sqft",
+    "generate_dataset",
+    "generate_sample",
+    "resolve_plan_dims",
+]

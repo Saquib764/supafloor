@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     if str(backend) not in sys.path:
         sys.path.insert(0, str(backend))
 
-    from floorplan.dataset import generate_sample
+    from floorplan.dataset import TARGET_AREAS_SQFT, generate_sample
     from floorplan.renderer import render_png
     from floorplan.templates import list_templates
 
@@ -54,8 +54,6 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed + i,
             mutate=not args.no_mutate,
             include_renders=False,
-            width=8.0 + (i % 5),
-            depth=7.0 + (i % 4),
             boundary_shape="rect" if i % 3 else "l",
         )
         plan = sample.floor_plan
@@ -67,10 +65,12 @@ def main(argv: list[str] | None = None) -> int:
 
         json_path = out / f"{sample_id}.json"
         png_path = out / f"{sample_id}.png"
+        area_sqft = sample.metadata.get("target_area_sqft")
 
         payload = {
             "id": sample_id,
             "template_id": tid,
+            "target_area_sqft": area_sqft,
             "floor_plan": plan.model_dump(),
             "boundary": sample.boundary.model_dump() if sample.boundary else None,
             "requirements": sample.requirements,
@@ -86,16 +86,21 @@ def main(argv: list[str] | None = None) -> int:
                 "id": sample_id,
                 "template_id": tid,
                 "name": plan.name,
+                "target_area_sqft": area_sqft,
                 "json": json_path.name,
                 "png": png_path.name,
                 "valid": sample.metadata.get("valid"),
                 "room_count": len(plan.rooms),
             }
         )
-        print(f"Wrote {json_path.name} + {png_path.name} ({plan.name}, template={tid})")
+        print(
+            f"Wrote {json_path.name} + {png_path.name} "
+            f"({plan.name}, template={tid}, area={area_sqft} sqft)"
+        )
 
     (out / "index.json").write_text(json.dumps(index, indent=2))
     print(f"\nGenerated {len(index)} plans → {out.resolve()}")
+    print(f"Target area options (sqft): {list(TARGET_AREAS_SQFT)}")
     return 0
 
 

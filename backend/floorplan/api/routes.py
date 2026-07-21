@@ -45,8 +45,9 @@ class EvaluateRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     template_id: str = "compact_2bed"
-    width: float = 10.0
-    depth: float = 8.0
+    width: Optional[float] = None
+    depth: Optional[float] = None
+    target_area_sqft: Optional[int] = None
     boundary_shape: str = "rect"
     seed: int = 0
     mutate: bool = True
@@ -142,6 +143,7 @@ def generate(body: GenerateRequest) -> dict:
         template_id=body.template_id,
         width=body.width,
         depth=body.depth,
+        target_area_sqft=body.target_area_sqft,
         boundary_shape=body.boundary_shape,
         seed=body.seed,
         mutate=body.mutate,

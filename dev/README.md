@@ -6,6 +6,8 @@ Run from the repo with `uv` (backend package):
 
 ```bash
 # 1) Generate plans as JSON + PNG into a folder
+#    Total area is randomly chosen from:
+#    900, 2000, 2500, 3000, 4000, 5000, 6000 sqft
 uv run --directory backend python ../dev/generate_floorplans.py \
   --out ../dev/output --n 5
 
