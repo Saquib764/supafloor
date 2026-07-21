@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "floorplan-engine"
+version = "1.0.0"
+description = "Deterministic residential floor plan dataset engine"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
+  "pydantic>=2.9.0",
+  "shapely>=2.0.6",
+  "numpy>=2.1.0",
+  "opencv-python-headless>=4.10.0",
+  "pillow>=10.4.0",
+  "matplotlib>=3.9.0",
+  "python-multipart>=0.0.12",
+  "pyyaml>=6.0.2",
+]
+
+[project.scripts]
+floorplan = "floorplan.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.0",
+  "httpx>=0.27.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["floorplan"]
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+testpaths = ["floorplan/tests"]
+pythonpath = ["."]

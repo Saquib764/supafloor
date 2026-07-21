@@ -1,0 +1,21 @@
+{
+  "id": "5d8872a8ebe9",
+  "plan_name": "Studio",
+  "overall": 7.05,
+  "summary": "This floor plan scores **7.05/10 (Fair)** for \u201cStudio\u201d with 3 rooms, 56.0 m\u00b2 total room area. It fails 1 hard rule(s): Boundary Containment. Strong areas include living size, natural light, privacy. Weaker areas include bedroom ratio, circulation efficiency, wet core compactness. Highest category is privacy (10.0); lowest is circulation (5.0).",
+  "categories": {
+    "geometry": 8.0,
+    "topology": 10.0,
+    "construction": 7.38,
+    "privacy": 10.0,
+    "circulation": 5.0,
+    "furniture": 10.0,
+    "daylight": 10.0,
+    "architecture": 7.4
+  },
+  "hard_failures": [
+    "boundary_containment"
+  ],
+  "report_file": "5d8872a8ebe9.score.md",
+  "image": "5d8872a8ebe9.png"
+}

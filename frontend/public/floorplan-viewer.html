@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Supafloor — FloorPlan Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --ink: #2a241c;
+        --paper: #e8e0d4;
+        --panel: #f3eee5;
+        --accent: #c45c26;
+        --line: #d9d0c3;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        justify-content: space-between;
+        align-items: end;
+        padding: 1rem 1.25rem;
+        color: #f7f3ec;
+        background:
+          linear-gradient(120deg, rgba(42,36,28,.92), rgba(90,58,36,.88)),
+          repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,.04) 40px);
+      }
+      .eyebrow { margin: 0; letter-spacing: .18em; text-transform: uppercase; font-size: .7rem; opacity: .75; }
+      h1 { margin: .15rem 0 0; font-family: Fraunces, Georgia, serif; font-size: clamp(1.6rem, 3vw, 2.2rem); }
+      .controls, .toggles { display: flex; flex-wrap: wrap; gap: .55rem; align-items: center; }
+      select, button, label { font: inherit; }
+      select, button {
+        border: 1px solid #cbbfac;
+        background: #f7f3ec;
+        color: var(--ink);
+        padding: .35rem .65rem;
+        cursor: pointer;
+      }
+      button.accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(0,1.4fr) minmax(220px,.7fr) minmax(240px,.8fr);
+        min-height: 560px;
+      }
+      .canvas {
+        background:
+          radial-gradient(ellipse at 20% 0%, rgba(196,92,38,.08), transparent 50%),
+          linear-gradient(165deg, #f7f3ec 0%, #ebe4d8 45%, #e2d8c8 100%);
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        min-height: 420px;
+      }
+      .viewport {
+        flex: 1;
+        overflow: hidden;
+        display: grid;
+        place-items: center;
+        cursor: grab;
+      }
+      .stage { transform-origin: center center; }
+      .stage svg { max-width: 100%; height: auto; filter: drop-shadow(0 12px 28px rgba(42,36,28,.12)); }
+      .chips {
+        display: flex; flex-wrap: wrap; gap: .35rem;
+        padding: .6rem .75rem; background: #efe8dc; border-top: 1px solid var(--line);
+      }
+      .chips button.active { background: var(--ink); color: #f7f3ec; }
+      aside {
+        padding: 1rem; overflow: auto; border-right: 1px solid var(--line); background: var(--panel);
+      }
+      aside.scores { background: #efe8dc; border-right: none; }
+      h2, h3 { font-family: Fraunces, Georgia, serif; margin: 0 0 .75rem; }
+      .overall { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .75rem; }
+      .overall strong { font-size: 2rem; color: var(--accent); font-family: Fraunces, Georgia, serif; }
+      .cat { display: grid; grid-template-columns: 6.5rem 1fr 2rem; gap: .4rem; align-items: center; font-size: .8rem; margin-bottom: .35rem; text-transform: capitalize; }
+      .bar { height: 6px; background: var(--line); }
+      .bar > i { display: block; height: 100%; background: linear-gradient(90deg, #8f4b2a, var(--accent)); }
+      .rule { border-bottom: 1px solid #e0d7ca; padding: .5rem 0; font-size: .82rem; }
+      .rule.fail { background: rgba(180,50,40,.08); }
+      .muted { color: #8a7f72; }
+      .error { margin: 0; padding: .6rem 1rem; background: #f3d5cf; color: #7a2a1e; }
+      .json {
+        background: #1f1a14; color: #e8dfd2; max-height: 220px; overflow: auto; border-top: 1px solid var(--line);
+      }
+      .json button { width: 100%; text-align: left; background: #2a241c; color: #f7f3ec; border: none; padding: .5rem .9rem; }
+      pre { margin: 0; padding: .75rem 1rem 1.25rem; font-size: .72rem; line-height: 1.4; }
+      dl { display: grid; gap: .35rem; }
+      dl div { display: grid; grid-template-columns: 7rem 1fr; gap: .5rem; font-size: .9rem; }
+      dt { color: #6b6156; } dd { margin: 0; font-weight: 500; }
+      @media (max-width: 960px) {
+        .workspace { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <div>
+          <p class="eyebrow">Supafloor</p>
+          <h1>FloorPlan Engine</h1>
+        </div>
+        <div class="controls">
+          <label>Template
+            <select v-model="templateId" @change="loadDemo">
+              <option v-for="t in templates" :key="t.id" :value="t.id">{{ t.name }}</option>
+            </select>
+          </label>
+          <button @click="loadDemo">Reload</button>
+          <button class="accent" @click="generate">Generate</button>
+          <button @click="mutate('mirror')">Mirror</button>
+          <button @click="mutate('swap_rooms')">Swap rooms</button>
+        </div>
+        <div class="toggles">
+          <label><input type="checkbox" v-model="showLabels" @change="refreshRender" /> Labels</label>
+          <label><input type="checkbox" v-model="showDimensions" @change="refreshRender" /> Dimensions</label>
+          <label><input type="checkbox" v-model="showTopology" @change="refreshRender" /> Topology</label>
+        </div>
+      </header>
+      <p v-if="error" class="error">{{ error }}</p>
+      <div class="workspace">
+        <section class="canvas">
+          <div class="viewport"
+               @wheel.prevent="onWheel"
+               @pointerdown="onDown"
+               @pointermove="onMove"
+               @pointerup="onUp">
+            <div class="stage" :style="{ transform: `translate(${pan.x}px,${pan.y}px) scale(${scale})` }" v-html="svg"></div>
+          </div>
+          <div class="chips" v-if="plan">
+            <button v-for="r in plan.rooms" :key="r.id" :class="{active: r.id===selectedRoomId}" @click="selectRoom(r.id)">{{ r.name }}</button>
+          </div>
+        </section>
+        <aside>
+          <h2>Inspector</h2>
+          <p v-if="!inspection" class="muted">Select a room.</p>
+          <template v-else>
+            <h3>{{ inspection.name }}</h3>
+            <dl>
+              <div><dt>Type</dt><dd>{{ inspection.room_type }}</dd></div>
+              <div><dt>Zone</dt><dd>{{ inspection.zone }}</dd></div>
+              <div><dt>Area</dt><dd>{{ inspection.area.toFixed(2) }} m²</dd></div>
+              <div><dt>Aspect</dt><dd>{{ inspection.aspect_ratio.toFixed(2) }}</dd></div>
+              <div><dt>Perimeter</dt><dd>{{ inspection.perimeter.toFixed(2) }} m</dd></div>
+            </dl>
+            <h3>Adjacent</h3>
+            <p>{{ (inspection.adjacent_rooms || []).join(', ') || 'None' }}</p>
+            <h3>Doors</h3>
+            <p>{{ (inspection.doors || []).length }} connected</p>
+          </template>
+        </aside>
+        <aside class="scores">
+          <h2>Rule scores</h2>
+          <template v-if="scores">
+            <div class="overall"><span>Overall</span><strong>{{ scores.overall.toFixed(2) }}</strong></div>
+            <div class="cat" v-for="c in categories" :key="c">
+              <span>{{ c }}</span>
+              <div class="bar"><i :style="{width: (scores[c]/10*100)+'%'}"></i></div>
+              <em>{{ scores[c].toFixed(1) }}</em>
+            </div>
+            <div class="rule" v-for="r in scores.rules" :key="r.rule_id" :class="{fail: r.hard && !r.passed}">
+              <strong>{{ r.name }}</strong> · {{ r.score.toFixed(1) }}
+              <div class="muted">{{ r.reason }}</div>
+            </div>
+          </template>
+        </aside>
+      </div>
+      <section class="json">
+        <button @click="jsonOpen=!jsonOpen">{{ jsonOpen ? 'Hide' : 'Show' }} JSON</button>
+        <pre v-if="jsonOpen">{{ pretty }}</pre>
+      </section>
+    </div>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script>
+      const { createApp, ref, computed, onMounted } = Vue
+      const API = localStorage.getItem('floorplanApi') || 'http://localhost:8000'
+      createApp({
+        setup() {
+          const templates = ref([])
+          const templateId = ref('compact_2bed')
+          const plan = ref(null)
+          const scores = ref(null)
+          const adjacency = ref({})
+          const svg = ref('')
+          const selectedRoomId = ref(null)
+          const inspection = ref(null)
+          const error = ref(null)
+          const showLabels = ref(true)
+          const showDimensions = ref(false)
+          const showTopology = ref(true)
+          const jsonOpen = ref(true)
+          const scale = ref(1)
+          const pan = ref({ x: 0, y: 0 })
+          let dragging = false, last = { x: 0, y: 0 }
+          const categories = ['geometry','topology','construction','privacy','circulation','furniture','daylight','architecture']
+          const pretty = computed(() => JSON.stringify({ plan: plan.value, scores: scores.value, adjacency: adjacency.value }, null, 2))
+          function layers() {
+            const list = ['boundary','rooms','doors','windows']
+            if (showLabels.value) list.push('labels','room_ids')
+            if (showDimensions.value) list.push('dimensions')
+            if (showTopology.value) list.push('topology')
+            return list
+          }
+          async function loadDemo() {
+            error.value = null
+            try {
+              const res = await fetch(`${API}/floorplan/demo?template_id=${encodeURIComponent(templateId.value)}`, { method: 'POST' })
+              if (!res.ok) throw new Error(await res.text())
+              const data = await res.json()
+              plan.value = data.plan
+              scores.value = data.scores
+              adjacency.value = data.adjacency
+              selectedRoomId.value = data.plan.rooms[0]?.id || null
+              await refreshRender()
+              if (selectedRoomId.value) await selectRoom(selectedRoomId.value)
+            } catch (e) { error.value = String(e.message || e) }
+          }
+          async function refreshRender() {
+            if (!plan.value) return
+            const res = await fetch(`${API}/floorplan/render`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ plan: plan.value, layers: layers() })
+            })
+            const data = await res.json()
+            svg.value = data.svg
+          }
+          async function generate() {
+            const res = await fetch(`${API}/floorplan/generate`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ template_id: templateId.value, seed: Date.now()%10000, include_renders: true })
+            })
+            const sample = await res.json()
+            plan.value = sample.floor_plan
+            scores.value = sample.scores
+            svg.value = sample.svg || ''
+            selectedRoomId.value = sample.floor_plan.rooms[0]?.id || null
+            if (!sample.svg) await refreshRender()
+            if (selectedRoomId.value) await selectRoom(selectedRoomId.value)
+          }
+          async function mutate(op) {
+            const res = await fetch(`${API}/floorplan/mutate`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ plan: plan.value, op, seed: Date.now()%1000 })
+            })
+            const data = await res.json()
+            plan.value = data.plan
+            const ev = await fetch(`${API}/floorplan/evaluate`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ plan: plan.value })
+            })
+            scores.value = await ev.json()
+            await refreshRender()
+          }
+          async function selectRoom(id) {
+            selectedRoomId.value = id
+            const res = await fetch(`${API}/floorplan/inspect`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ plan: plan.value, room_id: id })
+            })
+            inspection.value = await res.json()
+          }
+          function onWheel(e) {
+            scale.value = Math.min(4, Math.max(0.4, scale.value * (e.deltaY > 0 ? 0.9 : 1.1)))
+          }
+          function onDown(e) { dragging = true; last = { x: e.clientX, y: e.clientY }; e.currentTarget.setPointerCapture(e.pointerId) }
+          function onMove(e) {
+            if (!dragging) return
+            pan.value = { x: pan.value.x + e.clientX - last.x, y: pan.value.y + e.clientY - last.y }
+            last = { x: e.clientX, y: e.clientY }
+          }
+          function onUp() { dragging = false }
+          onMounted(async () => {
+            try {
+              const res = await fetch(`${API}/floorplan/templates`)
+              templates.value = await res.json()
+            } catch {
+              templates.value = [{ id: 'compact_2bed', name: 'Compact 2 Bedroom' }]
+            }
+            await loadDemo()
+          })
+          return {
+            templates, templateId, plan, scores, adjacency, svg, selectedRoomId, inspection, error,
+            showLabels, showDimensions, showTopology, jsonOpen, scale, pan, categories, pretty,
+            loadDemo, refreshRender, generate, mutate, selectRoom, onWheel, onDown, onMove, onUp
+          }
+        }
+      }).mount('#app')
+    </script>
+  </body>
+</html>

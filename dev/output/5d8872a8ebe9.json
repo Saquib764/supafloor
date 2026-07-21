@@ -1,0 +1,394 @@
+{
+  "id": "5d8872a8ebe9",
+  "template_id": "studio",
+  "floor_plan": {
+    "id": "da44f44eea18",
+    "name": "Studio",
+    "rooms": [
+      {
+        "id": "78d97d4c31a6",
+        "name": "Living/Sleep",
+        "polygon": [
+          {
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "x": 5.6,
+            "y": 0.0
+          },
+          {
+            "x": 5.6,
+            "y": 7.0
+          },
+          {
+            "x": 0.0,
+            "y": 7.0
+          }
+        ],
+        "room_type": "living",
+        "zone": "public",
+        "level": 0,
+        "metadata": {}
+      },
+      {
+        "id": "5c63d84cbe20",
+        "name": "Kitchen",
+        "polygon": [
+          {
+            "x": 5.6,
+            "y": 2.8000000000000003
+          },
+          {
+            "x": 8.0,
+            "y": 2.8000000000000003
+          },
+          {
+            "x": 8.0,
+            "y": 7.0
+          },
+          {
+            "x": 5.6,
+            "y": 7.0
+          }
+        ],
+        "room_type": "kitchen",
+        "zone": "service",
+        "level": 0,
+        "metadata": {}
+      },
+      {
+        "id": "0c27d294d4d2",
+        "name": "Bathroom",
+        "polygon": [
+          {
+            "x": 5.6,
+            "y": 0.0
+          },
+          {
+            "x": 8.0,
+            "y": 0.0
+          },
+          {
+            "x": 8.0,
+            "y": 2.8000000000000003
+          },
+          {
+            "x": 5.6,
+            "y": 2.8000000000000003
+          }
+        ],
+        "room_type": "bathroom",
+        "zone": "wet",
+        "level": 0,
+        "metadata": {}
+      }
+    ],
+    "doors": [
+      {
+        "id": "7dae5c2ff9e3",
+        "start": {
+          "x": 1.1500000000000001,
+          "y": 0.0
+        },
+        "end": {
+          "x": 2.0500000000000003,
+          "y": 0.0
+        },
+        "connects": [
+          "78d97d4c31a6"
+        ],
+        "is_exterior": true,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "f1e8f1e91d03",
+        "start": {
+          "x": 5.6,
+          "y": 1.0
+        },
+        "end": {
+          "x": 5.6,
+          "y": 1.8000000000000003
+        },
+        "connects": [
+          "78d97d4c31a6",
+          "0c27d294d4d2"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      },
+      {
+        "id": "6234a229353c",
+        "start": {
+          "x": 5.6,
+          "y": 3.4000000000000004
+        },
+        "end": {
+          "x": 5.6,
+          "y": 4.300000000000001
+        },
+        "connects": [
+          "78d97d4c31a6",
+          "5c63d84cbe20"
+        ],
+        "is_exterior": false,
+        "swing": "in",
+        "metadata": {}
+      }
+    ],
+    "windows": [
+      {
+        "id": "572e752778e7",
+        "start": {
+          "x": 1.9,
+          "y": 7.0
+        },
+        "end": {
+          "x": 3.6999999999999997,
+          "y": 7.0
+        },
+        "room_ids": [
+          "78d97d4c31a6"
+        ],
+        "height": 1.4,
+        "sill_height": 0.9,
+        "metadata": {}
+      },
+      {
+        "id": "afb47921f3ad",
+        "start": {
+          "x": 0.0,
+          "y": 2.9
+        },
+        "end": {
+          "x": 0.0,
+          "y": 4.1
+        },
+        "room_ids": [
+          "78d97d4c31a6"
+        ],
+        "height": 1.4,
+        "sill_height": 0.9,
+        "metadata": {}
+      }
+    ],
+    "boundary": {
+      "id": "0b172e4a4bbd",
+      "exterior": [
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 8.0,
+          "y": 0.0
+        },
+        {
+          "x": 8.0,
+          "y": 3.8500000000000005
+        },
+        {
+          "x": 4.4,
+          "y": 3.8500000000000005
+        },
+        {
+          "x": 4.4,
+          "y": 7.0
+        },
+        {
+          "x": 0.0,
+          "y": 7.0
+        },
+        {
+          "x": 0.0,
+          "y": 0.0
+        }
+      ],
+      "holes": [],
+      "units": "m"
+    },
+    "walls": [],
+    "zones": [],
+    "constraint_graph": null,
+    "metadata": {
+      "template_id": "studio",
+      "adapted": true
+    }
+  },
+  "boundary": {
+    "id": "0b172e4a4bbd",
+    "exterior": [
+      {
+        "x": 0.0,
+        "y": 0.0
+      },
+      {
+        "x": 8.0,
+        "y": 0.0
+      },
+      {
+        "x": 8.0,
+        "y": 3.8500000000000005
+      },
+      {
+        "x": 4.4,
+        "y": 3.8500000000000005
+      },
+      {
+        "x": 4.4,
+        "y": 7.0
+      },
+      {
+        "x": 0.0,
+        "y": 7.0
+      },
+      {
+        "x": 0.0,
+        "y": 0.0
+      }
+    ],
+    "holes": [],
+    "units": "m"
+  },
+  "requirements": {
+    "template_id": "studio",
+    "template_name": "Studio",
+    "rooms": [
+      {
+        "room_type": "entry",
+        "name": "Entry",
+        "required": true,
+        "min_area": 1.5,
+        "preferred_area": null,
+        "preferred_zone": "circulation",
+        "requires_exterior": false,
+        "min_width": 0.0
+      },
+      {
+        "room_type": "living",
+        "name": "Living/Sleep",
+        "required": true,
+        "min_area": 16.0,
+        "preferred_area": 22.0,
+        "preferred_zone": "public",
+        "requires_exterior": true,
+        "min_width": 3.0
+      },
+      {
+        "room_type": "kitchen",
+        "name": "Kitchen",
+        "required": true,
+        "min_area": 4.0,
+        "preferred_area": 6.0,
+        "preferred_zone": "service",
+        "requires_exterior": false,
+        "min_width": 0.0
+      },
+      {
+        "room_type": "bathroom",
+        "name": "Bathroom",
+        "required": true,
+        "min_area": 3.5,
+        "preferred_area": null,
+        "preferred_zone": "wet",
+        "requires_exterior": false,
+        "min_width": 1.4
+      },
+      {
+        "room_type": "closet",
+        "name": "Closet",
+        "required": false,
+        "min_area": 1.0,
+        "preferred_area": null,
+        "preferred_zone": "private",
+        "requires_exterior": false,
+        "min_width": 0.0
+      }
+    ]
+  },
+  "mutation_history": [
+    {
+      "op": "swap_rooms",
+      "applied": true,
+      "seed": 1,
+      "attempt": 0,
+      "valid": false,
+      "score": 7.05
+    },
+    {
+      "op": "resize_room",
+      "applied": true,
+      "seed": 2,
+      "attempt": 1,
+      "valid": false,
+      "score": 7.05
+    },
+    {
+      "op": "mirror",
+      "applied": true,
+      "seed": 3,
+      "attempt": 2,
+      "valid": false,
+      "score": 5.25
+    },
+    {
+      "op": "resize_room",
+      "applied": true,
+      "seed": 4,
+      "attempt": 3,
+      "valid": false,
+      "score": 7.05
+    },
+    {
+      "op": "insert_balcony",
+      "applied": true,
+      "seed": 5,
+      "attempt": 4,
+      "valid": false,
+      "score": 7.02
+    },
+    {
+      "op": "insert_balcony",
+      "applied": true,
+      "seed": 6,
+      "attempt": 5,
+      "valid": false,
+      "score": 7.02
+    },
+    {
+      "op": "insert_balcony",
+      "applied": true,
+      "seed": 7,
+      "attempt": 6,
+      "valid": false,
+      "score": 7.02
+    },
+    {
+      "op": "reduce_hallway",
+      "applied": true,
+      "seed": 8,
+      "attempt": 7,
+      "valid": false,
+      "score": 7.05
+    }
+  ],
+  "metadata": {
+    "seed": 1,
+    "topology_hash": "53f0c010d7192e0a",
+    "geometry_hash": "47f9b37210dc5921",
+    "adjacency_signature": "53f0c010d7192e0a",
+    "room_ratio_signature": "68e5be10bb051ae7",
+    "hard_failures": [
+      "polygon_validity",
+      "boundary_containment"
+    ],
+    "valid": false
+  },
+  "files": {
+    "json": "5d8872a8ebe9.json",
+    "png": "5d8872a8ebe9.png"
+  }
+}

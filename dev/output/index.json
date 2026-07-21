@@ -1,0 +1,29 @@
+[
+  {
+    "id": "5d8872a8ebe9",
+    "template_id": "studio",
+    "name": "Studio",
+    "json": "5d8872a8ebe9.json",
+    "png": "5d8872a8ebe9.png",
+    "valid": false,
+    "room_count": 3
+  },
+  {
+    "id": "aea1372a8555",
+    "template_id": "compact_2bed",
+    "name": "Compact 2 Bedroom",
+    "json": "aea1372a8555.json",
+    "png": "aea1372a8555.png",
+    "valid": true,
+    "room_count": 7
+  },
+  {
+    "id": "ba92c036e2a3",
+    "template_id": "luxury_2bed",
+    "name": "Luxury 2 Bedroom",
+    "json": "ba92c036e2a3.json",
+    "png": "ba92c036e2a3.png",
+    "valid": false,
+    "room_count": 10
+  }
+]
