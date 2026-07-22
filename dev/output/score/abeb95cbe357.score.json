@@ -1,0 +1,20 @@
+{
+  "id": "abeb95cbe357",
+  "plan_name": "3-room",
+  "overall": 8.46,
+  "summary": "This floor plan scores **8.46/10 (Good)** for \u201c3-room\u201d with 14 rooms, 1944.0 ft\u00b2 total room area. It passes all hard validity rules. Strong areas include living size, natural light, privacy. Weaker areas include wet core compactness, storage adequacy, living centrality. Highest category is geometry (10.0); lowest is circulation (6.5).",
+  "categories": {
+    "geometry": 10.0,
+    "topology": 10.0,
+    "construction": 5.57,
+    "privacy": 10.0,
+    "circulation": 6.5,
+    "furniture": 10.0,
+    "daylight": 10.0,
+    "architecture": 7.7,
+    "aesthetics": 6.58
+  },
+  "hard_failures": [],
+  "report_file": "abeb95cbe357.score.md",
+  "image": "abeb95cbe357.png"
+}

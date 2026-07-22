@@ -9,6 +9,17 @@ from .authors import (
     vertical_opening,
 )
 from .boundary import force_manhattan, generate_notched_boundary, is_manhattan
+from .exterior import (
+    boundary_overlap,
+    exterior_edge_length,
+    facade_blocker,
+    merged_boundary_run,
+    room_exterior_edge,
+    room_exterior_segment,
+    window_length_on_exterior,
+    window_on_exterior,
+)
+from .shape import appendage_ratio, compactness, max_inscribed_rect_ratio, reflex_corner_count, shape_subscores
 from .ops import (
     area,
     aspect_ratio,

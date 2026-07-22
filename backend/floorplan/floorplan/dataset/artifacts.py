@@ -55,7 +55,6 @@ def write_plan_artifacts(
             "construction": scores.construction,
             "privacy": scores.privacy,
             "circulation": scores.circulation,
-            "furniture": scores.furniture,
             "daylight": scores.daylight,
             "architecture": scores.architecture,
             "aesthetics": scores.aesthetics,

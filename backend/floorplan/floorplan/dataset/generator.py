@@ -58,7 +58,6 @@ def _sample_from_saved(
         floor_plan=plan,
         scores=scores,
         rule_breakdown=scores.rules,
-        mutation_history=[],
         svg=svg,
         png_b64=png_b64,
         metadata={
@@ -94,12 +93,10 @@ def generate_sample(
     *,
     target_area: float | None = None,
     seed: int = 0,
-    mutate: bool = False,
     include_renders: bool = True,
     save: bool = False,
 ) -> DatasetSample:
     """Generate a plan and optionally persist canonical JSON."""
-    del mutate
     document, sample = _build_sample(
         total_rooms,
         target_area=target_area,

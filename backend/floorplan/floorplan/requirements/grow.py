@@ -229,8 +229,8 @@ def _place_hall_corridor(
     by = sum(c[1] for c in bedroom_centers) / len(bedroom_centers)
     lx = living["x"] + living["w"] / 2.0
     ly = living["y"] + living["h"] / 2.0
-    side = max(2, int(round(math.sqrt(area))))
-    depth = max(2, int(round(area / side)))
+    side = max(3, int(round(math.sqrt(area))))
+    depth = max(3, int(round(area / side)))
     midx = int(round((lx + bx) / 2))
     midy = int(round((ly + by) / 2))
     candidates: list[dict[str, Any]] = []

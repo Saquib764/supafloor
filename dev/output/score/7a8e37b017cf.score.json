@@ -1,0 +1,22 @@
+{
+  "id": "7a8e37b017cf",
+  "plan_name": "3-room",
+  "overall": 4.41,
+  "summary": "This floor plan scores **4.41/10 (Weak)** for \u201c3-room\u201d with 9 rooms, 1180.0 ft\u00b2 total room area. It fails 2 hard rule(s): Reachability, Bathroom Accessible. Strong areas include living size, natural light, circulation efficiency. Weaker areas include privacy, wet core compactness, living centrality. Highest category is geometry (10.0); lowest is privacy (5.0).",
+  "categories": {
+    "geometry": 10.0,
+    "topology": 5.33,
+    "construction": 5.41,
+    "privacy": 5.0,
+    "circulation": 9.0,
+    "daylight": 10.0,
+    "architecture": 7.64,
+    "aesthetics": 6.05
+  },
+  "hard_failures": [
+    "reachability",
+    "bathroom_accessible"
+  ],
+  "report_file": "7a8e37b017cf.score.md",
+  "image": "7a8e37b017cf.png"
+}

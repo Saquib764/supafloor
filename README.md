@@ -1,6 +1,6 @@
 # Supafloor — FloorPlan Dataset Engine V1
 
-Deterministic residential floor plan engine for generating, mutating, validating, rendering, and scoring floor plans **without an LLM**.
+Deterministic residential floor plan engine for generating, validating, rendering, and scoring floor plans **without an LLM**.
 
 > Code guarantees correctness. Human-designed rules capture architectural knowledge. AI learns later from deterministic examples.
 
@@ -15,19 +15,17 @@ backend/floorplan/              # Python service root (uv project, like mission-
     schemas/                    # domain models + API request bodies
     geometry/                   # Shapely-backed immutable geometry ops
     topology/                   # Adjacency, reachability, diversity hashes
-    templates/                  # Studio → 4BR / duplex logical templates
-    mutations/                  # Mirror, resize, swap, insert, …
-    evaluator/                  # Hard/soft rules + weighted scoring + furniture
+    evaluator/                  # Hard/soft rules + weighted scoring
     renderer/                   # SVG / PNG / layer overlays
     importer/                   # BW image → FloorPlan (OpenCV)
     dataset/                    # End-to-end sample & corpus generator
-    services/                   # Boundary adaptation + engine facade
-    tests/
+    services/                   # Engine facade
+    requirements/               # Boundary-first plan generation
 
 frontend/app/
-  pages/floorplan/           Nuxt-style viewer page
-  components/floorplan/      Canvas, inspector, scores
-  composables/floorplan/     API client
+  pages/                     Nuxt viewer + importer pages
+  components/                Canvas, list, scores
+  composables/               API client
   types/floorplan.ts
 frontend/public/floorplan-viewer.html   Standalone Vue viewer
 ```
@@ -70,11 +68,7 @@ uv run --project backend/floorplan python dev/score_floorplans.py --dir dev/outp
 | SVG / PNG renderer + layers | Done |
 | Interactive viewer | Done |
 | BW image importer | Done |
-| Template library | Done |
-| Boundary adaptation | Done |
-| Mutation engine | Done |
 | Hard/soft rule validator | Done |
-| Furniture simulator | Done |
 | Weighted scoring | Done |
 | Dataset generator + diversity hashes | Done |
 
@@ -83,17 +77,15 @@ uv run --project backend/floorplan python dev/score_floorplans.py --dir dev/outp
 1. Geometry is always validated by code. Creators always emit **closed, valid room polygons**.
 2. A floor plan is primarily three separate lists: **rooms** (named polygons), **doors** (lines), and **windows** (lines).
 3. Rules return **score + reason + severity + repair suggestion** (never only pass/fail).
-4. Dataset samples store boundary, requirements, topology, plan, scores, mutation history, SVG/PNG, and metadata.
+4. Dataset samples store boundary, requirements, topology, plan, scores, SVG/PNG, and metadata.
 
 ## API highlights
 
 - `GET  /health` — service health
-- `GET  /floorplan/templates`
-- `POST /floorplan/instantiate`
 - `POST /floorplan/render` → `{ svg, png, metadata }`
 - `POST /floorplan/evaluate`
-- `POST /floorplan/mutate`
 - `POST /floorplan/import`
 - `POST /floorplan/generate`
-- `POST /floorplan/dataset`
-- `POST /floorplan/demo`
+- `GET  /floorplan/plans` — list saved plans
+- `POST /floorplan/plans/{id}/load` — load plan + scores for viewer
+- `DELETE /floorplan/plans/{id}`

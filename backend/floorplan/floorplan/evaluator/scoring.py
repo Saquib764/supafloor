@@ -2,22 +2,37 @@
 
 from __future__ import annotations
 
-from floorplan.evaluator.furniture import score_furniture
 from floorplan.evaluator.rules import evaluate_rules, hard_failures
 from floorplan.geometry import area
 from floorplan.schemas.models import FloorPlan, RuleResult, ScoreBreakdown
 
 DEFAULT_WEIGHTS = {
-    "geometry": 0.14,
-    "topology": 0.09,
-    "construction": 0.09,
-    "privacy": 0.10,
-    "circulation": 0.09,
-    "furniture": 0.09,
-    "daylight": 0.12,
-    "architecture": 0.12,
-    "aesthetics": 0.16,
+    "geometry": 0.15,
+    "topology": 0.10,
+    "construction": 0.10,
+    "privacy": 0.11,
+    "circulation": 0.10,
+    "daylight": 0.13,
+    "architecture": 0.13,
+    "aesthetics": 0.18,
 }
+
+SCORE_LEVELS = ("basic", "intermediate", "advance")
+
+# Each tier adds categories and rules on top of prior tiers.
+SCORE_LEVEL_CATEGORY_ADDS: dict[str, frozenset[str]] = {
+    "basic": frozenset({"geometry", "topology", "construction", "architecture", "aesthetics"}),
+    "intermediate": frozenset({"privacy", "circulation"}),
+    "advance": frozenset({"daylight"}),
+}
+
+SCORE_LEVEL_RULE_ADDS: dict[str, frozenset[str]] = {
+    "basic": frozenset(),
+    "intermediate": frozenset({"reachability", "bathroom_accessible", "kitchen_accessible"}),
+    "advance": frozenset({"required_rooms", "windows_on_exterior"}),
+}
+
+TIER_GATED_RULES = frozenset().union(*SCORE_LEVEL_RULE_ADDS.values())
 
 RULE_CATEGORY = {
     "polygon_validity": "geometry",
@@ -26,6 +41,7 @@ RULE_CATEGORY = {
     "minimum_area": "geometry",
     "minimum_width": "geometry",
     "rectangularity": "construction",
+    "shape_quality": "construction",
     "aspect_quality": "architecture",
     "reachability": "topology",
     "required_rooms": "topology",
@@ -33,19 +49,19 @@ RULE_CATEGORY = {
     "bathroom_accessible": "topology",
     "kitchen_accessible": "topology",
     "windows_on_exterior": "daylight",
+    "daylight_quality": "daylight",
     "natural_light": "daylight",
     "privacy": "privacy",
+    "circulation_quality": "circulation",
     "circulation": "circulation",
     "living_size": "architecture",
     "bedroom_ratio": "architecture",
     "wet_core": "construction",
     "storage": "architecture",
     "balcony": "architecture",
-    "furniture": "furniture",
     "living_centrality": "aesthetics",
     "kitchen_public_link": "topology",
     "entry_sequence": "aesthetics",
-    "hall_organization": "aesthetics",
     "public_near_exit": "aesthetics",
 }
 
@@ -55,7 +71,6 @@ CATEGORY_LABELS = {
     "construction": "Construction",
     "privacy": "Privacy",
     "circulation": "Circulation",
-    "furniture": "Furniture usability",
     "daylight": "Daylight",
     "architecture": "Architecture",
     "aesthetics": "Aesthetics",
@@ -77,6 +92,74 @@ def score_label(score: float) -> str:
 
 def _avg(vals: list[float]) -> float:
     return sum(vals) / len(vals) if vals else 5.0
+
+
+def _cumulative_up_to(level: str, adds: dict[str, frozenset[str]]) -> frozenset[str]:
+    result: set[str] = set()
+    for tier in SCORE_LEVELS:
+        result |= adds[tier]
+        if tier == level:
+            break
+    return frozenset(result)
+
+
+def active_categories(level: str) -> list[str]:
+    active = _cumulative_up_to(level, SCORE_LEVEL_CATEGORY_ADDS)
+    return [k for k in DEFAULT_WEIGHTS if k in active]
+
+
+def active_rules(level: str) -> frozenset[str]:
+    active_cats = _cumulative_up_to(level, SCORE_LEVEL_CATEGORY_ADDS)
+    tier_rules = _cumulative_up_to(level, SCORE_LEVEL_RULE_ADDS)
+    active: set[str] = set()
+    for rule_id, cat in RULE_CATEGORY.items():
+        if cat not in active_cats:
+            continue
+        if rule_id in TIER_GATED_RULES:
+            if rule_id in tier_rules:
+                active.add(rule_id)
+        else:
+            active.add(rule_id)
+    return frozenset(active)
+
+
+def rule_active_at_level(rule_id: str, level: str) -> bool:
+    return rule_id in active_rules(level)
+
+
+def _category_scores(rules: list[RuleResult], level: str) -> dict[str, float]:
+    included = active_rules(level)
+    buckets: dict[str, list[float]] = {k: [] for k in DEFAULT_WEIGHTS}
+    for r in rules:
+        if r.rule_id not in included:
+            continue
+        cat = RULE_CATEGORY.get(r.rule_id, "architecture")
+        buckets.setdefault(cat, []).append(r.score)
+    return {k: round(_avg(buckets.get(k, [])), 2) for k in DEFAULT_WEIGHTS}
+
+
+def _penalty_for_level(rules: list[RuleResult], level: str) -> float:
+    included = active_rules(level)
+    failures = [r for r in hard_failures(rules) if r.rule_id in included]
+    return min(4.0, len(failures) * 1.5)
+
+
+def overall_for_level(
+    cats: dict[str, float],
+    weights: dict[str, float],
+    level: str,
+    *,
+    penalty: float = 0.0,
+) -> float:
+    """Weighted overall using only categories active at the given level."""
+    active = active_categories(level)
+    total_w = sum(weights.get(k, DEFAULT_WEIGHTS[k]) for k in active)
+    if total_w <= 0:
+        return max(0.0, min(10.0, 5.0 - penalty))
+    overall = sum(
+        cats[k] * weights.get(k, DEFAULT_WEIGHTS[k]) / total_w for k in active
+    ) - penalty
+    return max(0.0, min(10.0, round(overall, 2)))
 
 
 def _plan_blurb(plan: FloorPlan | None) -> str:
@@ -200,7 +283,6 @@ def build_summary(scores: ScoreBreakdown, *, plan: FloorPlan | None = None) -> s
         "privacy": scores.privacy,
         "daylight": scores.daylight,
         "circulation": scores.circulation,
-        "furniture": scores.furniture,
         "aesthetics": scores.aesthetics,
     }
     best = max(cats, key=cats.get)
@@ -215,31 +297,30 @@ def build_summary(scores: ScoreBreakdown, *, plan: FloorPlan | None = None) -> s
 def score_plan(plan: FloorPlan, weights: dict[str, float] | None = None) -> ScoreBreakdown:
     weights = dict(weights or DEFAULT_WEIGHTS)
     rules = evaluate_rules(plan)
-    furniture = score_furniture(plan)
-    rules = list(rules) + [furniture]
 
-    buckets: dict[str, list[float]] = {k: [] for k in DEFAULT_WEIGHTS}
-    for r in rules:
-        cat = RULE_CATEGORY.get(r.rule_id, "architecture")
-        buckets.setdefault(cat, []).append(r.score)
-
-    cats = {k: _avg(buckets.get(k, [])) for k in DEFAULT_WEIGHTS}
-    failures = hard_failures(rules)
-    penalty = min(4.0, len(failures) * 1.5)
-    overall = sum(cats[k] * weights.get(k, 0.0) for k in cats) - penalty
-    overall = max(0.0, min(10.0, overall))
+    advance_cats = _category_scores(rules, "advance")
+    level_categories: dict[str, dict[str, float]] = {}
+    levels: dict[str, float] = {}
+    for level in SCORE_LEVELS:
+        cats = _category_scores(rules, level)
+        active = active_categories(level)
+        level_categories[level] = {k: cats[k] for k in active}
+        levels[level] = overall_for_level(
+            cats, weights, level, penalty=_penalty_for_level(rules, level)
+        )
 
     partial = ScoreBreakdown(
-        geometry=round(cats["geometry"], 2),
-        topology=round(cats["topology"], 2),
-        construction=round(cats["construction"], 2),
-        privacy=round(cats["privacy"], 2),
-        circulation=round(cats["circulation"], 2),
-        furniture=round(cats["furniture"], 2),
-        daylight=round(cats["daylight"], 2),
-        architecture=round(cats["architecture"], 2),
-        aesthetics=round(cats["aesthetics"], 2),
-        overall=round(overall, 2),
+        geometry=advance_cats["geometry"],
+        topology=advance_cats["topology"],
+        construction=advance_cats["construction"],
+        privacy=advance_cats["privacy"],
+        circulation=advance_cats["circulation"],
+        daylight=advance_cats["daylight"],
+        architecture=advance_cats["architecture"],
+        aesthetics=advance_cats["aesthetics"],
+        overall=levels["advance"],
+        levels=levels,
+        level_categories=level_categories,
         weights=weights,
         rules=rules,
     )

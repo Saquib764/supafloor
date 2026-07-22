@@ -197,7 +197,7 @@
           const scale = ref(1)
           const pan = ref({ x: 0, y: 0 })
           let dragging = false, last = { x: 0, y: 0 }
-          const categories = ['geometry','topology','construction','privacy','circulation','furniture','daylight','architecture','aesthetics']
+          const categories = ['geometry','topology','construction','privacy','circulation','daylight','architecture','aesthetics']
           const pretty = computed(() => JSON.stringify({ plan: plan.value, scores: scores.value, adjacency: adjacency.value }, null, 2))
           function layers() {
             const list = ['boundary','rooms','doors','windows']
@@ -209,15 +209,25 @@
           async function loadDemo() {
             error.value = null
             try {
-              const res = await fetch(`${API}/floorplan/demo?total_rooms=${totalRooms.value}&seed=${totalRooms.value}`, { method: 'POST' })
+              const res = await fetch(`${API}/floorplan/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  total_rooms: totalRooms.value,
+                  seed: totalRooms.value,
+                  include_renders: true,
+                  save: false,
+                }),
+              })
               if (!res.ok) throw new Error(await res.text())
-              const data = await res.json()
-              plan.value = data.plan
-              scores.value = data.scores
-              adjacency.value = data.adjacency
-              selectedRoomId.value = data.plan.rooms[0]?.id || null
-              await refreshRender()
-              if (selectedRoomId.value) await selectRoom(selectedRoomId.value)
+              const sample = await res.json()
+              plan.value = sample.floor_plan
+              scores.value = sample.scores
+              adjacency.value = {}
+              svg.value = sample.svg || ''
+              selectedRoomId.value = sample.floor_plan.rooms[0]?.id || null
+              if (!sample.svg) await refreshRender()
+              if (selectedRoomId.value) selectRoom(selectedRoomId.value)
             } catch (e) { error.value = String(e.message || e) }
           }
           async function refreshRender() {
@@ -232,7 +242,7 @@
           async function generate() {
             const res = await fetch(`${API}/floorplan/generate`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ total_rooms: totalRooms.value, seed: Date.now()%10000, include_renders: true })
+              body: JSON.stringify({ total_rooms: totalRooms.value, seed: Date.now()%10000, include_renders: true, save: false })
             })
             if (!res.ok) throw new Error(await res.text())
             const sample = await res.json()
@@ -241,29 +251,25 @@
             svg.value = sample.svg || ''
             selectedRoomId.value = sample.floor_plan.rooms[0]?.id || null
             if (!sample.svg) await refreshRender()
-            if (selectedRoomId.value) await selectRoom(selectedRoomId.value)
+            if (selectedRoomId.value) selectRoom(selectedRoomId.value)
           }
-          async function mutate(op) {
-            const res = await fetch(`${API}/floorplan/mutate`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ plan: plan.value, op, seed: Date.now()%1000 })
-            })
-            const data = await res.json()
-            plan.value = data.plan
-            const ev = await fetch(`${API}/floorplan/evaluate`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ plan: plan.value })
-            })
-            scores.value = await ev.json()
-            await refreshRender()
-          }
-          async function selectRoom(id) {
+          function selectRoom(id) {
             selectedRoomId.value = id
-            const res = await fetch(`${API}/floorplan/inspect`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ plan: plan.value, room_id: id })
-            })
-            inspection.value = await res.json()
+            const room = plan.value?.rooms?.find(r => r.id === id)
+            if (!room) {
+              inspection.value = null
+              return
+            }
+            inspection.value = {
+              name: room.name,
+              room_type: room.room_type || 'other',
+              zone: room.zone || 'public',
+              area: 0,
+              aspect_ratio: 0,
+              perimeter: 0,
+              adjacent_rooms: [],
+              doors: (plan.value?.doors || []).filter(d => d.connects?.includes(id)),
+            }
           }
           function onWheel(e) {
             scale.value = Math.min(4, Math.max(0.4, scale.value * (e.deltaY > 0 ? 0.9 : 1.1)))
@@ -281,7 +287,7 @@
           return {
             totalRooms, plan, scores, adjacency, svg, selectedRoomId, inspection, error,
             showLabels, showDimensions, showTopology, jsonOpen, scale, pan, categories, pretty,
-            loadDemo, refreshRender, generate, mutate, selectRoom, onWheel, onDown, onMove, onUp
+            loadDemo, refreshRender, generate, selectRoom, onWheel, onDown, onMove, onUp
           }
         }
       }).mount('#app')

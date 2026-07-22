@@ -7,6 +7,8 @@ from typing import Any
 
 from shapely.geometry import LineString, Point, Polygon
 
+from floorplan.units import MIN_OPENING_EDGE_FT
+
 
 def _boundary_edges(boundary_poly: Polygon) -> list[tuple[tuple[float, float], tuple[float, float], float]]:
     coords = list(boundary_poly.exterior.coords)
@@ -15,7 +17,7 @@ def _boundary_edges(boundary_poly: Polygon) -> list[tuple[tuple[float, float], t
         a = (float(coords[i][0]), float(coords[i][1]))
         b = (float(coords[i + 1][0]), float(coords[i + 1][1]))
         length = LineString([a, b]).length
-        if length >= 1.0:
+        if length >= MIN_OPENING_EDGE_FT:
             edges.append((a, b, length))
     return edges
 

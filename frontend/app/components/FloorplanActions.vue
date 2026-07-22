@@ -17,16 +17,6 @@ const FLOORPLAN_ACTION_GROUPS: FloorplanActionGroup[] = [
       { id: 'generate', label: 'Generate new' },
     ],
   },
-  {
-    label: 'Insert',
-    actions: [
-      { id: 'insert_balcony', label: 'Balcony' },
-      { id: 'insert_toilet', label: 'Toilet' },
-      { id: 'insert_closet', label: 'Closet' },
-      { id: 'insert_storage', label: 'Storage' },
-      { id: 'insert_utility', label: 'Utility' },
-    ],
-  },
 ]
 
 defineProps<{

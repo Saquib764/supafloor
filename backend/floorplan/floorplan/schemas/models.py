@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator, model_valida
 from shapely.geometry import LineString, Polygon
 from shapely.validation import make_valid
 
-from .enums import RoomType, ZoneType, Severity, MutationOp
+from .enums import RoomType, ZoneType, Severity
 
 
 def _uid() -> str:
@@ -193,8 +193,9 @@ class Window(BaseModel):
     start: Point2D
     end: Point2D
     room_ids: list[str] = Field(default_factory=list)
-    height: float = 1.4
-    sill_height: float = 0.9
+    room_names: list[str] = Field(default_factory=list)
+    height: float = 4.5
+    sill_height: float = 3.0
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -324,45 +325,16 @@ class ScoreBreakdown(BaseModel):
     construction: float = 0.0
     privacy: float = 0.0
     circulation: float = 0.0
-    furniture: float = 0.0
     daylight: float = 0.0
     architecture: float = 0.0
     aesthetics: float = 0.0
     overall: float = 0.0
+    levels: dict[str, float] = Field(default_factory=dict)
+    level_categories: dict[str, dict[str, float]] = Field(default_factory=dict)
     weights: dict[str, float] = Field(default_factory=dict)
     rules: list[RuleResult] = Field(default_factory=list)
     summary: str = ""
     report: str = ""
-
-
-class RoomRequirement(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    room_type: RoomType
-    name: str
-    required: bool = True
-    min_area: float = 0.0
-    preferred_area: Optional[float] = None
-    preferred_zone: ZoneType = ZoneType.PUBLIC
-    requires_exterior: bool = False
-    min_width: float = 0.0
-
-
-class TemplateSpec(BaseModel):
-    """Logical apartment template — topology, not coordinates."""
-
-    model_config = ConfigDict(frozen=True)
-
-    id: str = Field(default_factory=_uid)
-    name: str
-    description: str = ""
-    rooms: list[RoomRequirement] = Field(default_factory=list)
-    preferred_adjacency: list[tuple[str, str]] = Field(default_factory=list)
-    required_exterior: list[str] = Field(default_factory=list)
-    wet_core_rooms: list[str] = Field(default_factory=list)
-    expansion_points: list[str] = Field(default_factory=list)
-    mutation_rules: list[MutationOp] = Field(default_factory=list)
-    default_layout: Optional[dict[str, Any]] = None
 
 
 class DatasetSample(BaseModel):
@@ -375,7 +347,6 @@ class DatasetSample(BaseModel):
     floor_plan: FloorPlan
     scores: Optional[ScoreBreakdown] = None
     rule_breakdown: list[RuleResult] = Field(default_factory=list)
-    mutation_history: list[dict[str, Any]] = Field(default_factory=list)
     svg: Optional[str] = None
     png_b64: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)

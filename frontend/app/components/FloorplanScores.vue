@@ -1,46 +1,91 @@
 <script setup lang="ts">
-defineProps<{
+import {
+  SCORE_LEVELS,
+  activeCategoriesForLevel,
+  overallForLevel,
+  ruleActiveAtLevel,
+  type ScoreLevel,
+} from '~/types/floorplan'
+
+const props = defineProps<{
   scores: ScoreBreakdown | null
 }>()
 
-const categories = [
-  'geometry',
-  'topology',
-  'construction',
-  'privacy',
-  'circulation',
-  'furniture',
-  'daylight',
-  'architecture',
-  'aesthetics',
-] as const
+const level = ref<ScoreLevel>('advance')
+
+const hasScores = computed(() =>
+  props.scores?.overall != null && Array.isArray(props.scores.rules),
+)
+
+const activeCategories = computed(() => activeCategoriesForLevel(level.value))
+
+const categoryScores = computed(() => {
+  if (!hasScores.value || !props.scores) return null
+  const levelCats = props.scores.level_categories?.[level.value]
+  if (levelCats) return levelCats
+  return Object.fromEntries(activeCategories.value.map(c => [c, props.scores![c]]))
+})
+
+const activeRules = computed(() => {
+  if (!hasScores.value || !props.scores?.rules) return []
+  return props.scores.rules.filter(r => ruleActiveAtLevel(r.rule_id, level.value))
+})
+
+const overall = computed(() => {
+  if (!hasScores.value || !props.scores) return null
+  return overallForLevel(props.scores, level.value)
+})
+
+const levelLabels: Record<ScoreLevel, string> = {
+  basic: 'Basic',
+  intermediate: 'Intermediate',
+  advance: 'Advance',
+}
 </script>
 
 <template>
   <div class="flex flex-col h-full">
-    <div class="shrink-0 p-4 border-b border-gray-800/80">
+    <div class="shrink-0 p-4 border-b border-gray-800/80 space-y-3">
       <h2 class="text-lg font-semibold text-white">
         Stats
       </h2>
+
+      <div
+        v-if="hasScores"
+        class="flex rounded-lg border border-gray-800 p-0.5 gap-0.5"
+      >
+        <button
+          v-for="l in SCORE_LEVELS"
+          :key="l"
+          type="button"
+          class="flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors"
+          :class="level === l
+            ? 'bg-primary-500/20 text-primary-400'
+            : 'text-gray-400 hover:text-gray-200'"
+          @click="level = l"
+        >
+          {{ levelLabels[l] }}
+        </button>
+      </div>
     </div>
 
     <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
       <p
-        v-if="!scores"
+        v-if="!hasScores"
         class="text-sm text-gray-400"
       >
         No evaluation yet.
       </p>
 
-      <template v-else>
+      <template v-else-if="scores">
         <div class="flex justify-between items-baseline pb-3 border-b border-gray-800">
           <span class="text-gray-400">Overall</span>
-          <strong class="text-3xl text-primary-500">{{ scores.overall.toFixed(2) }}</strong>
+          <strong class="text-3xl text-primary-500">{{ overall!.toFixed(2) }}</strong>
         </div>
 
         <div class="grid gap-3">
           <div
-            v-for="c in categories"
+            v-for="c in activeCategories"
             :key="c"
             class="grid grid-cols-[6.5rem_1fr_2rem] gap-2 items-center text-xs capitalize"
           >
@@ -48,10 +93,10 @@ const categories = [
             <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
               <div
                 class="h-full bg-primary-500 rounded-full"
-                :style="{ width: `${(scores[c] / 10) * 100}%` }"
+                :style="{ width: `${((categoryScores![c] ?? 0) / 10) * 100}%` }"
               />
             </div>
-            <span class="text-right text-gray-300">{{ scores[c].toFixed(1) }}</span>
+            <span class="text-right text-gray-300">{{ (categoryScores![c] ?? 0).toFixed(1) }}</span>
           </div>
         </div>
 
@@ -63,7 +108,7 @@ const categories = [
 
         <ul class="space-y-0 pb-4">
           <li
-            v-for="r in scores.rules"
+            v-for="r in activeRules"
             :key="r.rule_id"
             class="py-3 border-b border-gray-800 text-sm"
             :class="r.hard && !r.passed ? 'bg-error-500/10' : ''"

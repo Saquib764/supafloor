@@ -85,14 +85,13 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │           ├── api/              # /floorplan/* HTTP routes
 │           ├── assets/           # static engine assets
 │           ├── dataset/          # sample / corpus generator (generator.py)
-│           ├── evaluator/        # rules, furniture, scoring
+│           ├── evaluator/        # rules, scoring
 │           ├── geometry/         # Shapely ops + authoring helpers
 │           ├── importer/         # BW image → FloorPlan
-│           ├── mutations/        # mutation ops + pipeline
 │           ├── renderer/         # SVG / PNG rendering
 │           ├── schemas/          # enums, domain models, API request bodies
-│           ├── services/         # engine facade, boundary adapt
-│           ├── templates/        # apartment templates + instantiators
+│           ├── services/         # engine facade
+│           ├── requirements/     # boundary-first plan generation
 │           ├── tests/            # pytest suite
 │           ├── topology/         # adjacency, reachability, hashes
 │           ├── cli.py            # CLI entry (uv run floorplan …)
@@ -127,8 +126,6 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 | Models / enums | `backend/floorplan/floorplan/schemas/` |
 | Polygon / line helpers | `backend/floorplan/floorplan/geometry/` |
 | Adjacency / hashes | `backend/floorplan/floorplan/topology/` |
-| Templates / instantiate | `backend/floorplan/floorplan/templates/` |
-| Mutate ops | `backend/floorplan/floorplan/mutations/` |
 | Rules / scores | `backend/floorplan/floorplan/evaluator/` |
 | SVG/PNG | `backend/floorplan/floorplan/renderer/` |
 | HTTP API | `backend/floorplan/floorplan/api/` |

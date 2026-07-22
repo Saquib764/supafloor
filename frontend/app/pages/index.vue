@@ -26,7 +26,7 @@ const error = ref<string | null>(null)
 const showLabels = ref(true)
 const showDimensions = ref(false)
 const showTopology = ref(true)
-const showFurniture = ref(false)
+const showCirculation = ref(false)
 const canvasRef = ref<{ resetView: () => void } | null>(null)
 
 const listItems = computed<FloorplanEntry[]>(() =>
@@ -47,7 +47,7 @@ const layers = computed(() => {
   if (showLabels.value) list.push('labels', 'room_ids')
   if (showDimensions.value) list.push('dimensions')
   if (showTopology.value) list.push('topology')
-  if (showFurniture.value) list.push('circulation')
+  if (showCirculation.value) list.push('circulation')
   return list
 })
 
@@ -186,11 +186,6 @@ async function onAction(action: string) {
       entry.scores = await api.evaluate(entry.plan)
       return
     }
-
-    const result = await api.mutate(entry.plan, action, Date.now() % 1000)
-    entry.plan = result.plan
-    entry.scores = await api.evaluate(entry.plan)
-    await refreshRender(entry)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -272,7 +267,7 @@ onMounted(async () => {
           label="Topology"
         />
         <UCheckbox
-          v-model="showFurniture"
+          v-model="showCirculation"
           label="Circulation"
         />
       </template>

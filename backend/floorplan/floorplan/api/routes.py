@@ -6,19 +6,9 @@ from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from floorplan.dataset import delete_saved_plan, get_saved_plan, list_saved_plans, load_sample
-from floorplan.schemas.requests import (
-    AdaptRequest,
-    DatasetRequest,
-    EvaluateRequest,
-    GenerateRequest,
-    InspectRequest,
-    InstantiateRequest,
-    MutateRequest,
-    RenderRequest,
-)
+from floorplan.dataset import delete_saved_plan, list_saved_plans, load_sample
+from floorplan.schemas.requests import EvaluateRequest, GenerateRequest, RenderRequest
 from floorplan.services.engine import FloorPlanEngine
-from floorplan.topology import build_adjacency
 
 router = APIRouter(prefix="/floorplan", tags=["floorplan"])
 engine = FloorPlanEngine()
@@ -27,42 +17,6 @@ engine = FloorPlanEngine()
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "engine": "floorplan-v1"}
-
-
-@router.get("/templates")
-def templates() -> list[dict]:
-    return engine.list_templates()
-
-
-@router.get("/templates/{template_id}")
-def template_detail(template_id: str) -> dict:
-    try:
-        return engine.get_template(template_id).model_dump()
-    except KeyError as exc:
-        raise HTTPException(404, str(exc)) from exc
-
-
-@router.post("/instantiate")
-def instantiate(body: InstantiateRequest) -> dict:
-    try:
-        plan = engine.instantiate(body.template_id, width=body.width, depth=body.depth)
-        return plan.model_dump()
-    except KeyError as exc:
-        raise HTTPException(404, str(exc)) from exc
-
-
-@router.post("/adapt")
-def adapt(body: AdaptRequest) -> dict:
-    return engine.adapt(body.plan, body.boundary).model_dump()
-
-
-@router.post("/mutate")
-def mutate(body: MutateRequest) -> dict:
-    try:
-        plan, meta = engine.mutate(body.plan, body.op, seed=body.seed)
-        return {"plan": plan.model_dump(), "meta": meta}
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/evaluate")
@@ -101,7 +55,6 @@ def generate(body: GenerateRequest) -> dict:
         total_rooms=body.total_rooms,
         target_area=body.target_area,
         seed=body.seed,
-        mutate=body.mutate,
         include_renders=body.include_renders,
         save=body.save,
     )
@@ -111,14 +64,6 @@ def generate(body: GenerateRequest) -> dict:
 @router.get("/plans")
 def plans() -> list[dict]:
     return list_saved_plans()
-
-
-@router.get("/plans/{plan_id}")
-def plan_detail(plan_id: str) -> dict:
-    try:
-        return get_saved_plan(plan_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(404, f"Plan not found: {plan_id}") from exc
 
 
 @router.post("/plans/{plan_id}/load")
@@ -137,58 +82,3 @@ def plan_delete(plan_id: str) -> dict[str, str]:
     except FileNotFoundError as exc:
         raise HTTPException(404, f"Plan not found: {plan_id}") from exc
     return {"deleted": plan_id}
-
-
-@router.post("/dataset")
-def dataset(body: DatasetRequest) -> dict:
-    samples = engine.generate_dataset(
-        n=body.n,
-        total_rooms=body.total_rooms,
-        seed=body.seed,
-        include_renders=body.include_renders,
-    )
-    return {
-        "count": len(samples),
-        "samples": [
-            {
-                "id": s.id,
-                "overall": s.scores.overall if s.scores else None,
-                "valid": s.metadata.get("valid"),
-                "total_rooms": s.metadata.get("total_rooms"),
-                "topology_hash": s.metadata.get("topology_hash"),
-                "plan": s.floor_plan.model_dump(),
-                "scores": s.scores.model_dump() if s.scores else None,
-            }
-            for s in samples
-        ],
-    }
-
-
-@router.post("/inspect")
-def inspect(body: InspectRequest) -> dict:
-    try:
-        return engine.inspect_room(body.plan, body.room_id)
-    except KeyError as exc:
-        raise HTTPException(404, f"Room not found: {exc}") from exc
-
-
-@router.post("/demo")
-def demo(total_rooms: int = 3, seed: int = 0) -> dict:
-    """Convenience: generate from scratch + score + render for the viewer."""
-    sample = engine.generate_sample(
-        total_rooms=total_rooms,
-        seed=seed,
-        mutate=False,
-        include_renders=True,
-        save=False,
-    )
-    plan = sample.floor_plan
-    scores = sample.scores
-    rendered = engine.render(plan, layers=["boundary", "rooms", "labels", "doors", "windows", "topology"])
-    return {
-        "plan": plan.model_dump(),
-        "scores": scores.model_dump() if scores else None,
-        "render": rendered,
-        "requirements": sample.requirements,
-        "adjacency": build_adjacency(plan),
-    }

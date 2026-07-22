@@ -1,6 +1,6 @@
 """Pydantic schemas and domain enums for the floor plan engine."""
 
-from .enums import RoomType, ZoneType, Severity, MutationOp
+from .enums import RoomType, ZoneType, Severity
 from .models import (
     Point2D,
     Boundary,
@@ -14,17 +14,11 @@ from .models import (
     ConstraintGraph,
     RuleResult,
     ScoreBreakdown,
-    TemplateSpec,
     DatasetSample,
 )
 from .requests import (
-    AdaptRequest,
-    DatasetRequest,
     EvaluateRequest,
     GenerateRequest,
-    InspectRequest,
-    InstantiateRequest,
-    MutateRequest,
     RenderRequest,
 )
 
@@ -32,7 +26,6 @@ __all__ = [
     "RoomType",
     "ZoneType",
     "Severity",
-    "MutationOp",
     "Point2D",
     "Boundary",
     "Room",
@@ -45,14 +38,8 @@ __all__ = [
     "ConstraintGraph",
     "RuleResult",
     "ScoreBreakdown",
-    "TemplateSpec",
     "DatasetSample",
-    "AdaptRequest",
-    "DatasetRequest",
     "EvaluateRequest",
     "GenerateRequest",
-    "InspectRequest",
-    "InstantiateRequest",
-    "MutateRequest",
     "RenderRequest",
 ]

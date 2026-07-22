@@ -36,14 +36,3 @@ class Severity(str, Enum):
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
-
-
-class MutationOp(str, Enum):
-    INSERT_BALCONY = "insert_balcony"
-    INSERT_TOILET = "insert_toilet"
-    INSERT_CLOSET = "insert_closet"
-    INSERT_UTILITY = "insert_utility"
-    INSERT_STORAGE = "insert_storage"
-    MERGE_ROOMS = "merge_rooms"
-    SPLIT_ROOM = "split_room"
-    SHIFT_WET_CORE = "shift_wet_core"

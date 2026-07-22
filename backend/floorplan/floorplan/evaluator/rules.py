@@ -5,14 +5,21 @@ from __future__ import annotations
 from collections import deque
 from typing import Callable
 
+from shapely.geometry import Point
+
 from floorplan.geometry import (
     area,
     aspect_ratio,
     centroid,
+    exterior_edge_length,
+    facade_blocker,
     min_width,
     polygon_from_boundary,
     polygon_from_room,
     rectangularity,
+    shape_subscores,
+    shared_edge,
+    window_length_on_exterior,
 )
 from floorplan.requirements.program import closet_parent
 from floorplan.schemas.enums import RoomType, Severity, ZoneType
@@ -20,16 +27,51 @@ from floorplan.schemas.models import FloorPlan, Room, RuleResult
 from floorplan.topology import (
     adjacency_via_doors,
     build_adjacency,
+    circ_dead_end_ids,
+    entry_start_ids,
     exterior_touching_rooms,
+    passageway_rooms,
+    path_min_width,
     reachable,
+    shortest_hop,
+    shortest_path,
 )
+from floorplan.units import INTERIOR_DOOR_FT, WINDOW_HEIGHT_FT, window_length_ft
 
 RuleFn = Callable[[FloorPlan], RuleResult]
 
 _PUBLIC = {RoomType.LIVING, RoomType.DINING, RoomType.KITCHEN, RoomType.ENTRY}
 _PRIVATE = {RoomType.BEDROOM, RoomType.MASTER_BEDROOM}
 _CIRCULATION = {RoomType.HALLWAY, RoomType.ENTRY}
+_DAYLIGHT_CRITICAL = {RoomType.LIVING, RoomType.BEDROOM, RoomType.MASTER_BEDROOM, RoomType.DINING}
 _SKIP_HUB = {RoomType.CLOSET, RoomType.STORAGE, RoomType.BALCONY, RoomType.OTHER}
+_SHAPE_SKIP = {RoomType.CLOSET, RoomType.STORAGE, RoomType.BALCONY}
+
+
+def _clamp(v: float, lo: float = 0.0, hi: float = 10.0) -> float:
+    return max(lo, min(hi, v))
+
+
+def _windows_for_room(plan: FloorPlan, room_id: str) -> list:
+    room = next((r for r in plan.rooms if r.id == room_id), None)
+    matched = [w for w in plan.windows if room_id in w.room_ids]
+    if matched:
+        return matched
+    if room is not None:
+        matched = [w for w in plan.windows if room.name in w.room_names]
+        if matched:
+            return matched
+    if room is None:
+        return []
+    poly = polygon_from_room(room)
+    out = []
+    for w in plan.windows:
+        if w.room_ids or w.room_names:
+            continue
+        mid = w.midpoint()
+        if poly.boundary.distance(Point(mid.x, mid.y)) <= 0.5:
+            out.append(w)
+    return out
 
 
 def _hard(rule_id: str, name: str, passed: bool, reason: str, repair: str | None = None, score: float | None = None) -> RuleResult:
@@ -211,17 +253,27 @@ def rule_doors_on_walls(plan: FloorPlan) -> RuleResult:
 
 
 def rule_windows_on_exterior(plan: FloorPlan) -> RuleResult:
-    exterior = set(exterior_touching_rooms(plan))
-    bedrooms = [r for r in plan.rooms if r.room_type in (RoomType.BEDROOM, RoomType.MASTER_BEDROOM, RoomType.LIVING)]
-    need_light = [r for r in bedrooms if r.id not in exterior]
-    has_windows = bool(plan.windows)
-    passed = has_windows and len(need_light) <= len(bedrooms) // 2
-    reason = "Exterior exposure OK" if passed else f"Poor exterior access for: {[r.name for r in need_light]}"
+    if not plan.windows:
+        return _hard("windows_on_exterior", "Window Lines", False, "No window lines defined", "Add window line segments on exterior edges of living/bedrooms")
+    boundary_poly = polygon_from_boundary(plan.ensure_boundary())
+    critical = [r for r in plan.rooms if r.room_type in _DAYLIGHT_CRITICAL]
+    missing = []
+    for room in critical:
+        wins = _windows_for_room(plan, room.id)
+        ext_len = exterior_edge_length(room, boundary_poly)
+        on_ext = sum(window_length_on_exterior(w, boundary_poly) for w in wins)
+        if ext_len > 0 and on_ext >= 1.5:
+            continue
+        if wins and on_ext > 0:
+            continue
+        missing.append(room.name)
+    passed = not missing
+    reason = "Critical rooms have exterior windows" if passed else f"Missing exterior glazing: {missing}"
     return _hard(
         "windows_on_exterior",
         "Window Lines",
-        passed or len(bedrooms) == 0,
-        reason if has_windows else "No window lines defined",
+        passed or not critical,
+        reason,
         "Add window line segments on exterior edges of living/bedrooms",
     )
 
@@ -289,14 +341,64 @@ def rule_bedroom_ratio(plan: FloorPlan) -> RuleResult:
     return _soft("bedroom_ratio", "Bedroom Ratio", score, f"Bedroom/living area ratio {ratio:.2f}", "Rebalance bedroom vs living areas")
 
 
-def rule_natural_light(plan: FloorPlan) -> RuleResult:
-    exterior = set(exterior_touching_rooms(plan))
-    need = [r for r in plan.rooms if r.room_type in (RoomType.LIVING, RoomType.BEDROOM, RoomType.MASTER_BEDROOM, RoomType.DINING)]
-    if not need:
-        return _soft("natural_light", "Natural Light", 5.0, "No daylight-critical rooms")
-    lit = sum(1 for r in need if r.id in exterior)
-    score = 10.0 * lit / len(need)
-    return _soft("natural_light", "Natural Light", score, f"{lit}/{len(need)} critical rooms on exterior", "Give bedrooms/living exterior walls")
+def rule_daylight_quality(plan: FloorPlan) -> RuleResult:
+    boundary_poly = polygon_from_boundary(plan.ensure_boundary())
+    rooms_by_id = {r.id: r for r in plan.rooms}
+    balcony_ids = {r.id for r in plan.rooms if r.room_type == RoomType.BALCONY}
+    critical = [r for r in plan.rooms if r.room_type in _DAYLIGHT_CRITICAL]
+    if not critical:
+        return _soft("daylight_quality", "Natural Light", 5.0, "No daylight-critical rooms")
+
+    min_wall = {
+        RoomType.LIVING: 12.0,
+        RoomType.DINING: 8.0,
+        RoomType.BEDROOM: 8.0,
+        RoomType.MASTER_BEDROOM: 10.0,
+    }
+    room_scores: list[float] = []
+    details: list[str] = []
+
+    for room in critical:
+        r_area = area(room.coords())
+        ext_len = exterior_edge_length(room, boundary_poly)
+        wins = _windows_for_room(plan, room.id)
+        win_len = sum(w.length() for w in wins)
+        target = window_length_ft(r_area, ext_len if ext_len > 0 else 8.0)
+        win_score = _clamp(10.0 * win_len / target) if target > 0 and win_len > 0 else (0.0 if win_len <= 0 else 5.0)
+
+        wfr = (win_len * WINDOW_HEIGHT_FT) / max(r_area, 1e-9)
+        if 0.08 <= wfr <= 0.12:
+            wfr_score = 10.0
+        elif 0.05 <= wfr <= 0.16:
+            wfr_score = 7.0
+        elif win_len > 0:
+            wfr_score = 5.0
+        else:
+            wfr_score = 0.0
+
+        ext_win = sum(window_length_on_exterior(w, boundary_poly) for w in wins)
+        placement_score = _clamp(10.0 * ext_win / max(win_len, 0.01)) if win_len > 0 else (3.0 if ext_len > 0 else 0.0)
+        wall_score = _clamp(10.0 * ext_len / min_wall.get(room.room_type, 8.0)) if ext_len > 0 else 0.0
+
+        blocker = facade_blocker(room, boundary_poly, rooms_by_id, balcony_ids=balcony_ids)
+        block_score = {"clear": 10.0, "balcony": 7.0, "blocked": 3.0, "none": 0.0}[blocker]
+
+        room_score = 0.25 * win_score + 0.20 * wfr_score + 0.20 * placement_score + 0.20 * wall_score + 0.15 * block_score
+        if win_len <= 0:
+            room_score = min(room_score, 6.0)
+        room_scores.append(room_score)
+        details.append(
+            f"{room.name}: win {win_len:.1f}/{target:.1f} ft, WFR {wfr*100:.0f}%, ext {ext_len:.1f} ft, {blocker}"
+        )
+
+    score = sum(room_scores) / len(room_scores)
+    return _soft(
+        "daylight_quality",
+        "Natural Light",
+        score,
+        "; ".join(details),
+        "Add adequately sized windows on exterior walls of bedrooms/living",
+    )
 
 
 def rule_privacy(plan: FloorPlan) -> RuleResult:
@@ -333,21 +435,142 @@ def rule_privacy(plan: FloorPlan) -> RuleResult:
     )
 
 
-def rule_circulation(plan: FloorPlan) -> RuleResult:
-    circ = [r for r in plan.rooms if r.room_type in (RoomType.HALLWAY, RoomType.ENTRY)]
+def rule_circulation_quality(plan: FloorPlan) -> RuleResult:
+    adj = adjacency_via_doors(plan)
+    types = _type_map(plan)
+    rooms_by_id = {r.id: r for r in plan.rooms}
+    circ = [r for r in plan.rooms if r.room_type in _CIRCULATION]
     total = sum(area(r.coords()) for r in plan.rooms) or 1.0
     circ_area = sum(area(r.coords()) for r in circ)
     pct = circ_area / total
-    # Ideal 5–12%
+
     if 0.04 <= pct <= 0.14:
-        score = 9.0
+        area_score = 8.0
     elif pct < 0.02:
-        score = 5.0
+        area_score = 5.0
     elif pct > 0.20:
-        score = 4.0
+        area_score = 4.0
     else:
-        score = 6.5
-    return _soft("circulation", "Circulation Efficiency", score, f"Circulation {pct*100:.1f}% of area", "Reduce hallway or add clear entry path")
+        area_score = 6.5
+
+    exterior_ids = exterior_touching_rooms(plan)
+    starts = entry_start_ids(plan, exterior_ids)
+    beds = [r for r in plan.rooms if r.room_type in _PRIVATE]
+    living = _largest([r for r in plan.rooms if r.room_type == RoomType.LIVING])
+    circ_ids = {r.id for r in circ}
+
+    reach_score = 10.0
+    for room in plan.rooms:
+        if room.room_type == RoomType.BALCONY:
+            continue
+        hops = shortest_hop(adj, starts, room.id)
+        if hops is None:
+            reach_score = min(reach_score, 2.0)
+        elif hops > 3:
+            reach_score = min(reach_score, 6.0)
+
+    path_widths: list[float] = []
+    if living is not None:
+        path = None
+        for s in starts:
+            path = shortest_path(adj, s, living.id)
+            if path is not None:
+                break
+        if path:
+            path_widths.append(path_min_width(path, rooms_by_id))
+    for bed in beds:
+        path = None
+        for s in starts:
+            path = shortest_path(adj, s, bed.id)
+            if path is not None:
+                break
+        if path:
+            path_widths.append(path_min_width(path, rooms_by_id))
+    if path_widths:
+        narrowest = min(path_widths)
+        if narrowest >= 3.0:
+            width_score = 10.0
+        elif narrowest >= 2.75:
+            width_score = 8.0
+        elif narrowest >= 2.0:
+            width_score = 5.0
+        else:
+            width_score = 2.0
+    else:
+        width_score = 5.0
+
+    buffered = sum(1 for b in beds if set(adj.get(b.id, [])) & circ_ids)
+    bed_hall_score = 3.0 + (buffered / len(beds)) * 6.0 if beds else 7.0
+
+    hall_score = 10.0
+    for hall in circ:
+        if hall.room_type != RoomType.HALLWAY:
+            continue
+        a = area(hall.coords())
+        deg = len(adj.get(hall.id, []))
+        ar = aspect_ratio(hall.coords())
+        if a >= 40 and deg <= 2 and 0.7 <= ar <= 1.4:
+            hall_score = min(hall_score, 4.0)
+        elif a >= 80:
+            hall_score = min(hall_score, 5.5)
+        elif deg >= 3 and 1.8 <= ar <= 4.0:
+            hall_score = min(hall_score, 10.0)
+        elif deg <= 1:
+            hall_score = min(hall_score, 5.0)
+
+    if pct > 0.12:
+        area_score = min(area_score, 7.0)
+
+    skip_pass = {t.value for t in _CIRCULATION | _SKIP_HUB}
+    passageways = passageway_rooms(adj, rooms_by_id, skip_types=skip_pass)
+    pass_score = max(2.0, 10.0 - len(passageways) * 2.0)
+
+    path_score = 10.0
+    if living is not None:
+        liv_hops = shortest_hop(adj, starts, living.id)
+        if liv_hops is None:
+            path_score -= 4.0
+        elif liv_hops > 2:
+            path_score -= min(4.0, (liv_hops - 2) * 1.5)
+        elif liv_hops == 2:
+            path = shortest_path(adj, starts[0], living.id) if starts else None
+            if path and any(types.get(rid) in _PRIVATE for rid in path[1:-1]):
+                path_score -= 2.0
+    bed_hops = [shortest_hop(adj, starts, b.id) for b in beds]
+    bed_hops = [h for h in bed_hops if h is not None]
+    if bed_hops and living is not None:
+        liv_h = shortest_hop(adj, starts, living.id) or 0
+        if min(bed_hops) < liv_h:
+            path_score -= 2.0
+    path_score = _clamp(path_score)
+
+    dead_ends = circ_dead_end_ids(adj, circ_ids)
+    excess = max(0.0, circ_area - len(circ_ids) * 12.0 - len(dead_ends) * 8.0)
+    dead_score = max(2.0, 10.0 - len(dead_ends) * 2.5 - excess * 0.05)
+
+    score = (
+        0.10 * area_score
+        + 0.15 * reach_score
+        + 0.15 * width_score
+        + 0.15 * bed_hall_score
+        + 0.20 * hall_score
+        + 0.10 * pass_score
+        + 0.15 * path_score
+        + 0.10 * dead_score
+    )
+    reason = (
+        f"Circ {pct*100:.1f}%; min path width {min(path_widths):.1f} ft"
+        if path_widths
+        else f"Circ {pct*100:.1f}%"
+    )
+    reason += f"; {buffered}/{len(beds) or 0} beds via hall; {len(passageways)} passageway rooms; {len(dead_ends)} dead ends"
+    return _soft(
+        "circulation_quality",
+        "Circulation Efficiency",
+        score,
+        reason,
+        "Reduce hallway waste, widen paths, and serve bedrooms from circulation",
+    )
 
 
 def rule_wet_core_compactness(plan: FloorPlan) -> RuleResult:
@@ -369,12 +592,55 @@ def rule_wet_core_compactness(plan: FloorPlan) -> RuleResult:
     return _soft("wet_core", "Wet Core Compactness", score, f"Avg wet-room distance {avg:.2f} ft", "Cluster wet rooms for shared plumbing")
 
 
-def rule_rectangularity(plan: FloorPlan) -> RuleResult:
+def rule_shape_quality(plan: FloorPlan) -> RuleResult:
     if not plan.rooms:
-        return _soft("rectangularity", "Rectangularity", 0.0, "No rooms")
-    scores = [rectangularity(r.coords()) for r in plan.rooms]
-    avg = sum(scores) / len(scores)
-    return _soft("rectangularity", "Construction Rectangularity", avg * 10, f"Avg rectangularity {avg:.2f}", "Simplify room shapes")
+        return _soft("shape_quality", "Construction Shape", 0.0, "No rooms")
+
+    rooms = [r for r in plan.rooms if r.room_type not in _SHAPE_SKIP]
+    if not rooms:
+        return _soft("shape_quality", "Construction Shape", 7.0, "No scored rooms")
+
+    room_scores: list[tuple[float, float]] = []
+    worst = 10.0
+    for room in rooms:
+        subs = shape_subscores(room.coords())
+        weight = 0.5 if room.room_type == RoomType.HALLWAY else 1.0
+        rs = (
+            0.15 * subs["rectangularity"]
+            + 0.15 * subs["compactness"]
+            + 0.20 * subs["max_rect"]
+            + 0.15 * subs["reflex"]
+            + 0.15 * subs["appendage"]
+            + 0.20 * subs["min_width"]
+        )
+        room_scores.append((rs * weight, area(room.coords()) * weight))
+        worst = min(worst, rs)
+
+    total_w = sum(w for _, w in room_scores) or 1.0
+    score = sum(s * w for s, w in room_scores) / total_w
+
+    door_pen = 0.0
+    for door in plan.doors:
+        if len(door.connects) < 2:
+            continue
+        a = next((r for r in plan.rooms if r.id == door.connects[0]), None)
+        b = next((r for r in plan.rooms if r.id == door.connects[1]), None)
+        if a is None or b is None:
+            continue
+        edge = shared_edge(a.coords(), b.coords())
+        if edge is None or edge.length < INTERIOR_DOOR_FT:
+            door_pen += 1.5
+    score = max(0.0, min(10.0, score - door_pen * 0.4))
+    score = min(score, worst + 2.0)
+
+    avg_rect = sum(rectangularity(r.coords()) for r in rooms) / len(rooms)
+    return _soft(
+        "shape_quality",
+        "Construction Shape",
+        score,
+        f"Avg rectangularity {avg_rect:.2f}; {int(door_pen/1.5)} short door edges",
+        "Simplify room shapes and place doors on longer shared walls",
+    )
 
 
 def rule_aspect_quality(plan: FloorPlan) -> RuleResult:
@@ -663,76 +929,6 @@ def rule_entry_sequence(plan: FloorPlan) -> RuleResult:
     )
 
 
-def rule_hall_organization(plan: FloorPlan) -> RuleResult:
-    """Private rooms should hang off hallway/entry rather than using living as a corridor."""
-    beds = [r for r in plan.rooms if r.room_type in _PRIVATE]
-    if not beds:
-        return _soft("hall_organization", "Hall Organization", 7.0, "No bedrooms to organize")
-
-    adj = adjacency_via_doors(plan)
-    types = _type_map(plan)
-    circ_ids = {r.id for r in plan.rooms if r.room_type in _CIRCULATION}
-    living_ids = {r.id for r in plan.rooms if r.room_type == RoomType.LIVING}
-
-    buffered = 0
-    living_only = 0
-    for b in beds:
-        nbrs = set(adj.get(b.id, []))
-        if nbrs & circ_ids:
-            buffered += 1
-        elif nbrs & living_ids and not (nbrs & circ_ids):
-            living_only += 1
-
-    # Living-as-corridor: path between two beds goes only through living (no hall on path)
-    corridor_pairs = 0
-    pair_count = 0
-    for i, a in enumerate(beds):
-        for b in beds[i + 1 :]:
-            pair_count += 1
-            # BFS recording parent
-            parent: dict[str, str | None] = {a.id: None}
-            q = deque([a.id])
-            found = False
-            while q and not found:
-                cur = q.popleft()
-                for nxt in adj.get(cur, []):
-                    if nxt in parent:
-                        continue
-                    parent[nxt] = cur
-                    if nxt == b.id:
-                        found = True
-                        break
-                    q.append(nxt)
-            if not found:
-                continue
-            path = []
-            cur: str | None = b.id
-            while cur is not None:
-                path.append(cur)
-                cur = parent[cur]
-            mid = path[1:-1]
-            mid_types = [types[x] for x in mid if x in types]
-            if mid and all(t == RoomType.LIVING for t in mid_types) and RoomType.HALLWAY not in mid_types:
-                corridor_pairs += 1
-
-    frac_buffered = buffered / len(beds)
-    score = 3.0 + frac_buffered * 6.0
-    score -= living_only * 1.2
-    if pair_count:
-        score -= (corridor_pairs / pair_count) * 2.5
-    if not circ_ids and len(beds) >= 2:
-        score -= 1.5
-
-    return _soft(
-        "hall_organization",
-        "Hall Organization",
-        score,
-        f"{buffered}/{len(beds)} bedrooms on hall/entry; {living_only} living-only; "
-        f"{corridor_pairs} bed pairs routed through living",
-        "Serve bedrooms from a hallway instead of crossing the living room",
-    )
-
-
 def rule_public_near_exit(plan: FloorPlan) -> RuleResult:
     """Living/public zone should sit closer to the exit than private bedrooms."""
     living = _largest([r for r in plan.rooms if r.room_type == RoomType.LIVING])
@@ -816,18 +1012,17 @@ HARD_RULES: list[RuleFn] = [
 SOFT_RULES: list[RuleFn] = [
     rule_living_size,
     rule_bedroom_ratio,
-    rule_natural_light,
+    rule_daylight_quality,
     rule_privacy,
-    rule_circulation,
+    rule_circulation_quality,
     rule_wet_core_compactness,
-    rule_rectangularity,
+    rule_shape_quality,
     rule_aspect_quality,
     rule_storage_adequacy,
     rule_balcony_usability,
     rule_living_centrality,
     rule_kitchen_public_link,
     rule_entry_sequence,
-    rule_hall_organization,
     rule_public_near_exit,
 ]
 

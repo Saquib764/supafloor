@@ -3,8 +3,6 @@ export const FLOORPLAN_AREA_UNIT = 'ft²'
 
 export const FLOORPLAN_TARGET_AREAS_SQFT = [150, 400, 600, 900, 1200, 1500, 2000, 2500, 3000, 4000, 4500, 5000] as const
 
-export type LayoutMode = 'cpsat' | 'llm'
-
 export type RoomType =
   | 'living'
   | 'dining'
@@ -93,17 +91,129 @@ export interface RuleResult {
   details?: Record<string, unknown>
 }
 
+export type ScoreLevel = 'basic' | 'intermediate' | 'advance'
+
+export type ScoreCategory =
+  | 'geometry'
+  | 'topology'
+  | 'construction'
+  | 'privacy'
+  | 'circulation'
+  | 'daylight'
+  | 'architecture'
+  | 'aesthetics'
+
+export const SCORE_LEVELS: ScoreLevel[] = ['basic', 'intermediate', 'advance']
+
+export const SCORE_LEVEL_CATEGORY_ADDS: Record<ScoreLevel, readonly ScoreCategory[]> = {
+  basic: ['geometry', 'topology', 'construction', 'architecture', 'aesthetics'],
+  intermediate: ['privacy', 'circulation'],
+  advance: ['daylight'],
+}
+
+export const SCORE_LEVEL_RULE_ADDS: Record<ScoreLevel, readonly string[]> = {
+  basic: [],
+  intermediate: ['reachability', 'bathroom_accessible', 'kitchen_accessible'],
+  advance: ['required_rooms', 'windows_on_exterior'],
+}
+
+const TIER_GATED_RULES = new Set(
+  SCORE_LEVELS.flatMap(level => SCORE_LEVEL_RULE_ADDS[level]),
+)
+
+const RULE_CATEGORY: Record<string, ScoreCategory> = {
+  polygon_validity: 'geometry',
+  room_overlap: 'geometry',
+  boundary_containment: 'geometry',
+  minimum_area: 'geometry',
+  minimum_width: 'geometry',
+  rectangularity: 'construction',
+  shape_quality: 'construction',
+  aspect_quality: 'architecture',
+  reachability: 'topology',
+  required_rooms: 'topology',
+  doors_on_walls: 'topology',
+  bathroom_accessible: 'topology',
+  kitchen_accessible: 'topology',
+  windows_on_exterior: 'daylight',
+  daylight_quality: 'daylight',
+  natural_light: 'daylight',
+  privacy: 'privacy',
+  circulation_quality: 'circulation',
+  circulation: 'circulation',
+  living_size: 'architecture',
+  bedroom_ratio: 'architecture',
+  wet_core: 'construction',
+  storage: 'architecture',
+  balcony: 'architecture',
+  living_centrality: 'aesthetics',
+  kitchen_public_link: 'topology',
+  entry_sequence: 'aesthetics',
+  public_near_exit: 'aesthetics',
+}
+
+function cumulativeUpTo<T extends string>(level: ScoreLevel, adds: Record<ScoreLevel, readonly T[]>): Set<T> {
+  const result = new Set<T>()
+  for (const tier of SCORE_LEVELS) {
+    for (const item of adds[tier]) result.add(item)
+    if (tier === level) break
+  }
+  return result
+}
+
+export function activeCategoriesForLevel(level: ScoreLevel): ScoreCategory[] {
+  const active = cumulativeUpTo(level, SCORE_LEVEL_CATEGORY_ADDS)
+  return (Object.keys(DEFAULT_SCORE_WEIGHTS) as ScoreCategory[]).filter(c => active.has(c))
+}
+
+export function ruleActiveAtLevel(ruleId: string, level: ScoreLevel): boolean {
+  const activeCats = cumulativeUpTo(level, SCORE_LEVEL_CATEGORY_ADDS)
+  const tierRules = cumulativeUpTo(level, SCORE_LEVEL_RULE_ADDS)
+  const cat = RULE_CATEGORY[ruleId] ?? 'architecture'
+  if (!activeCats.has(cat)) return false
+  if (TIER_GATED_RULES.has(ruleId)) return tierRules.has(ruleId)
+  return true
+}
+
+export const DEFAULT_SCORE_WEIGHTS: Record<ScoreCategory, number> = {
+  geometry: 0.15,
+  topology: 0.10,
+  construction: 0.10,
+  privacy: 0.11,
+  circulation: 0.10,
+  daylight: 0.13,
+  architecture: 0.13,
+  aesthetics: 0.18,
+}
+
+export function overallForLevel(scores: ScoreBreakdown, level: ScoreLevel): number {
+  if (scores.levels?.[level] != null) return scores.levels[level]!
+
+  const active = activeCategoriesForLevel(level)
+  const weights = scores.weights ?? DEFAULT_SCORE_WEIGHTS
+  const levelCats = scores.level_categories?.[level]
+  const totalW = active.reduce((sum, c) => sum + (weights[c] ?? DEFAULT_SCORE_WEIGHTS[c]), 0)
+  if (totalW <= 0) return scores.overall
+
+  const raw = active.reduce(
+    (sum, c) => sum + (levelCats?.[c] ?? scores[c]) * (weights[c] ?? DEFAULT_SCORE_WEIGHTS[c]) / totalW,
+    0,
+  )
+  return Math.max(0, Math.min(10, Math.round(raw * 100) / 100))
+}
+
 export interface ScoreBreakdown {
   geometry: number
   topology: number
   construction: number
   privacy: number
   circulation: number
-  furniture: number
   daylight: number
   architecture: number
   aesthetics: number
   overall: number
+  levels?: Partial<Record<ScoreLevel, number>>
+  level_categories?: Partial<Record<ScoreLevel, Partial<Record<ScoreCategory, number>>>>
   weights: Record<string, number>
   rules: RuleResult[]
 }
@@ -112,28 +222,6 @@ export interface RenderResult {
   svg: string
   png: string
   metadata: Record<string, unknown>
-}
-
-export interface DemoResponse {
-  plan: FloorPlan
-  scores: ScoreBreakdown
-  render: RenderResult
-  adjacency: Record<string, string[]>
-}
-
-export interface RoomInspection {
-  id: string
-  name: string
-  room_type: string
-  zone: string
-  area: number
-  aspect_ratio: number
-  perimeter: number
-  adjacent_rooms: string[]
-  doors: Door[]
-  windows: Window[]
-  individual_scores: RuleResult[]
-  plan_overall: number
 }
 
 export interface FloorPlanLLMUnits {

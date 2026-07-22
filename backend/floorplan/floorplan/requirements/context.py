@@ -11,7 +11,14 @@ from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
 
 from floorplan.geometry.authors import make_door_line, make_room, make_window_line
+from floorplan.geometry import area
 from floorplan.geometry.ops import polygon_from_boundary, polygon_from_room, shared_edge
+from floorplan.geometry.exterior import (
+    EDGE_TOL as _EDGE_TOL,
+    MIN_LINE_LEN as _MIN_LINE_LEN,
+    room_exterior_edge as _boundary_edge,
+    room_exterior_segment as _exterior_edge,
+)
 from floorplan.geometry.boundary import (
     boundary_from_params,
     force_manhattan,
@@ -36,11 +43,12 @@ from floorplan.requirements.program import (
 )
 from floorplan.schemas.enums import RoomType, ZoneType
 from floorplan.schemas.models import Boundary, Door, FloorPlan, Point2D, Room, Window
-
-_DOOR_LEN = 0.9
-_WINDOW_LEN = 1.0
-_EDGE_TOL = 0.08
-_MIN_LINE_LEN = 0.05
+from floorplan.units import (
+    EXTERIOR_DOOR_FT,
+    INTERIOR_DOOR_FT,
+    MIN_OPENING_EDGE_FT,
+    window_length_ft,
+)
 
 _MIN_SPACE_AREA = 0.5
 
@@ -624,24 +632,9 @@ def build_document(
     }
 
 
-def _longest_line(geom) -> LineString | None:
-    if geom is None or geom.is_empty:
-        return None
-    if geom.geom_type == "LineString":
-        return geom
-    if geom.geom_type == "MultiLineString":
-        return max(geom.geoms, key=lambda g: g.length)
-    if geom.geom_type == "GeometryCollection":
-        lines = [g for g in geom.geoms if g.geom_type in ("LineString", "MultiLineString")]
-        if not lines:
-            return None
-        return _longest_line(unary_union(lines))
-    return None
-
-
 def _segment_on_linestring(
     ls: LineString,
-    length: float = _DOOR_LEN,
+    length: float = INTERIOR_DOOR_FT,
 ) -> tuple[tuple[float, float], tuple[float, float]] | None:
     if ls.length < _MIN_LINE_LEN:
         return None
@@ -654,18 +647,6 @@ def _segment_on_linestring(
     if p0.coords[0] == p1.coords[0]:
         return None
     return (float(p0.x), float(p0.y)), (float(p1.x), float(p1.y))
-
-
-def _ring_edges(coords) -> list[LineString]:
-    edges: list[LineString] = []
-    pts = list(coords)
-    for i in range(len(pts) - 1):
-        if pts[i] == pts[i + 1]:
-            continue
-        edge = LineString([pts[i], pts[i + 1]])
-        if edge.length >= _MIN_LINE_LEN:
-            edges.append(edge)
-    return edges
 
 
 def _living_room(rooms: list[Room]) -> Room | None:
@@ -687,11 +668,12 @@ def _door_on_edge(
     is_exterior: bool = False,
     target: Point | None = None,
 ) -> Door | None:
-    if edge.length < _DOOR_LEN:
+    door_len = EXTERIOR_DOOR_FT if is_exterior else INTERIOR_DOOR_FT
+    if edge.length < door_len:
         return None
     if target is not None:
         t = edge.project(target)
-        use = min(_DOOR_LEN, edge.length * 0.8)
+        use = min(door_len, edge.length * 0.8)
         a = max(0.0, min(t - use / 2.0, edge.length - use))
         b = a + use
         p0 = edge.interpolate(a)
@@ -801,35 +783,6 @@ def _add_door(
     if is_toilet(b.name) and is_bedroom(a.name):
         toilet_hosts.add(a.id)
     return True
-
-
-def _boundary_edge(room: Room, boundary_poly: Polygon) -> LineString | None:
-    """Longest room wall segment that lies on the unit boundary."""
-    poly = polygon_from_room(room)
-    best: LineString | None = None
-    for edge in _ring_edges(poly.exterior.coords):
-        overlap = edge.intersection(boundary_poly.boundary)
-        line = _longest_line(overlap)
-        if line is None or line.length < _DOOR_LEN:
-            continue
-        if best is None or line.length > best.length:
-            best = line
-    if best is not None:
-        return best
-    inter = poly.boundary.intersection(boundary_poly.boundary)
-    line = _longest_line(inter)
-    if line is not None and line.length >= _DOOR_LEN:
-        return line
-    return None
-
-
-def _exterior_edge(room: Room, boundary_poly: Polygon) -> LineString | None:
-    poly = polygon_from_room(room)
-    inter = poly.boundary.intersection(boundary_poly.boundary)
-    if inter.is_empty:
-        inter = poly.buffer(_EDGE_TOL).intersection(boundary_poly.buffer(_EDGE_TOL)).boundary
-    line = _longest_line(inter)
-    return line if line is not None and line.length >= _MIN_LINE_LEN else None
 
 
 def _door_on_boundary(door: Door, boundary_poly: Polygon) -> bool:
@@ -1059,12 +1012,14 @@ def _reachable_ids(adj: dict[str, list[str]], rooms: list[Room]) -> set[str]:
 def _window_segments(
     edge: LineString,
     count: int,
-    length: float = _WINDOW_LEN,
+    length: float,
 ) -> list[tuple[tuple[float, float], tuple[float, float]]]:
     if edge.length < _MIN_LINE_LEN or count <= 0:
         return []
     out: list[tuple[tuple[float, float], tuple[float, float]]] = []
-    use = min(length, edge.length * 0.35)
+    use = min(length, edge.length * 0.75)
+    if use < 2.0:
+        return []
     for i in range(count):
         mid = edge.length * (i + 1) / (count + 1)
         a = max(0.0, mid - use / 2.0)
@@ -1101,7 +1056,8 @@ def _place_windows(rooms: list[Room], boundary: Boundary, count: int = 2) -> lis
         need = count - len(windows)
         if need <= 0:
             break
-        for start, end in _window_segments(edge, need):
+        win_len = window_length_ft(area(room.coords()), edge.length)
+        for start, end in _window_segments(edge, need, win_len):
             windows.append(make_window_line(start, end, room_ids=[room.id]))
             if len(windows) >= count:
                 break

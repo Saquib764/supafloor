@@ -68,7 +68,7 @@ def import_bw_image(
             continue
         # Convert image coords (y down) to plan coords (y up)
         coords = [(x * feet_per_pixel, (h - y) * feet_per_pixel) for x, y in coords_px]
-        touching_exterior = x <= 1 or y <= 1 or x + bw >= w - 1 or y + bh >= h - 1
+        touching_exterior = bool(x <= 1 or y <= 1 or x + bw >= w - 1 or y + bh >= h - 1)
         candidates.append(
             {
                 "coords": coords,
