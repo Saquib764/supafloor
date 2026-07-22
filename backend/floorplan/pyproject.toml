@@ -12,6 +12,8 @@ dependencies = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
   "pydantic>=2.9.0",
+  "python-dotenv",
+  "pydantic-settings",
   "shapely>=2.0.6",
   "numpy>=2.1.0",
   "opencv-python-headless>=4.10.0",
@@ -19,6 +21,8 @@ dependencies = [
   "matplotlib>=3.9.0",
   "python-multipart>=0.0.12",
   "pyyaml>=6.0.2",
+  "openai>=1.60.0",
+  "ortools>=9.10.4067",
 ]
 
 [project.scripts]

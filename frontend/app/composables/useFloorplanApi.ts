@@ -44,7 +44,12 @@ export function useFloorplanApi(baseUrl?: string) {
     return res.json()
   }
 
-  async function generate(totalRooms: number, seed = 0, targetArea?: number) {
+  async function generate(
+    totalRooms: number,
+    seed = 0,
+    targetArea?: number,
+    layoutMode: 'cpsat' | 'llm' = 'cpsat',
+  ) {
     const res = await fetch(`${apiBase}/floorplan/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -52,6 +57,7 @@ export function useFloorplanApi(baseUrl?: string) {
         total_rooms: totalRooms,
         target_area: targetArea,
         seed,
+        layout_mode: layoutMode,
         include_renders: true,
         save: true,
       }),
