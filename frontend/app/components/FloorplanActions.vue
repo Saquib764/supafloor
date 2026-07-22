@@ -13,7 +13,6 @@ const FLOORPLAN_ACTION_GROUPS: FloorplanActionGroup[] = [
   {
     label: 'Plan',
     actions: [
-      { id: 'recreate', label: 'Recreate' },
       { id: 'evaluate', label: 'Re-evaluate' },
       { id: 'generate', label: 'Generate new' },
     ],
@@ -47,7 +46,7 @@ const emit = defineEmits<{
         Actions
       </h2>
       <p class="mt-1 text-xs text-gray-500">
-        Recreate rebuilds geometry from saved parameters
+        Generate new creates a fresh plan from the current room count
       </p>
     </div>
 

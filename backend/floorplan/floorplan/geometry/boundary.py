@@ -111,12 +111,9 @@ def boundary_from_params(start_rect: dict[str, Any], notches: list[dict[str, Any
     ox = min(x for x, _ in final)
     oy = min(y for _, y in final)
     final = [(x - ox, y - oy) for x, y in final]
-    maxx = max(x for x, _ in final)
-    maxy = max(y for _, y in final)
     boundary = Boundary(exterior=to_points(final))
     return boundary, {
         "polygon": [[float(x), float(y)] for x, y in final],
-        "bbox_area": float(maxx * maxy),
         "polygon_area": float(Polygon(final).area),
     }
 
@@ -170,6 +167,5 @@ def generate_notched_boundary(
         **params,
         "n_notches": len(params["notches"]),
         "boundary_polygon": [(int(p[0]), int(p[1])) for p in generated["polygon"]],
-        "bbox_area": generated["bbox_area"],
         "polygon_area": generated["polygon_area"],
     }

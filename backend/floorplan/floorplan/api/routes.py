@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from floorplan.dataset import delete_saved_plan, get_saved_plan, list_saved_plans, load_sample, recreate_sample
+from floorplan.dataset import delete_saved_plan, get_saved_plan, list_saved_plans, load_sample
 from floorplan.schemas.requests import (
     AdaptRequest,
     DatasetRequest,
@@ -15,7 +15,6 @@ from floorplan.schemas.requests import (
     InspectRequest,
     InstantiateRequest,
     MutateRequest,
-    RecreateRequest,
     RenderRequest,
 )
 from floorplan.services.engine import FloorPlanEngine
@@ -124,22 +123,11 @@ def plan_detail(plan_id: str) -> dict:
 
 @router.post("/plans/{plan_id}/load")
 def plan_load(plan_id: str, include_renders: bool = True) -> dict:
-    """Materialize FloorPlan from saved generated section (for listing/view)."""
+    """Load saved plan JSON into FloorPlan + scores for the viewer."""
     try:
         return load_sample(plan_id, include_renders=include_renders).model_dump()
     except FileNotFoundError as exc:
         raise HTTPException(404, f"Plan not found: {plan_id}") from exc
-
-
-@router.post("/plans/{plan_id}/recreate")
-def plan_recreate(plan_id: str, body: RecreateRequest | None = None) -> dict:
-    """Re-run generation from saved parameters (algorithm test path)."""
-    body = body or RecreateRequest()
-    try:
-        sample = recreate_sample(plan_id, include_renders=body.include_renders, save=body.save)
-    except FileNotFoundError as exc:
-        raise HTTPException(404, f"Plan not found: {plan_id}") from exc
-    return sample.model_dump()
 
 
 @router.delete("/plans/{plan_id}")
@@ -166,7 +154,7 @@ def dataset(body: DatasetRequest) -> dict:
                 "id": s.id,
                 "overall": s.scores.overall if s.scores else None,
                 "valid": s.metadata.get("valid"),
-                "total_rooms": (s.requirements.get("parameters") or {}).get("total_rooms"),
+                "total_rooms": s.metadata.get("total_rooms"),
                 "topology_hash": s.metadata.get("topology_hash"),
                 "plan": s.floor_plan.model_dump(),
                 "scores": s.scores.model_dump() if s.scores else None,

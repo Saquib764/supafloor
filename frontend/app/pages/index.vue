@@ -11,10 +11,7 @@ interface LoadedFloorplan {
   plan: FloorPlan
   scores: ScoreBreakdown
   svg: string
-  document: {
-    parameters: Record<string, unknown>
-    generated: Record<string, unknown>
-  } | null
+  loaded: boolean
 }
 
 const roomOptions = [1, 2, 3, 4]
@@ -30,6 +27,7 @@ const showLabels = ref(true)
 const showDimensions = ref(false)
 const showTopology = ref(true)
 const showFurniture = ref(false)
+const canvasRef = ref<{ resetView: () => void } | null>(null)
 
 const listItems = computed<FloorplanEntry[]>(() =>
   floorplans.value.map(fp => ({
@@ -64,18 +62,15 @@ async function refreshSelectedRender() {
 }
 
 function entryFromSample(sample: Record<string, any>): LoadedFloorplan {
-  const params = sample.requirements?.parameters ?? {}
+  const requirements = sample.requirements ?? {}
   return {
     id: sample.id,
-    label: sample.requirements?.label ?? `${params.total_rooms ?? '?'}-room`,
-    totalRooms: Number(params.total_rooms ?? 3),
+    label: requirements.label ?? `${requirements.bedroom_count ?? '?'}-room`,
+    totalRooms: Number(requirements.bedroom_count ?? sample.metadata?.total_rooms ?? 3),
     plan: sample.floor_plan,
     scores: sample.scores,
     svg: sample.svg || '',
-    document: {
-      parameters: params,
-      generated: sample.requirements?.generated ?? {},
-    },
+    loaded: true,
   }
 }
 
@@ -109,7 +104,7 @@ async function refreshList() {
       plan: { id: item.id, name: item.label, rooms: [], doors: [], windows: [] } as unknown as FloorPlan,
       scores: { overall: null } as unknown as ScoreBreakdown,
       svg: '',
-      document: null,
+      loaded: false,
     })
   }
   floorplans.value = next
@@ -124,7 +119,7 @@ async function onSelect(id: string) {
   error.value = null
   try {
     const entry = floorplans.value.find(fp => fp.id === id)
-    if (!entry?.document || !entry.plan.rooms?.length) {
+    if (!entry?.loaded || !entry.plan.rooms?.length) {
       const sample = await api.loadPlan(id)
       await applySample(sample, true)
     } else {
@@ -155,21 +150,6 @@ async function onGenerate(payload?: { totalRooms?: number, targetArea?: number }
   }
 }
 
-async function onRecreate() {
-  const entry = selected.value
-  if (!entry) return
-  acting.value = true
-  error.value = null
-  try {
-    const sample = await api.recreate(entry.id)
-    await applySample(sample, true)
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    acting.value = false
-  }
-}
-
 async function onDelete(id: string) {
   deletingId.value = id
   error.value = null
@@ -193,10 +173,6 @@ async function onDelete(id: string) {
 async function onAction(action: string) {
   if (action === 'generate') {
     await onGenerate()
-    return
-  }
-  if (action === 'recreate') {
-    await onRecreate()
     return
   }
 
@@ -241,6 +217,7 @@ onMounted(async () => {
 <template>
   <div class="relative h-dvh w-full overflow-hidden bg-gray-950 text-white">
     <FloorplanCanvas
+      ref="canvasRef"
       class="absolute inset-0 z-0"
       background
       :svg="selected?.svg"
@@ -277,24 +254,29 @@ onMounted(async () => {
       <FloorplanScores :scores="selected?.scores ?? null" />
     </aside>
 
-    <div class="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 flex flex-wrap gap-2 px-3 py-2 rounded-full border border-gray-800/80 bg-gray-950/85 backdrop-blur-md">
-      <UCheckbox
-        v-model="showLabels"
-        label="Labels"
-      />
-      <UCheckbox
-        v-model="showDimensions"
-        label="Dimensions"
-      />
-      <UCheckbox
-        v-model="showTopology"
-        label="Topology"
-      />
-      <UCheckbox
-        v-model="showFurniture"
-        label="Circulation"
-      />
-    </div>
+    <FloorplanEditorBar
+      class="absolute bottom-4 left-72 right-80 z-10"
+      @reset-view="canvasRef?.resetView()"
+    >
+      <template #controls>
+        <UCheckbox
+          v-model="showLabels"
+          label="Labels"
+        />
+        <UCheckbox
+          v-model="showDimensions"
+          label="Dimensions"
+        />
+        <UCheckbox
+          v-model="showTopology"
+          label="Topology"
+        />
+        <UCheckbox
+          v-model="showFurniture"
+          label="Circulation"
+        />
+      </template>
+    </FloorplanEditorBar>
 
     <UAlert
       v-if="error"

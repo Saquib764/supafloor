@@ -174,14 +174,15 @@ def min_width(coords: CoordSeq) -> float:
 
 
 def rectangularity(coords: CoordSeq) -> float:
-    """Area / minimum rotated rectangle area, in [0, 1]."""
+    """Area / axis-aligned bounding box area, in [0, 1]."""
     poly = points_to_polygon(coords)
     if poly.area <= 0:
         return 0.0
-    mrr = poly.minimum_rotated_rectangle
-    if mrr.area <= 0:
+    minx, miny, maxx, maxy = poly.bounds
+    bbox_area = (maxx - minx) * (maxy - miny)
+    if bbox_area <= 0:
         return 0.0
-    return float(min(1.0, poly.area / mrr.area))
+    return float(min(1.0, poly.area / bbox_area))
 
 
 def rect(x: float, y: float, w: float, h: float) -> list[Coord]:

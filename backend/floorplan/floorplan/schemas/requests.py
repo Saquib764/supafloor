@@ -47,11 +47,6 @@ class GenerateRequest(BaseModel):
     save: bool = True
 
 
-class RecreateRequest(BaseModel):
-    include_renders: bool = True
-    save: bool = True
-
-
 class DatasetRequest(BaseModel):
     n: int = Field(default=5, ge=1, le=100)
     total_rooms: Optional[int] = Field(default=None, ge=1, le=8)

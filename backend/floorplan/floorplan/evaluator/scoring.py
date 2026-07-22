@@ -43,7 +43,7 @@ RULE_CATEGORY = {
     "balcony": "architecture",
     "furniture": "furniture",
     "living_centrality": "aesthetics",
-    "kitchen_public_link": "aesthetics",
+    "kitchen_public_link": "topology",
     "entry_sequence": "aesthetics",
     "hall_organization": "aesthetics",
     "public_near_exit": "aesthetics",

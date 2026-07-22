@@ -3,7 +3,7 @@
 
 Usage (from repo root):
 
-    uv run --project backend/floorplan python dev/score_floorplans.py --dir dev/output
+    uv run --project backend/floorplan python dev/score_floorplans.py --dir dev/output/plans
 
 For each ``*.json`` plan in the folder, writes:
   <id>.score.md   — human-readable Markdown report (image embedded)
@@ -19,6 +19,7 @@ from pathlib import Path
 
 
 def _load_plan(path: Path):
+    from floorplan.requirements.plan_io import llm_to_plan
     from floorplan.schemas.models import DatasetSample, FloorPlan
 
     raw = json.loads(path.read_text())
@@ -28,10 +29,8 @@ def _load_plan(path: Path):
         except Exception:
             sample = DatasetSample.model_validate(raw)
             return sample.floor_plan, raw
-    if "generated" in raw and "parameters" in raw:
-        from floorplan.requirements import document_to_plan
-
-        return document_to_plan(raw), raw
+    if raw.get("schema_version") and raw.get("rooms"):
+        return llm_to_plan(raw), raw
     return FloorPlan.model_validate(raw), raw
 
 
@@ -53,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from floorplan.dataset.artifacts import score_row, write_plan_artifacts
     from floorplan.evaluator import score_label, score_plan
+    from floorplan.requirements.plan_io import plan_document_id
 
     target: Path = args.dir
     if not target.is_dir():
@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     for path in json_files:
         plan, raw = _load_plan(path)
         scores = score_plan(plan)
-        sample_id = raw.get("id") or plan.id
+        sample_id = plan_document_id(raw) or raw.get("id") or plan.id
         files = write_plan_artifacts(plan, scores, score_out, plan_id=path.stem)
         score_md_name = files["score_md"]
         image_rel = files["png"]

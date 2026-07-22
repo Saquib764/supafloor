@@ -1,10 +1,9 @@
 [
   {
-    "id": "3c22111e270b",
+    "id": "a6e3be89cae6",
     "label": "3-room",
     "total_rooms": 3,
-    "seed": 46934,
-    "space_count": 7,
-    "path": "3c22111e270b.json"
+    "room_count": 11,
+    "path": "a6e3be89cae6.json"
   }
 ]

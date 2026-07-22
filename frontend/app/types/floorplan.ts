@@ -133,3 +133,86 @@ export interface RoomInspection {
   individual_scores: RuleResult[]
   plan_overall: number
 }
+
+export interface FloorPlanLLMUnits {
+  length: string
+  area: string
+}
+
+export interface FloorPlanLLMSummary {
+  id: string
+  name: string
+  bedroom_count: number
+  room_count: number
+  total_area_sqft: number
+  boundary_area_sqft?: number | null
+  target_area_sqft?: number | null
+  entry?: { point: Point2D } | null
+}
+
+export interface FloorPlanLLMRoomRequested {
+  name: string
+  target_area_sqft?: number | null
+  room_type: RoomType
+  zone: ZoneType
+  generated: boolean
+}
+
+export interface FloorPlanLLMConnection {
+  from: string
+  to: string
+}
+
+export interface FloorPlanLLMRoom {
+  id: string
+  name: string
+  room_type: RoomType
+  zone: ZoneType
+  area_sqft: number
+  bbox: { x: number, y: number, w: number, h: number }
+  center: Point2D
+  adjacent_to: string[]
+  polygon?: Point2D[]
+}
+
+export interface FloorPlanLLMView {
+  schema_version: string
+  units: FloorPlanLLMUnits
+  summary: FloorPlanLLMSummary
+  requirements: {
+    target_area_sqft?: number | null
+    bedroom_count?: number
+    boundary_room?: string | null
+    rooms_requested: FloorPlanLLMRoomRequested[]
+  }
+  topology: {
+    root?: string | null
+    connections: FloorPlanLLMConnection[]
+    adjacency: Record<string, string[]>
+  }
+  rooms: FloorPlanLLMRoom[]
+  openings: {
+    doors: Array<{
+      id: string
+      connects: string[]
+      start: Point2D
+      end: Point2D
+      is_exterior: boolean
+    }>
+    windows: Array<{
+      id: string
+      room_names: string[]
+      start: Point2D
+      end: Point2D
+    }>
+  }
+  boundary: {
+    exterior: Point2D[]
+  }
+  scores?: {
+    overall: number
+    summary: string
+    categories: Record<string, number>
+    hard_failures: string[]
+  }
+}

@@ -14,6 +14,7 @@ from floorplan.geometry import (
     polygon_from_room,
     rectangularity,
 )
+from floorplan.requirements.program import closet_parent
 from floorplan.schemas.enums import RoomType, Severity, ZoneType
 from floorplan.schemas.models import FloorPlan, Room, RuleResult
 from floorplan.topology import (
@@ -299,20 +300,37 @@ def rule_natural_light(plan: FloorPlan) -> RuleResult:
 
 
 def rule_privacy(plan: FloorPlan) -> RuleResult:
-    public = {RoomType.LIVING, RoomType.DINING, RoomType.ENTRY, RoomType.KITCHEN}
     private = {RoomType.BEDROOM, RoomType.MASTER_BEDROOM}
     adj = build_adjacency(plan)
     id_type = {r.id: r.room_type for r in plan.rooms}
     direct = 0
+    kitchen_beds = 0
+    seen_pairs: set[tuple[str, str]] = set()
     for a, neighbors in adj.items():
-        if id_type.get(a) in private:
-            for b in neighbors:
-                if id_type.get(b) in public and id_type.get(b) != RoomType.HALLWAY:
-                    # living adjacent bedroom is mild privacy issue unless hall buffers
-                    if id_type.get(b) in (RoomType.LIVING, RoomType.DINING):
-                        direct += 1
-    score = max(2.0, 10.0 - direct * 2.5)
-    return _soft("privacy", "Privacy", score, f"Direct public-private adjacencies: {direct}", "Buffer bedrooms with hallway")
+        if id_type.get(a) not in private:
+            continue
+        for b in neighbors:
+            bt = id_type.get(b)
+            pair = tuple(sorted((a, b)))
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            if bt == RoomType.KITCHEN:
+                kitchen_beds += 1
+                direct += 2
+            elif bt in (RoomType.LIVING, RoomType.DINING, RoomType.ENTRY):
+                direct += 1
+    score = max(1.0, 10.0 - direct * 2.5)
+    reason = f"Direct public-private adjacencies: {direct}"
+    if kitchen_beds:
+        reason += f" (kitchen–bedroom: {kitchen_beds})"
+    return _soft(
+        "privacy",
+        "Privacy",
+        score,
+        reason,
+        "Buffer bedrooms from kitchen/living with hallway or dining",
+    )
 
 
 def rule_circulation(plan: FloorPlan) -> RuleResult:
@@ -377,7 +395,26 @@ def rule_storage_adequacy(plan: FloorPlan) -> RuleResult:
     if not beds:
         return _soft("storage", "Storage Adequacy", 6.0, "No bedrooms to size storage against")
     score = min(10.0, 4.0 + len(storage) * 3.0)
-    return _soft("storage", "Storage Adequacy", score, f"{len(storage)} storage spaces for {len(beds)} bedrooms", "Insert closet near bedrooms")
+    reason = f"{len(storage)} storage spaces for {len(beds)} bedrooms"
+    adj = build_adjacency(plan)
+    for closet in storage:
+        parent = closet_parent(closet.name)
+        if parent is None:
+            continue
+        host = next((r for r in plan.rooms if r.name == parent), None)
+        if host is None:
+            score = min(score, 3.0)
+            reason += f"; {closet.name} without {parent}"
+        elif host.id not in adj.get(closet.id, []):
+            score = min(score, 2.0)
+            reason += f"; {closet.name} not attached to {parent}"
+    return _soft(
+        "storage",
+        "Storage Adequacy",
+        score,
+        reason,
+        "Attach private closets to their bedroom; keep shared closets near bedrooms",
+    )
 
 
 def rule_balcony_usability(plan: FloorPlan) -> RuleResult:
@@ -469,7 +506,7 @@ def rule_living_centrality(plan: FloorPlan) -> RuleResult:
 
 
 def rule_kitchen_public_link(plan: FloorPlan) -> RuleResult:
-    """Kitchen should connect directly to dining or living (or one short hop via hall)."""
+    """Kitchen should link to dining/living, never directly to a bedroom."""
     kitchens = [r for r in plan.rooms if r.room_type == RoomType.KITCHEN]
     if not kitchens:
         return _soft("kitchen_public_link", "Kitchen–Public Link", 7.0, "No kitchen in program")
@@ -482,12 +519,18 @@ def rule_kitchen_public_link(plan: FloorPlan) -> RuleResult:
     notes: list[str] = []
 
     for k in kitchens:
-        nbrs = {types[n] for n in adj.get(k.id, []) if n in types}
+        door_nbrs = [n for n in adj.get(k.id, []) if n in types]
+        bed_links = sum(1 for n in door_nbrs if types[n] in _PRIVATE)
+        if bed_links:
+            scores.append(max(0.0, 2.0 - bed_links))
+            notes.append(f"{k.name} opens directly to {bed_links} bedroom(s)")
+            continue
+
+        nbrs = {types[n] for n in door_nbrs}
         if RoomType.DINING in nbrs or RoomType.LIVING in nbrs:
             scores.append(10.0)
             notes.append(f"{k.name} opens to dining/living")
             continue
-        # Path to dining then living
         best = None
         for tid in dining_ids + living_ids:
             h = _hop_distances(adj, k.id).get(tid)
@@ -515,7 +558,7 @@ def rule_kitchen_public_link(plan: FloorPlan) -> RuleResult:
         "Kitchen–Public Link",
         score,
         "; ".join(notes),
-        "Connect kitchen directly to dining or living",
+        "Connect kitchen to dining/living; never directly to a bedroom",
     )
 
 
@@ -546,6 +589,16 @@ def rule_entry_sequence(plan: FloorPlan) -> RuleResult:
 
     score = 8.0
     reasons: list[str] = []
+
+    hall_ids = {r.id for r in plan.rooms if r.room_type == RoomType.HALLWAY}
+    living_ids = {r.id for r in plan.rooms if r.room_type == RoomType.LIVING}
+    entry_on_living_or_hall = any(
+        d.is_exterior and (living_ids.intersection(d.connects) or hall_ids.intersection(d.connects))
+        for d in exterior_doors
+    )
+    if not entry_on_living_or_hall:
+        score = min(score, 2.0)
+        reasons.append("no exterior door on living/hall")
 
     if private_hits:
         score -= private_hits * 2.5

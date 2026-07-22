@@ -71,11 +71,6 @@ class FloorPlanEngine:
 
         return generate_dataset(n=n, **kwargs)
 
-    def recreate_sample(self, plan_id: str, **kwargs):
-        from floorplan.dataset import recreate_sample
-
-        return recreate_sample(plan_id, **kwargs)
-
     def list_saved_plans(self):
         from floorplan.dataset import list_saved_plans
 

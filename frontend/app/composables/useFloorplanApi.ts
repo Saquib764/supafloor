@@ -67,8 +67,7 @@ export function useFloorplanApi(baseUrl?: string) {
       id: string
       label: string
       total_rooms: number
-      seed: number
-      space_count: number
+      room_count: number
     }>>
   }
 
@@ -87,16 +86,6 @@ export function useFloorplanApi(baseUrl?: string) {
     return res.json()
   }
 
-  async function recreate(planId: string) {
-    const res = await fetch(`${apiBase}/floorplan/plans/${encodeURIComponent(planId)}/recreate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ include_renders: true, save: true }),
-    })
-    if (!res.ok) throw new Error(await res.text())
-    return res.json()
-  }
-
   async function deletePlan(planId: string) {
     const res = await fetch(`${apiBase}/floorplan/plans/${encodeURIComponent(planId)}`, {
       method: 'DELETE',
@@ -105,5 +94,5 @@ export function useFloorplanApi(baseUrl?: string) {
     return res.json() as Promise<{ deleted: string }>
   }
 
-  return { render, evaluate, mutate, inspect, generate, listPlans, getPlan, loadPlan, recreate, deletePlan }
+  return { render, evaluate, mutate, inspect, generate, listPlans, getPlan, loadPlan, deletePlan }
 }

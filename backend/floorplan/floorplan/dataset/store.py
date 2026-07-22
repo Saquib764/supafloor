@@ -1,10 +1,12 @@
-"""Persist generation documents as JSON (parameters + generated)."""
+"""Persist canonical plan JSON under dev/output/plans/."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any
+
+from floorplan.requirements.plan_io import plan_document_id
 
 # Repo: backend/floorplan/floorplan/dataset/store.py → ../../../.. = repo root
 _OUTPUT_ROOT = Path(__file__).resolve().parents[4] / "dev" / "output"
@@ -25,14 +27,11 @@ def scores_dir(root: Path | None = None) -> Path:
 
 
 def save_document(document: dict[str, Any], root: Path | None = None) -> Path:
-    path = plans_dir(root) / f"{document['id']}.json"
-    payload = {
-        "id": document["id"],
-        "label": document.get("label"),
-        "parameters": document["parameters"],
-        "generated": document["generated"],
-    }
-    path.write_text(json.dumps(payload, indent=2))
+    plan_id = plan_document_id(document)
+    if not plan_id:
+        raise ValueError("Plan document missing summary.id")
+    path = plans_dir(root) / f"{plan_id}.json"
+    path.write_text(json.dumps(document, indent=2))
     _write_index(root)
     return path
 
@@ -66,16 +65,14 @@ def list_documents(root: Path | None = None) -> list[dict[str, Any]]:
             doc = json.loads(path.read_text())
         except json.JSONDecodeError:
             continue
-        params = doc.get("parameters") or {}
-        generated = doc.get("generated") or {}
-        spaces = generated.get("spaces") or []
+        summary = doc.get("summary") or {}
+        requirements = doc.get("requirements") or {}
         items.append(
             {
-                "id": doc.get("id") or path.stem,
-                "label": doc.get("label") or f"{params.get('total_rooms', '?')}-room",
-                "total_rooms": params.get("total_rooms"),
-                "seed": params.get("seed"),
-                "space_count": sum(1 for s in spaces if s.get("polygon")),
+                "id": summary.get("id") or path.stem,
+                "label": summary.get("name") or f"{requirements.get('bedroom_count', '?')}-room",
+                "total_rooms": requirements.get("bedroom_count"),
+                "room_count": summary.get("room_count") or len(doc.get("rooms") or []),
                 "path": path.name,
             }
         )

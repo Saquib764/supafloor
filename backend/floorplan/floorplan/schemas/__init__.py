@@ -25,7 +25,6 @@ from .requests import (
     InspectRequest,
     InstantiateRequest,
     MutateRequest,
-    RecreateRequest,
     RenderRequest,
 )
 
@@ -55,6 +54,5 @@ __all__ = [
     "InspectRequest",
     "InstantiateRequest",
     "MutateRequest",
-    "RecreateRequest",
     "RenderRequest",
 ]

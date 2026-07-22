@@ -21,7 +21,7 @@ def write_plan_artifacts(
     plan_id: str,
     size: int = 800,
 ) -> dict[str, str]:
-    """Render PNG and write score markdown/json sidecars. Returns filenames."""
+    """Render PNG and write score sidecars. Returns filenames."""
     directory.mkdir(parents=True, exist_ok=True)
     stem = plan_id
     png_name = f"{stem}.png"
@@ -65,7 +65,6 @@ def write_plan_artifacts(
         "image": png_name,
     }
     (directory / score_json_name).write_text(json.dumps(score_json, indent=2))
-
     return {"png": png_name, "score_md": score_md_name, "score_json": score_json_name}
 
 
