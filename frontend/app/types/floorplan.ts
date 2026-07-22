@@ -224,12 +224,12 @@ export interface RenderResult {
   metadata: Record<string, unknown>
 }
 
-export interface FloorPlanLLMUnits {
+export interface PlanDocumentUnits {
   length: string
   area: string
 }
 
-export interface FloorPlanLLMSummary {
+export interface PlanDocumentSummary {
   id: string
   name: string
   bedroom_count: number
@@ -240,7 +240,7 @@ export interface FloorPlanLLMSummary {
   entry?: { point: Point2D } | null
 }
 
-export interface FloorPlanLLMRoomRequested {
+export interface PlanDocumentRoomRequested {
   name: string
   target_area_sqft?: number | null
   room_type: RoomType
@@ -248,12 +248,12 @@ export interface FloorPlanLLMRoomRequested {
   generated: boolean
 }
 
-export interface FloorPlanLLMConnection {
+export interface PlanDocumentConnection {
   from: string
   to: string
 }
 
-export interface FloorPlanLLMRoom {
+export interface PlanDocumentRoom {
   id: string
   name: string
   room_type: RoomType
@@ -265,22 +265,41 @@ export interface FloorPlanLLMRoom {
   polygon?: Point2D[]
 }
 
-export interface FloorPlanLLMView {
+export interface PlanDocumentSampling {
+  seed: number
+  aspect?: number | null
+  start_rect?: { x: number, y: number, w: number, h: number } | null
+  notches?: Array<{ corner: string, w: number, h: number }>
+  space_names?: string[]
+  selected_areas?: Record<string, number>
+  entry_point?: number[] | null
+  entry_edge?: number | null
+  centers?: Record<string, number[]>
+  rectangles?: Array<Record<string, unknown>>
+  connection_graph?: {
+    root?: string | null
+    edges?: Array<[string, string] | { from: string, to: string }>
+    tree?: Array<[string, string] | { from: string, to: string }>
+  }
+}
+
+export interface PlanDocument {
   schema_version: string
-  units: FloorPlanLLMUnits
-  summary: FloorPlanLLMSummary
+  units: PlanDocumentUnits
+  summary: PlanDocumentSummary
   requirements: {
     target_area_sqft?: number | null
     bedroom_count?: number
     boundary_room?: string | null
-    rooms_requested: FloorPlanLLMRoomRequested[]
+    rooms_requested: PlanDocumentRoomRequested[]
   }
+  sampling: PlanDocumentSampling
   topology: {
     root?: string | null
-    connections: FloorPlanLLMConnection[]
+    connections: PlanDocumentConnection[]
     adjacency: Record<string, string[]>
   }
-  rooms: FloorPlanLLMRoom[]
+  rooms: PlanDocumentRoom[]
   openings: {
     doors: Array<{
       id: string

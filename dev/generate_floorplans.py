@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     from floorplan.dataset.artifacts import write_plan_artifacts
     from floorplan.evaluator import score_plan
     from floorplan.requirements import generate_plan_document
-    from floorplan.requirements.plan_io import llm_to_plan, plan_document_id
+    from floorplan.requirements.plan_io import document_to_plan, plan_document_id
 
     out: Path = args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed + i,
             plan_id=sample_id,
         )
-        plan = llm_to_plan(document)
+        plan = document_to_plan(document)
         scores = score_plan(plan)
         files = write_plan_artifacts(plan, scores, score_out, plan_id=sample_id, size=args.size)
 

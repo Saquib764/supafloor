@@ -19,19 +19,10 @@ from pathlib import Path
 
 
 def _load_plan(path: Path):
-    from floorplan.requirements.plan_io import llm_to_plan
-    from floorplan.schemas.models import DatasetSample, FloorPlan
+    from floorplan.requirements.plan_io import document_to_plan
 
     raw = json.loads(path.read_text())
-    if "floor_plan" in raw:
-        try:
-            return FloorPlan.model_validate(raw["floor_plan"]), raw
-        except Exception:
-            sample = DatasetSample.model_validate(raw)
-            return sample.floor_plan, raw
-    if raw.get("schema_version") and raw.get("rooms"):
-        return llm_to_plan(raw), raw
-    return FloorPlan.model_validate(raw), raw
+    return document_to_plan(raw), raw
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -89,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     for path in json_files:
         plan, raw = _load_plan(path)
         scores = score_plan(plan)
-        sample_id = plan_document_id(raw) or raw.get("id") or plan.id
+        sample_id = plan_document_id(raw) or plan.id
         files = write_plan_artifacts(plan, scores, score_out, plan_id=path.stem)
         score_md_name = files["score_md"]
         image_rel = files["png"]
@@ -125,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Scored {path.name} → {scores.overall:.2f} ({rating})")
 
     readme_parts.extend(details)
-    readme_path = score_out / args.readme
+    readme_path = score_out / "README.md"
     readme_path.write_text("\n".join(readme_parts))
     (score_out / "scores_index.json").write_text(json.dumps(index_rows, indent=2))
     print(f"\nWrote {readme_path} and {len(index_rows)} per-plan score reports")

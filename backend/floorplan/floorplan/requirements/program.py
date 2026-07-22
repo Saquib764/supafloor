@@ -158,19 +158,3 @@ def closet_parent(name: str) -> str | None:
     """Bedroom that owns a private closet; None for shared closets."""
     return bedroom_parent(name) if ensuite_kind(name) == "Closet" else None
 
-
-def build_requirements(
-    total_rooms: int,
-    *,
-    usable_area: float,
-    rng: random.Random | None = None,
-) -> dict[str, Any]:
-    """Backward-compatible thin wrapper: names + counts only."""
-    rng = rng or random.Random()
-    n = max(1, int(total_rooms))
-    names = space_names_for(n, rng)
-    return {
-        "total_rooms": n,
-        "usable_area": float(usable_area),
-        "space_names": names,
-    }

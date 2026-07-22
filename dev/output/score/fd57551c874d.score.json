@@ -1,0 +1,24 @@
+{
+  "id": "fd57551c874d",
+  "plan_name": "3-room",
+  "overall": 2.23,
+  "summary": "This floor plan scores **2.23/10 (Poor)** for \u201c3-room\u201d with 12 rooms, 1151.0 ft\u00b2 total room area. It fails 4 hard rule(s): Minimum Area, Reachability, Window Lines, Kitchen Accessible. Strong areas include bedroom ratio, room proportions, balcony usability. Weaker areas include natural light, privacy, wet core compactness. Highest category is geometry (8.0); lowest is daylight (2.5).",
+  "categories": {
+    "geometry": 8.0,
+    "topology": 5.33,
+    "construction": 4.42,
+    "privacy": 5.0,
+    "circulation": 7.15,
+    "daylight": 2.48,
+    "architecture": 8.79,
+    "aesthetics": 7.34
+  },
+  "hard_failures": [
+    "minimum_area",
+    "reachability",
+    "windows_on_exterior",
+    "kitchen_accessible"
+  ],
+  "report_file": "fd57551c874d.score.md",
+  "image": "fd57551c874d.png"
+}

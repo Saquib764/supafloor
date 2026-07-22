@@ -11,7 +11,7 @@ from floorplan.dataset.store import delete_document, list_documents, load_docume
 from floorplan.evaluator import hard_failures, score_plan
 from floorplan.renderer import render_plan
 from floorplan.requirements import generate_plan_document
-from floorplan.requirements.plan_io import llm_to_plan, plan_document_id
+from floorplan.requirements.plan_io import document_to_plan, plan_document_id
 from floorplan.constants import pick_target_area
 from floorplan.schemas.models import DatasetSample
 from floorplan.topology import (
@@ -28,7 +28,7 @@ def _sample_from_saved(
     include_renders: bool = True,
     write_artifacts: bool = False,
 ) -> DatasetSample:
-    plan = llm_to_plan(document)
+    plan = document_to_plan(document)
     scores = score_plan(plan)
     topology = constraint_graph_from_plan(plan)
     failures = hard_failures(scores.rules)

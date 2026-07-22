@@ -7,19 +7,20 @@ from .centers import (
     improve_center_coverage,
     sample_centers,
 )
-from .context import (
-    document_to_plan,
-    generate_plan_document,
-    run_generation,
-    sample_parameters,
-)
+from .context import run_generation
 from .entry import sample_entry_point
 from .graph import build_connection_graph
 from .grow import grow_rectangles
-from .internals import GenerationInternals
-from .plan_io import llm_to_plan, plan_document_from_internals, plan_document_id
+from .plan_io import (
+    document_to_plan,
+    generate_geometry,
+    generate_plan_document,
+    place_openings,
+    plan_document_id,
+    sample_into_document,
+    seed_document,
+)
 from .program import (
-    build_requirements,
     is_bedroom,
     pick_selected_areas,
     scale_selected_areas,
@@ -31,25 +32,24 @@ __all__ = [
     "AREA_OPTIONS",
     "area_options_for",
     "build_connection_graph",
-    "build_requirements",
     "center_coverage_score",
     "center_sampling_order",
     "document_to_plan",
+    "generate_geometry",
     "generate_plan_document",
-    "GenerationInternals",
     "grow_rectangles",
     "improve_center_coverage",
     "is_bedroom",
-    "llm_to_plan",
     "name_root",
     "pick_selected_areas",
-    "plan_document_from_internals",
+    "place_openings",
     "plan_document_id",
     "run_generation",
     "sample_centers",
     "sample_entry_point",
-    "sample_parameters",
+    "sample_into_document",
     "scale_selected_areas",
+    "seed_document",
     "space_names_for",
     "space_role",
 ]
