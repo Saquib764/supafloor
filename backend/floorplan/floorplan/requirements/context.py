@@ -52,7 +52,7 @@ _NAME_TO_TYPE: dict[str, RoomType] = {
     "Bathroom": RoomType.BATHROOM,
     "Kitchen": RoomType.KITCHEN,
     "Dining": RoomType.DINING,
-    "Hall": RoomType.HALLWAY,
+    "Hallway": RoomType.HALLWAY,
     "Closet": RoomType.CLOSET,
     "Balcony": RoomType.BALCONY,
     "Laundry": RoomType.LAUNDRY,
@@ -67,7 +67,7 @@ _NAME_TO_ZONE: dict[str, ZoneType] = {
     "Bathroom": ZoneType.WET,
     "Kitchen": ZoneType.SERVICE,
     "Dining": ZoneType.PUBLIC,
-    "Hall": ZoneType.CIRCULATION,
+    "Hallway": ZoneType.CIRCULATION,
     "Closet": ZoneType.PRIVATE,
     "Balcony": ZoneType.OUTDOOR,
     "Laundry": ZoneType.SERVICE,
@@ -247,7 +247,7 @@ def _placement_order(names: list[str], boundary_room: str) -> list[str]:
             "Living/Sleeping": 2,
             "Kitchen": 3,
             "Dining": 4,
-            "Hall": 5,
+            "Hallway": 5,
             "Bathroom": 8,
             "Toilet": 9,
             "Closet": 10,
@@ -267,16 +267,16 @@ def _placement_order(names: list[str], boundary_room: str) -> list[str]:
 def _preferred_neighbors(name: str, boundary_room: str) -> list[str]:
     root = name_root(name)
     prefs: dict[str, list[str]] = {
-        "Kitchen": ["Living", "Living/Sleeping", "Dining", "Hall"],
+        "Kitchen": ["Living", "Living/Sleeping", "Dining", "Hallway"],
         "Dining": ["Living", "Living/Sleeping", "Kitchen"],
-        "Hall": ["Living", "Living/Sleeping", boundary_room],
-        "Bathroom": ["Hall", "Kitchen", boundary_room],
-        "Toilet": ["Bathroom", "Hall"],
-        "Room": ["Hall", "Living", "Living/Sleeping", boundary_room],
-        "Closet": ["Room", "Hall"],
+        "Hallway": ["Living", "Living/Sleeping", boundary_room],
+        "Bathroom": ["Hallway", "Kitchen", boundary_room],
+        "Toilet": ["Bathroom", "Hallway"],
+        "Room": ["Hallway", "Living", "Living/Sleeping", boundary_room],
+        "Closet": ["Room", "Hallway"],
         "Balcony": ["Living", "Living/Sleeping", "Kitchen"],
         "Laundry": ["Kitchen", "Bathroom"],
-        "Garage": [boundary_room, "Hall"],
+        "Garage": [boundary_room, "Hallway"],
     }
     parent = bedroom_parent(name)
     if parent:
@@ -847,7 +847,7 @@ def _entry_host_rooms(rooms: list[Room]) -> list[Room]:
     living = _living_room(rooms)
     if living is not None:
         hosts.append(living)
-    hall = _room_by_name(rooms, "Hall")
+    hall = _room_by_name(rooms, "Hallway")
     if hall is not None:
         hosts.append(hall)
     return hosts
@@ -927,7 +927,7 @@ def _place_doors(
             _add_door(doors, covered, toilet_hosts, rooms, a, b, edge)
 
     living = _living_room(rooms)
-    hall = _room_by_name(rooms, "Hall")
+    hall = _room_by_name(rooms, "Hallway")
     if living and hall and living.id not in covered and hall.id not in covered:
         edge = shared_edge(living.coords(), hall.coords(), tol=_EDGE_TOL)
         if edge is not None:
@@ -966,7 +966,7 @@ def _place_doors(
                 is_bedroom(room.name) and o.name == "Kitchen"
             ):
                 return (3, 0, o.name)
-            if o.name in {"Hall", "Living", "Living/Sleeping"}:
+            if o.name in {"Hallway", "Living", "Living/Sleeping"}:
                 return (1, 0, o.name)
             if o.name in {"Dining", "Kitchen"}:
                 return (1, 1, o.name)
@@ -1043,7 +1043,7 @@ def _reachable_ids(adj: dict[str, list[str]], rooms: list[Room]) -> set[str]:
     if not rooms:
         return set()
     living = _living_room(rooms)
-    hall = _room_by_name(rooms, "Hall")
+    hall = _room_by_name(rooms, "Hallway")
     start = living.id if living else (hall.id if hall else rooms[0].id)
     seen = {start}
     stack = [start]

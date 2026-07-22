@@ -26,15 +26,15 @@ def build_connection_graph(names: list[str]) -> dict[str, Any]:
     edges: set[tuple[str, str]] = set()
     name_set = set(names)
 
-    if "Hall" in name_set:
-        _add_edge(edges, living, "Hall")
+    if "Hallway" in name_set:
+        _add_edge(edges, living, "Hallway")
     if "Dining" in name_set:
         _add_edge(edges, living, "Dining")
         _add_edge(edges, "Dining", "Kitchen")
     elif "Kitchen" in name_set:
         _add_edge(edges, living, "Kitchen")
 
-    hall_or_living = "Hall" if "Hall" in name_set else living
+    hall_or_living = "Hallway" if "Hallway" in name_set else living
     for name in names:
         if is_bedroom(name):
             _add_edge(edges, hall_or_living, name)
@@ -60,8 +60,8 @@ def build_connection_graph(names: list[str]) -> dict[str, Any]:
 
     if "Garage" in name_set:
         _add_edge(edges, "Garage", living)
-        if "Hall" in name_set:
-            _add_edge(edges, "Garage", "Hall")
+        if "Hallway" in name_set:
+            _add_edge(edges, "Garage", "Hallway")
 
     for name in names:
         if name_root(name) == "Room" and "Closet" in name_set and name == "Room 2":

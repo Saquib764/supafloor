@@ -77,7 +77,7 @@ def space_names_for(total_rooms: int, rng: random.Random) -> list[str]:
             names.extend(_ensuite_for(bed, rng))
         names.append("Kitchen")
         names.append("Dining")
-        names.append("Hall")
+        names.append("Hallway")
         if n >= 3 and rng.random() < 0.45:
             names.append("Bathroom")
 
@@ -130,7 +130,7 @@ def space_role(name: str) -> str:
         return "kitchen"
     if name == "Dining":
         return "dining"
-    if name == "Hall":
+    if name == "Hallway":
         return "hall"
     if name == "Balcony":
         return "balcony"

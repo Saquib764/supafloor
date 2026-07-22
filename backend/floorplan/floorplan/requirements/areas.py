@@ -13,7 +13,7 @@ AREA_OPTIONS: dict[str, tuple[float, float, float]] = {
     "Bathroom": (45.0, 60.0, 75.0),
     "Kitchen": (80.0, 100.0, 120.0),
     "Dining": (100.0, 120.0, 150.0),
-    "Hall": (35.0, 50.0, 70.0),
+    "Hallway": (35.0, 50.0, 70.0),
     "Closet": (12.0, 20.0, 30.0),
     "Balcony": (40.0, 60.0, 90.0),
     "Laundry": (25.0, 35.0, 50.0),

@@ -645,8 +645,8 @@ def grow_rectangles(
             w = min(w, int(max(1, free_poly.bounds[2] - free_poly.bounds[0])))
             h = min(h, int(max(1, free_poly.bounds[3] - free_poly.bounds[1])))
             candidates = _candidates_near_center(cx, cy, w, h, free_poly)
-            if role in ("master_bedroom", "bedroom") and "Hall" in neighbor_boxes:
-                hall_geom = neighbor_boxes["Hall"]
+            if role in ("master_bedroom", "bedroom") and "Hallway" in neighbor_boxes:
+                hall_geom = neighbor_boxes["Hallway"]
                 touching = [
                     c
                     for c in candidates

@@ -366,7 +366,7 @@ def _weight_for_space(
     elif role in ("master_bedroom", "primary_bedroom", "bedroom"):
         w *= 2.5 * _near_boundary(p, boundary_poly, 2.5)
         w *= _away_from_entry(p, entry, boundary_poly)
-        hall = placed.get("Hall")
+        hall = placed.get("Hallway")
         if hall:
             w *= 1.5 * _near_point(p, hall, 5.0)
         if "Kitchen" in placed:
