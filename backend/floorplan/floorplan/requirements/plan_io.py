@@ -6,6 +6,7 @@ from typing import Any
 
 from floorplan.geometry.ops import area as polygon_area
 from floorplan.requirements.context import _room_type_for_name, _zone_for_name, document_to_plan
+from floorplan.requirements.internals import GenerationInternals
 from floorplan.schemas.enums import RoomType, ZoneType
 from floorplan.schemas.models import Boundary, Door, FloorPlan, Point2D, Room, Window
 from floorplan.topology import build_adjacency
@@ -121,11 +122,14 @@ def _openings(plan: FloorPlan) -> dict[str, list[dict[str, Any]]]:
     return {"doors": doors, "windows": windows}
 
 
-def internal_to_plan_document(internal: dict[str, Any], plan: FloorPlan | None = None) -> dict[str, Any]:
-    """Convert in-memory generation document to canonical on-disk plan JSON."""
-    plan = plan or document_to_plan(internal)
-    parameters = internal.get("parameters") or {}
-    generated = internal.get("generated") or {}
+def plan_document_from_internals(
+    internals: GenerationInternals,
+    plan: FloorPlan | None = None,
+) -> dict[str, Any]:
+    """Convert generation internals to canonical on-disk plan JSON."""
+    plan = plan or document_to_plan(internals)
+    parameters = internals.parameters
+    generated = internals.generated
     generated_names = {space.get("name") for space in generated.get("spaces") or [] if space.get("name")}
 
     rooms, total_area = _room_rows(plan)
@@ -143,8 +147,8 @@ def internal_to_plan_document(internal: dict[str, Any], plan: FloorPlan | None =
         "schema_version": SCHEMA_VERSION,
         "units": {"length": "ft", "area": "ft²"},
         "summary": {
-            "id": internal.get("id"),
-            "name": internal.get("label") or plan.name,
+            "id": internals.plan_id,
+            "name": f"{parameters.get('total_rooms', '?')}-room",
             "bedroom_count": parameters.get("total_rooms"),
             "room_count": len(rooms),
             "total_area_sqft": total_area,

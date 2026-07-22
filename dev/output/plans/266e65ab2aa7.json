@@ -1,0 +1,1551 @@
+{
+  "schema_version": "1.0",
+  "units": {
+    "length": "ft",
+    "area": "ft\u00b2"
+  },
+  "summary": {
+    "id": "266e65ab2aa7",
+    "name": "3-room",
+    "bedroom_count": 3,
+    "room_count": 12,
+    "total_area_sqft": 1166.0,
+    "boundary_area_sqft": 1166.0,
+    "target_area_sqft": 1200.0,
+    "entry": {
+      "point": {
+        "x": 0.0,
+        "y": 22.402
+      }
+    }
+  },
+  "requirements": {
+    "target_area_sqft": 1200.0,
+    "bedroom_count": 3,
+    "boundary_room": "Living",
+    "rooms_requested": [
+      {
+        "name": "Living",
+        "target_area_sqft": 185.615,
+        "room_type": "living",
+        "zone": "public",
+        "generated": true
+      },
+      {
+        "name": "Room 1",
+        "target_area_sqft": 134.993,
+        "room_type": "master_bedroom",
+        "zone": "private",
+        "generated": true
+      },
+      {
+        "name": "Room 2",
+        "target_area_sqft": 84.37,
+        "room_type": "bedroom",
+        "zone": "private",
+        "generated": true
+      },
+      {
+        "name": "Room 3",
+        "target_area_sqft": 84.37,
+        "room_type": "bedroom",
+        "zone": "private",
+        "generated": false
+      },
+      {
+        "name": "Room 1 Bath",
+        "target_area_sqft": 50.622,
+        "room_type": "bathroom",
+        "zone": "wet",
+        "generated": true
+      },
+      {
+        "name": "Room 1 Closet",
+        "target_area_sqft": 10.124,
+        "room_type": "closet",
+        "zone": "private",
+        "generated": true
+      },
+      {
+        "name": "Room 2 Toilet",
+        "target_area_sqft": 21.093,
+        "room_type": "powder",
+        "zone": "wet",
+        "generated": true
+      },
+      {
+        "name": "Room 2 Closet",
+        "target_area_sqft": 16.874,
+        "room_type": "closet",
+        "zone": "private",
+        "generated": true
+      },
+      {
+        "name": "Room 3 Bath",
+        "target_area_sqft": 37.967,
+        "room_type": "bathroom",
+        "zone": "wet",
+        "generated": false
+      },
+      {
+        "name": "Room 3 Closet",
+        "target_area_sqft": 16.874,
+        "room_type": "closet",
+        "zone": "private",
+        "generated": false
+      },
+      {
+        "name": "Kitchen",
+        "target_area_sqft": 67.496,
+        "room_type": "kitchen",
+        "zone": "service",
+        "generated": true
+      },
+      {
+        "name": "Dining",
+        "target_area_sqft": 101.245,
+        "room_type": "dining",
+        "zone": "public",
+        "generated": true
+      },
+      {
+        "name": "Hallway",
+        "target_area_sqft": 42.185,
+        "room_type": "hallway",
+        "zone": "circulation",
+        "generated": true
+      },
+      {
+        "name": "Bathroom",
+        "target_area_sqft": 50.622,
+        "room_type": "bathroom",
+        "zone": "wet",
+        "generated": true
+      },
+      {
+        "name": "Closet",
+        "target_area_sqft": 25.311,
+        "room_type": "closet",
+        "zone": "private",
+        "generated": true
+      },
+      {
+        "name": "Garage",
+        "target_area_sqft": 236.237,
+        "room_type": "storage",
+        "zone": "service",
+        "generated": false
+      }
+    ]
+  },
+  "topology": {
+    "root": "Living",
+    "connections": [
+      {
+        "from": "Bathroom",
+        "to": "Hallway"
+      },
+      {
+        "from": "Closet",
+        "to": "Room 2"
+      },
+      {
+        "from": "Dining",
+        "to": "Kitchen"
+      },
+      {
+        "from": "Dining",
+        "to": "Living"
+      },
+      {
+        "from": "Garage",
+        "to": "Hallway"
+      },
+      {
+        "from": "Garage",
+        "to": "Living"
+      },
+      {
+        "from": "Hallway",
+        "to": "Living"
+      },
+      {
+        "from": "Hallway",
+        "to": "Room 1"
+      },
+      {
+        "from": "Hallway",
+        "to": "Room 2"
+      },
+      {
+        "from": "Hallway",
+        "to": "Room 3"
+      },
+      {
+        "from": "Room 1",
+        "to": "Room 1 Bath"
+      },
+      {
+        "from": "Room 1",
+        "to": "Room 1 Closet"
+      },
+      {
+        "from": "Room 2",
+        "to": "Room 2 Closet"
+      },
+      {
+        "from": "Room 2",
+        "to": "Room 2 Toilet"
+      },
+      {
+        "from": "Room 3",
+        "to": "Room 3 Bath"
+      },
+      {
+        "from": "Room 3",
+        "to": "Room 3 Closet"
+      }
+    ],
+    "adjacency": {
+      "Living": [
+        "Dining",
+        "Hallway",
+        "Kitchen"
+      ],
+      "Room 1": [
+        "Bathroom",
+        "Closet",
+        "Dining",
+        "Hallway",
+        "Room 1 Bath",
+        "Room 1 Closet"
+      ],
+      "Room 2": [
+        "Closet",
+        "Room 1 Bath",
+        "Room 1 Closet",
+        "Room 2 Closet",
+        "Room 2 Toilet"
+      ],
+      "Room 1 Bath": [
+        "Bathroom",
+        "Room 1",
+        "Room 1 Closet",
+        "Room 2"
+      ],
+      "Room 1 Closet": [
+        "Closet",
+        "Room 1",
+        "Room 1 Bath",
+        "Room 2"
+      ],
+      "Room 2 Toilet": [
+        "Dining",
+        "Room 2",
+        "Room 2 Closet"
+      ],
+      "Room 2 Closet": [
+        "Closet",
+        "Dining",
+        "Room 2",
+        "Room 2 Toilet"
+      ],
+      "Kitchen": [
+        "Dining",
+        "Living"
+      ],
+      "Dining": [
+        "Closet",
+        "Hallway",
+        "Kitchen",
+        "Living",
+        "Room 1",
+        "Room 2 Closet",
+        "Room 2 Toilet"
+      ],
+      "Hallway": [
+        "Dining",
+        "Living",
+        "Room 1"
+      ],
+      "Bathroom": [
+        "Room 1",
+        "Room 1 Bath"
+      ],
+      "Closet": [
+        "Dining",
+        "Room 1",
+        "Room 1 Closet",
+        "Room 2",
+        "Room 2 Closet"
+      ]
+    }
+  },
+  "rooms": [
+    {
+      "id": "fe2e2637d141",
+      "name": "Living",
+      "room_type": "living",
+      "zone": "public",
+      "area_sqft": 228.0,
+      "bbox": {
+        "x": 0.0,
+        "y": 14.0,
+        "w": 13.0,
+        "h": 18.0
+      },
+      "center": {
+        "x": 6.5,
+        "y": 23.0
+      },
+      "adjacent_to": [
+        "Dining",
+        "Hallway",
+        "Kitchen"
+      ],
+      "polygon": [
+        {
+          "x": 0.0,
+          "y": 22.0
+        },
+        {
+          "x": 0.0,
+          "y": 23.0
+        },
+        {
+          "x": 0.0,
+          "y": 24.0
+        },
+        {
+          "x": 0.0,
+          "y": 25.0
+        },
+        {
+          "x": 0.0,
+          "y": 26.0
+        },
+        {
+          "x": 0.0,
+          "y": 27.0
+        },
+        {
+          "x": 0.0,
+          "y": 28.0
+        },
+        {
+          "x": 0.0,
+          "y": 29.0
+        },
+        {
+          "x": 0.0,
+          "y": 30.0
+        },
+        {
+          "x": 1.0,
+          "y": 30.0
+        },
+        {
+          "x": 2.0,
+          "y": 30.0
+        },
+        {
+          "x": 3.0,
+          "y": 30.0
+        },
+        {
+          "x": 3.0,
+          "y": 31.0
+        },
+        {
+          "x": 3.0,
+          "y": 32.0
+        },
+        {
+          "x": 4.0,
+          "y": 32.0
+        },
+        {
+          "x": 5.0,
+          "y": 32.0
+        },
+        {
+          "x": 6.0,
+          "y": 32.0
+        },
+        {
+          "x": 7.0,
+          "y": 32.0
+        },
+        {
+          "x": 8.0,
+          "y": 32.0
+        },
+        {
+          "x": 9.0,
+          "y": 32.0
+        },
+        {
+          "x": 10.0,
+          "y": 32.0
+        },
+        {
+          "x": 11.0,
+          "y": 32.0
+        },
+        {
+          "x": 12.0,
+          "y": 32.0
+        },
+        {
+          "x": 13.0,
+          "y": 32.0
+        },
+        {
+          "x": 13.0,
+          "y": 31.0
+        },
+        {
+          "x": 13.0,
+          "y": 30.0
+        },
+        {
+          "x": 13.0,
+          "y": 29.0
+        },
+        {
+          "x": 13.0,
+          "y": 28.0
+        },
+        {
+          "x": 13.0,
+          "y": 27.0
+        },
+        {
+          "x": 13.0,
+          "y": 26.0
+        },
+        {
+          "x": 13.0,
+          "y": 25.0
+        },
+        {
+          "x": 13.0,
+          "y": 24.0
+        },
+        {
+          "x": 13.0,
+          "y": 23.0
+        },
+        {
+          "x": 13.0,
+          "y": 22.0
+        },
+        {
+          "x": 13.0,
+          "y": 21.0
+        },
+        {
+          "x": 13.0,
+          "y": 20.0
+        },
+        {
+          "x": 13.0,
+          "y": 19.0
+        },
+        {
+          "x": 13.0,
+          "y": 18.0
+        },
+        {
+          "x": 13.0,
+          "y": 17.0
+        },
+        {
+          "x": 13.0,
+          "y": 16.0
+        },
+        {
+          "x": 13.0,
+          "y": 15.0
+        },
+        {
+          "x": 13.0,
+          "y": 14.0
+        },
+        {
+          "x": 12.0,
+          "y": 14.0
+        },
+        {
+          "x": 11.0,
+          "y": 14.0
+        },
+        {
+          "x": 10.0,
+          "y": 14.0
+        },
+        {
+          "x": 9.0,
+          "y": 14.0
+        },
+        {
+          "x": 8.0,
+          "y": 14.0
+        },
+        {
+          "x": 7.0,
+          "y": 14.0
+        },
+        {
+          "x": 6.0,
+          "y": 14.0
+        },
+        {
+          "x": 5.0,
+          "y": 14.0
+        },
+        {
+          "x": 4.0,
+          "y": 14.0
+        },
+        {
+          "x": 3.0,
+          "y": 14.0
+        },
+        {
+          "x": 2.0,
+          "y": 14.0
+        },
+        {
+          "x": 1.0,
+          "y": 14.0
+        },
+        {
+          "x": 0.0,
+          "y": 14.0
+        },
+        {
+          "x": 0.0,
+          "y": 15.0
+        },
+        {
+          "x": 0.0,
+          "y": 16.0
+        },
+        {
+          "x": 0.0,
+          "y": 17.0
+        },
+        {
+          "x": 0.0,
+          "y": 18.0
+        },
+        {
+          "x": 0.0,
+          "y": 19.0
+        },
+        {
+          "x": 0.0,
+          "y": 20.0
+        },
+        {
+          "x": 0.0,
+          "y": 21.0
+        }
+      ]
+    },
+    {
+      "id": "af797aaad348",
+      "name": "Room 1",
+      "room_type": "master_bedroom",
+      "zone": "private",
+      "area_sqft": 122.0,
+      "bbox": {
+        "x": 20.0,
+        "y": 14.0,
+        "w": 9.0,
+        "h": 18.0
+      },
+      "center": {
+        "x": 24.5,
+        "y": 23.0
+      },
+      "adjacent_to": [
+        "Bathroom",
+        "Closet",
+        "Dining",
+        "Hallway",
+        "Room 1 Bath",
+        "Room 1 Closet"
+      ],
+      "polygon": [
+        {
+          "x": 20.0,
+          "y": 20.0
+        },
+        {
+          "x": 20.0,
+          "y": 21.0
+        },
+        {
+          "x": 20.0,
+          "y": 22.0
+        },
+        {
+          "x": 20.0,
+          "y": 23.0
+        },
+        {
+          "x": 20.0,
+          "y": 24.0
+        },
+        {
+          "x": 20.0,
+          "y": 25.0
+        },
+        {
+          "x": 20.0,
+          "y": 26.0
+        },
+        {
+          "x": 20.0,
+          "y": 27.0
+        },
+        {
+          "x": 20.0,
+          "y": 28.0
+        },
+        {
+          "x": 20.0,
+          "y": 29.0
+        },
+        {
+          "x": 20.0,
+          "y": 30.0
+        },
+        {
+          "x": 20.0,
+          "y": 31.0
+        },
+        {
+          "x": 20.0,
+          "y": 32.0
+        },
+        {
+          "x": 21.0,
+          "y": 32.0
+        },
+        {
+          "x": 22.0,
+          "y": 32.0
+        },
+        {
+          "x": 23.0,
+          "y": 32.0
+        },
+        {
+          "x": 24.0,
+          "y": 32.0
+        },
+        {
+          "x": 25.0,
+          "y": 32.0
+        },
+        {
+          "x": 26.0,
+          "y": 32.0
+        },
+        {
+          "x": 27.0,
+          "y": 32.0
+        },
+        {
+          "x": 28.0,
+          "y": 32.0
+        },
+        {
+          "x": 29.0,
+          "y": 32.0
+        },
+        {
+          "x": 29.0,
+          "y": 31.0
+        },
+        {
+          "x": 29.0,
+          "y": 30.0
+        },
+        {
+          "x": 29.0,
+          "y": 29.0
+        },
+        {
+          "x": 29.0,
+          "y": 28.0
+        },
+        {
+          "x": 29.0,
+          "y": 27.0
+        },
+        {
+          "x": 29.0,
+          "y": 26.0
+        },
+        {
+          "x": 29.0,
+          "y": 25.0
+        },
+        {
+          "x": 29.0,
+          "y": 24.0
+        },
+        {
+          "x": 29.0,
+          "y": 23.0
+        },
+        {
+          "x": 29.0,
+          "y": 22.0
+        },
+        {
+          "x": 29.0,
+          "y": 21.0
+        },
+        {
+          "x": 29.0,
+          "y": 20.0
+        },
+        {
+          "x": 29.0,
+          "y": 19.0
+        },
+        {
+          "x": 28.0,
+          "y": 19.0
+        },
+        {
+          "x": 27.0,
+          "y": 19.0
+        },
+        {
+          "x": 26.0,
+          "y": 19.0
+        },
+        {
+          "x": 25.0,
+          "y": 19.0
+        },
+        {
+          "x": 24.0,
+          "y": 19.0
+        },
+        {
+          "x": 23.0,
+          "y": 19.0
+        },
+        {
+          "x": 22.0,
+          "y": 19.0
+        },
+        {
+          "x": 21.0,
+          "y": 19.0
+        },
+        {
+          "x": 21.0,
+          "y": 18.0
+        },
+        {
+          "x": 21.0,
+          "y": 17.0
+        },
+        {
+          "x": 21.0,
+          "y": 16.0
+        },
+        {
+          "x": 21.0,
+          "y": 15.0
+        },
+        {
+          "x": 21.0,
+          "y": 14.0
+        },
+        {
+          "x": 20.0,
+          "y": 14.0
+        },
+        {
+          "x": 20.0,
+          "y": 15.0
+        },
+        {
+          "x": 20.0,
+          "y": 16.0
+        },
+        {
+          "x": 20.0,
+          "y": 17.0
+        },
+        {
+          "x": 20.0,
+          "y": 18.0
+        },
+        {
+          "x": 20.0,
+          "y": 19.0
+        }
+      ]
+    },
+    {
+      "id": "5db47e95497f",
+      "name": "Room 2",
+      "room_type": "bedroom",
+      "zone": "private",
+      "area_sqft": 148.0,
+      "bbox": {
+        "x": 27.0,
+        "y": 0.0,
+        "w": 10.0,
+        "h": 16.0
+      },
+      "center": {
+        "x": 32.0,
+        "y": 8.0
+      },
+      "adjacent_to": [
+        "Closet",
+        "Room 1 Bath",
+        "Room 1 Closet",
+        "Room 2 Closet",
+        "Room 2 Toilet"
+      ],
+      "polygon": [
+        {
+          "x": 27.0,
+          "y": 5.0
+        },
+        {
+          "x": 27.0,
+          "y": 6.0
+        },
+        {
+          "x": 27.0,
+          "y": 7.0
+        },
+        {
+          "x": 27.0,
+          "y": 8.0
+        },
+        {
+          "x": 27.0,
+          "y": 9.0
+        },
+        {
+          "x": 27.0,
+          "y": 10.0
+        },
+        {
+          "x": 27.0,
+          "y": 11.0
+        },
+        {
+          "x": 27.0,
+          "y": 12.0
+        },
+        {
+          "x": 27.0,
+          "y": 13.0
+        },
+        {
+          "x": 27.0,
+          "y": 14.0
+        },
+        {
+          "x": 27.0,
+          "y": 15.0
+        },
+        {
+          "x": 27.0,
+          "y": 16.0
+        },
+        {
+          "x": 28.0,
+          "y": 16.0
+        },
+        {
+          "x": 29.0,
+          "y": 16.0
+        },
+        {
+          "x": 30.0,
+          "y": 16.0
+        },
+        {
+          "x": 31.0,
+          "y": 16.0
+        },
+        {
+          "x": 32.0,
+          "y": 16.0
+        },
+        {
+          "x": 33.0,
+          "y": 16.0
+        },
+        {
+          "x": 34.0,
+          "y": 16.0
+        },
+        {
+          "x": 35.0,
+          "y": 16.0
+        },
+        {
+          "x": 36.0,
+          "y": 16.0
+        },
+        {
+          "x": 37.0,
+          "y": 16.0
+        },
+        {
+          "x": 37.0,
+          "y": 15.0
+        },
+        {
+          "x": 37.0,
+          "y": 14.0
+        },
+        {
+          "x": 37.0,
+          "y": 13.0
+        },
+        {
+          "x": 37.0,
+          "y": 12.0
+        },
+        {
+          "x": 37.0,
+          "y": 11.0
+        },
+        {
+          "x": 37.0,
+          "y": 10.0
+        },
+        {
+          "x": 37.0,
+          "y": 9.0
+        },
+        {
+          "x": 37.0,
+          "y": 8.0
+        },
+        {
+          "x": 37.0,
+          "y": 7.0
+        },
+        {
+          "x": 37.0,
+          "y": 6.0
+        },
+        {
+          "x": 37.0,
+          "y": 5.0
+        },
+        {
+          "x": 37.0,
+          "y": 4.0
+        },
+        {
+          "x": 37.0,
+          "y": 3.0
+        },
+        {
+          "x": 36.0,
+          "y": 3.0
+        },
+        {
+          "x": 35.0,
+          "y": 3.0
+        },
+        {
+          "x": 34.0,
+          "y": 3.0
+        },
+        {
+          "x": 33.0,
+          "y": 3.0
+        },
+        {
+          "x": 33.0,
+          "y": 2.0
+        },
+        {
+          "x": 33.0,
+          "y": 1.0
+        },
+        {
+          "x": 33.0,
+          "y": 0.0
+        },
+        {
+          "x": 32.0,
+          "y": 0.0
+        },
+        {
+          "x": 31.0,
+          "y": 0.0
+        },
+        {
+          "x": 30.0,
+          "y": 0.0
+        },
+        {
+          "x": 29.0,
+          "y": 0.0
+        },
+        {
+          "x": 28.0,
+          "y": 0.0
+        },
+        {
+          "x": 27.0,
+          "y": 0.0
+        },
+        {
+          "x": 27.0,
+          "y": 1.0
+        },
+        {
+          "x": 27.0,
+          "y": 2.0
+        },
+        {
+          "x": 27.0,
+          "y": 3.0
+        },
+        {
+          "x": 27.0,
+          "y": 4.0
+        }
+      ]
+    },
+    {
+      "id": "eeade1e10388",
+      "name": "Room 1 Bath",
+      "room_type": "bathroom",
+      "zone": "wet",
+      "area_sqft": 72.0,
+      "bbox": {
+        "x": 29.0,
+        "y": 16.0,
+        "w": 8.0,
+        "h": 9.0
+      },
+      "center": {
+        "x": 33.0,
+        "y": 20.5
+      },
+      "adjacent_to": [
+        "Bathroom",
+        "Room 1",
+        "Room 1 Closet",
+        "Room 2"
+      ],
+      "polygon": [
+        {
+          "x": 37.0,
+          "y": 16.0
+        },
+        {
+          "x": 29.0,
+          "y": 16.0
+        },
+        {
+          "x": 29.0,
+          "y": 25.0
+        },
+        {
+          "x": 37.0,
+          "y": 25.0
+        }
+      ]
+    },
+    {
+      "id": "a9f1efadad96",
+      "name": "Room 1 Closet",
+      "room_type": "closet",
+      "zone": "private",
+      "area_sqft": 24.0,
+      "bbox": {
+        "x": 21.0,
+        "y": 16.0,
+        "w": 8.0,
+        "h": 3.0
+      },
+      "center": {
+        "x": 25.0,
+        "y": 17.5
+      },
+      "adjacent_to": [
+        "Closet",
+        "Room 1",
+        "Room 1 Bath",
+        "Room 2"
+      ],
+      "polygon": [
+        {
+          "x": 21.0,
+          "y": 16.0
+        },
+        {
+          "x": 21.0,
+          "y": 19.0
+        },
+        {
+          "x": 29.0,
+          "y": 19.0
+        },
+        {
+          "x": 29.0,
+          "y": 16.0
+        }
+      ]
+    },
+    {
+      "id": "4b7ca1776fb2",
+      "name": "Room 2 Toilet",
+      "room_type": "powder",
+      "zone": "wet",
+      "area_sqft": 24.0,
+      "bbox": {
+        "x": 21.0,
+        "y": 0.0,
+        "w": 6.0,
+        "h": 4.0
+      },
+      "center": {
+        "x": 24.0,
+        "y": 2.0
+      },
+      "adjacent_to": [
+        "Dining",
+        "Room 2",
+        "Room 2 Closet"
+      ],
+      "polygon": [
+        {
+          "x": 21.0,
+          "y": 4.0
+        },
+        {
+          "x": 27.0,
+          "y": 4.0
+        },
+        {
+          "x": 27.0,
+          "y": 0.0
+        },
+        {
+          "x": 21.0,
+          "y": 0.0
+        }
+      ]
+    },
+    {
+      "id": "b327e7aca5ac",
+      "name": "Room 2 Closet",
+      "room_type": "closet",
+      "zone": "private",
+      "area_sqft": 24.0,
+      "bbox": {
+        "x": 21.0,
+        "y": 4.0,
+        "w": 6.0,
+        "h": 4.0
+      },
+      "center": {
+        "x": 24.0,
+        "y": 6.0
+      },
+      "adjacent_to": [
+        "Closet",
+        "Dining",
+        "Room 2",
+        "Room 2 Toilet"
+      ],
+      "polygon": [
+        {
+          "x": 21.0,
+          "y": 4.0
+        },
+        {
+          "x": 21.0,
+          "y": 8.0
+        },
+        {
+          "x": 27.0,
+          "y": 8.0
+        },
+        {
+          "x": 27.0,
+          "y": 4.0
+        }
+      ]
+    },
+    {
+      "id": "3e42b176598d",
+      "name": "Kitchen",
+      "room_type": "kitchen",
+      "zone": "service",
+      "area_sqft": 112.0,
+      "bbox": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 8.0,
+        "h": 14.0
+      },
+      "center": {
+        "x": 4.0,
+        "y": 7.0
+      },
+      "adjacent_to": [
+        "Dining",
+        "Living"
+      ],
+      "polygon": [
+        {
+          "x": 8.0,
+          "y": 14.0
+        },
+        {
+          "x": 8.0,
+          "y": 0.0
+        },
+        {
+          "x": 0.0,
+          "y": 0.0
+        },
+        {
+          "x": 0.0,
+          "y": 14.0
+        }
+      ]
+    },
+    {
+      "id": "df7a6ce2b8f4",
+      "name": "Dining",
+      "room_type": "dining",
+      "zone": "public",
+      "area_sqft": 182.0,
+      "bbox": {
+        "x": 8.0,
+        "y": 0.0,
+        "w": 13.0,
+        "h": 14.0
+      },
+      "center": {
+        "x": 14.5,
+        "y": 7.0
+      },
+      "adjacent_to": [
+        "Closet",
+        "Hallway",
+        "Kitchen",
+        "Living",
+        "Room 1",
+        "Room 2 Closet",
+        "Room 2 Toilet"
+      ],
+      "polygon": [
+        {
+          "x": 8.0,
+          "y": 14.0
+        },
+        {
+          "x": 21.0,
+          "y": 14.0
+        },
+        {
+          "x": 21.0,
+          "y": 0.0
+        },
+        {
+          "x": 8.0,
+          "y": 0.0
+        }
+      ]
+    },
+    {
+      "id": "84052b04476d",
+      "name": "Hallway",
+      "room_type": "hallway",
+      "zone": "circulation",
+      "area_sqft": 126.0,
+      "bbox": {
+        "x": 13.0,
+        "y": 14.0,
+        "w": 7.0,
+        "h": 18.0
+      },
+      "center": {
+        "x": 16.5,
+        "y": 23.0
+      },
+      "adjacent_to": [
+        "Dining",
+        "Living",
+        "Room 1"
+      ],
+      "polygon": [
+        {
+          "x": 20.0,
+          "y": 14.0
+        },
+        {
+          "x": 13.0,
+          "y": 14.0
+        },
+        {
+          "x": 13.0,
+          "y": 32.0
+        },
+        {
+          "x": 20.0,
+          "y": 32.0
+        }
+      ]
+    },
+    {
+      "id": "e557cb0439ae",
+      "name": "Bathroom",
+      "room_type": "bathroom",
+      "zone": "wet",
+      "area_sqft": 56.0,
+      "bbox": {
+        "x": 29.0,
+        "y": 25.0,
+        "w": 8.0,
+        "h": 7.0
+      },
+      "center": {
+        "x": 33.0,
+        "y": 28.5
+      },
+      "adjacent_to": [
+        "Room 1",
+        "Room 1 Bath"
+      ],
+      "polygon": [
+        {
+          "x": 37.0,
+          "y": 25.0
+        },
+        {
+          "x": 29.0,
+          "y": 25.0
+        },
+        {
+          "x": 29.0,
+          "y": 32.0
+        },
+        {
+          "x": 37.0,
+          "y": 32.0
+        }
+      ]
+    },
+    {
+      "id": "865bf64d2335",
+      "name": "Closet",
+      "room_type": "closet",
+      "zone": "private",
+      "area_sqft": 48.0,
+      "bbox": {
+        "x": 21.0,
+        "y": 8.0,
+        "w": 6.0,
+        "h": 8.0
+      },
+      "center": {
+        "x": 24.0,
+        "y": 12.0
+      },
+      "adjacent_to": [
+        "Dining",
+        "Room 1",
+        "Room 1 Closet",
+        "Room 2",
+        "Room 2 Closet"
+      ],
+      "polygon": [
+        {
+          "x": 21.0,
+          "y": 8.0
+        },
+        {
+          "x": 21.0,
+          "y": 16.0
+        },
+        {
+          "x": 27.0,
+          "y": 16.0
+        },
+        {
+          "x": 27.0,
+          "y": 8.0
+        }
+      ]
+    }
+  ],
+  "openings": {
+    "doors": [
+      {
+        "id": "325c42ef9621",
+        "connects": [
+          "Dining",
+          "Kitchen"
+        ],
+        "start": {
+          "x": 8.0,
+          "y": 5.625
+        },
+        "end": {
+          "x": 8.0,
+          "y": 8.375
+        },
+        "is_exterior": false
+      },
+      {
+        "id": "60ff7540d6d6",
+        "connects": [
+          "Room 1 Bath",
+          "Bathroom"
+        ],
+        "start": {
+          "x": 31.625,
+          "y": 25.0
+        },
+        "end": {
+          "x": 34.375,
+          "y": 25.0
+        },
+        "is_exterior": false
+      },
+      {
+        "id": "449af7ce66ce",
+        "connects": [
+          "Hallway",
+          "Dining"
+        ],
+        "start": {
+          "x": 17.875,
+          "y": 14.0
+        },
+        "end": {
+          "x": 15.125,
+          "y": 14.0
+        },
+        "is_exterior": false
+      },
+      {
+        "id": "8206f8756388",
+        "connects": [
+          "Closet",
+          "Dining"
+        ],
+        "start": {
+          "x": 21.0,
+          "y": 9.625
+        },
+        "end": {
+          "x": 21.0,
+          "y": 12.375
+        },
+        "is_exterior": false
+      },
+      {
+        "id": "727dd528ba4d",
+        "connects": [
+          "Living"
+        ],
+        "start": {
+          "x": 0.0,
+          "y": 20.902
+        },
+        "end": {
+          "x": 0.0,
+          "y": 23.902
+        },
+        "is_exterior": true
+      }
+    ],
+    "windows": [
+      {
+        "id": "caa66b3009c5",
+        "room_names": [
+          "Living"
+        ],
+        "start": {
+          "x": 0.0,
+          "y": 16.483
+        },
+        "end": {
+          "x": 0.0,
+          "y": 22.183
+        }
+      },
+      {
+        "id": "9556bfa82366",
+        "room_names": [
+          "Living"
+        ],
+        "start": {
+          "x": 0.0,
+          "y": 21.817
+        },
+        "end": {
+          "x": 0.0,
+          "y": 27.517
+        }
+      }
+    ]
+  },
+  "boundary": {
+    "exterior": [
+      {
+        "x": 0.0,
+        "y": 30.0
+      },
+      {
+        "x": 3.0,
+        "y": 30.0
+      },
+      {
+        "x": 3.0,
+        "y": 32.0
+      },
+      {
+        "x": 37.0,
+        "y": 32.0
+      },
+      {
+        "x": 37.0,
+        "y": 3.0
+      },
+      {
+        "x": 33.0,
+        "y": 3.0
+      },
+      {
+        "x": 33.0,
+        "y": 0.0
+      },
+      {
+        "x": 0.0,
+        "y": 0.0
+      }
+    ]
+  }
+}

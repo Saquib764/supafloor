@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Any
-from uuid import uuid4
+from typing import TYPE_CHECKING, Any
 
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
@@ -49,6 +48,9 @@ from floorplan.units import (
     MIN_OPENING_EDGE_FT,
     window_length_ft,
 )
+
+if TYPE_CHECKING:
+    from floorplan.requirements.internals import GenerationInternals
 
 _MIN_SPACE_AREA = 0.5
 
@@ -615,23 +617,6 @@ def sample_parameters(
     }
 
 
-def build_document(
-    total_rooms: int = 3,
-    *,
-    target_area: float | None = None,
-    seed: int = 0,
-    plan_id: str | None = None,
-) -> dict[str, Any]:
-    parameters = sample_parameters(total_rooms, target_area=target_area, seed=seed)
-    generated = run_generation(parameters)
-    return {
-        "id": plan_id or uuid4().hex[:12],
-        "label": f"{parameters['total_rooms']}-room",
-        "parameters": parameters,
-        "generated": generated,
-    }
-
-
 def _segment_on_linestring(
     ls: LineString,
     length: float = INTERIOR_DOOR_FT,
@@ -1064,10 +1049,10 @@ def _place_windows(rooms: list[Room], boundary: Boundary, count: int = 2) -> lis
     return windows
 
 
-def document_to_plan(document: dict[str, Any]) -> FloorPlan:
-    """Build FloorPlan from document.generated, including doors and windows."""
-    generated = document["generated"]
-    parameters = document["parameters"]
+def document_to_plan(internals: GenerationInternals) -> FloorPlan:
+    """Build FloorPlan from generation internals, including doors and windows."""
+    parameters = internals.parameters
+    generated = internals.generated
     poly = generated["boundary"]["polygon"]
     boundary = Boundary(exterior=[Point2D(x=float(p[0]), y=float(p[1])) for p in poly])
 
@@ -1101,10 +1086,33 @@ def document_to_plan(document: dict[str, Any]) -> FloorPlan:
     )
     windows = _place_windows(rooms, boundary)
     return FloorPlan(
-        name=document.get("label") or f"{parameters.get('total_rooms', '?')}-room",
+        name=f"{parameters.get('total_rooms', '?')}-room",
         rooms=rooms,
         doors=doors,
         windows=windows,
         boundary=boundary,
-        metadata={"plan_id": document.get("id")},
+        metadata={"plan_id": internals.plan_id},
     )
+
+
+def generate_plan_document(
+    total_rooms: int = 3,
+    *,
+    target_area: float | None = None,
+    seed: int = 0,
+    plan_id: str | None = None,
+) -> dict[str, Any]:
+    """Generate canonical plan JSON; discard in-memory internals after finalize."""
+    from floorplan.requirements.internals import GenerationInternals
+    from floorplan.requirements.plan_io import plan_document_from_internals
+
+    internals = GenerationInternals.from_sample(
+        total_rooms,
+        target_area=target_area,
+        seed=seed,
+        plan_id=plan_id,
+    )
+    plan = document_to_plan(internals)
+    document = plan_document_from_internals(internals, plan)
+    del internals
+    return document

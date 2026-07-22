@@ -10,8 +10,8 @@ from floorplan.dataset.artifacts import write_plan_artifacts
 from floorplan.dataset.store import delete_document, list_documents, load_document, plans_dir, save_document, scores_dir
 from floorplan.evaluator import hard_failures, score_plan
 from floorplan.renderer import render_plan
-from floorplan.requirements import build_document, document_to_plan
-from floorplan.requirements.plan_io import internal_to_plan_document, llm_to_plan, plan_document_id
+from floorplan.requirements import generate_plan_document
+from floorplan.requirements.plan_io import llm_to_plan, plan_document_id
 from floorplan.constants import pick_target_area
 from floorplan.schemas.models import DatasetSample
 from floorplan.topology import (
@@ -81,9 +81,7 @@ def _build_sample(
     include_renders: bool,
     write_artifacts: bool,
 ) -> tuple[dict[str, Any], DatasetSample]:
-    internal = build_document(total_rooms, target_area=target_area, seed=seed)
-    plan = document_to_plan(internal)
-    document = internal_to_plan_document(internal, plan)
+    document = generate_plan_document(total_rooms, target_area=target_area, seed=seed)
     sample = _sample_from_saved(document, include_renders=include_renders, write_artifacts=write_artifacts)
     return document, sample
 
