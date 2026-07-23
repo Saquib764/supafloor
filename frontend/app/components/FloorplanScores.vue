@@ -11,7 +11,10 @@ const props = defineProps<{
   scores: ScoreBreakdown | null
 }>()
 
-const level = ref<ScoreLevel>('advance')
+const configuredLevel = useRuntimeConfig().public.scoreLevel as ScoreLevel | undefined
+const level = ref<ScoreLevel>(
+  configuredLevel && SCORE_LEVELS.includes(configuredLevel) ? configuredLevel : 'basic',
+)
 
 const hasScores = computed(() =>
   props.scores?.overall != null && Array.isArray(props.scores.rules),

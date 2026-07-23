@@ -6,13 +6,18 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
+from floorplan.constants import (
+    GENERATE_MAX_ATTEMPTS,
+    SCORE_LEVEL,
+    SCORE_THRESHOLD,
+    pick_target_area,
+)
 from floorplan.dataset.artifacts import write_plan_artifacts
 from floorplan.dataset.store import delete_document, list_documents, load_document, plans_dir, save_document, scores_dir
 from floorplan.evaluator import hard_failures, score_plan
 from floorplan.renderer import render_plan
 from floorplan.requirements import generate_plan_document
 from floorplan.requirements.plan_io import document_to_plan, plan_document_id
-from floorplan.constants import pick_target_area
 from floorplan.schemas.models import DatasetSample
 from floorplan.topology import (
     constraint_graph_from_plan,
@@ -86,6 +91,49 @@ def _build_sample(
     return document, sample
 
 
+def _level_score(sample: DatasetSample, level: str) -> float:
+    if sample.scores is None:
+        return 0.0
+    if sample.scores.levels and level in sample.scores.levels:
+        return float(sample.scores.levels[level])
+    return float(sample.scores.overall)
+
+
+def _build_sample_meeting_threshold(
+    total_rooms: int,
+    *,
+    target_area: float | None,
+    seed: int,
+    include_renders: bool,
+    write_artifacts: bool,
+    score_level: str = SCORE_LEVEL,
+    score_threshold: float = SCORE_THRESHOLD,
+    max_attempts: int = GENERATE_MAX_ATTEMPTS,
+) -> tuple[dict[str, Any], DatasetSample]:
+    """Generate until the active level score meets threshold, or attempts are exhausted."""
+    document: dict[str, Any] | None = None
+    sample: DatasetSample | None = None
+    for attempt in range(max(1, max_attempts)):
+        document, sample = _build_sample(
+            total_rooms,
+            target_area=target_area,
+            seed=seed + attempt,
+            include_renders=False,
+            write_artifacts=False,
+        )
+        if _level_score(sample, score_level) >= score_threshold:
+            break
+
+    assert document is not None and sample is not None
+    if include_renders or write_artifacts:
+        sample = _sample_from_saved(
+            document,
+            include_renders=include_renders,
+            write_artifacts=write_artifacts,
+        )
+    return document, sample
+
+
 def generate_sample(
     total_rooms: int = 3,
     *,
@@ -93,14 +141,20 @@ def generate_sample(
     seed: int = 0,
     include_renders: bool = True,
     save: bool = False,
+    score_level: str = SCORE_LEVEL,
+    score_threshold: float = SCORE_THRESHOLD,
+    max_attempts: int = GENERATE_MAX_ATTEMPTS,
 ) -> DatasetSample:
     """Generate a plan and optionally persist canonical JSON."""
-    document, sample = _build_sample(
+    document, sample = _build_sample_meeting_threshold(
         total_rooms,
         target_area=target_area,
         seed=seed,
         include_renders=include_renders,
         write_artifacts=save,
+        score_level=score_level,
+        score_threshold=score_threshold,
+        max_attempts=max_attempts,
     )
     if save:
         save_document(document)
@@ -114,6 +168,9 @@ def generate_dataset(
     seed: int = 0,
     out_dir: Optional[str | Path] = None,
     include_renders: bool = False,
+    score_level: str = SCORE_LEVEL,
+    score_threshold: float = SCORE_THRESHOLD,
+    max_attempts: int = GENERATE_MAX_ATTEMPTS,
 ) -> list[DatasetSample]:
     samples: list[DatasetSample] = []
     documents: list[dict[str, Any]] = []
@@ -122,12 +179,15 @@ def generate_dataset(
     attempts = 0
     while len(samples) < n and attempts < n * 5:
         rooms = total_rooms if total_rooms is not None else 1 + (attempts % 4)
-        document, sample = _build_sample(
+        document, sample = _build_sample_meeting_threshold(
             rooms,
             target_area=pick_target_area(index=attempts),
-            seed=seed + attempts,
+            seed=seed + attempts * max_attempts,
             include_renders=include_renders,
             write_artifacts=False,
+            score_level=score_level,
+            score_threshold=score_threshold,
+            max_attempts=max_attempts,
         )
         attempts += 1
         key = f"{sample.metadata.get('topology_hash')}:{sample.metadata.get('geometry_hash')}"

@@ -17,6 +17,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       floorplanApi: process.env.NUXT_PUBLIC_FLOORPLAN_API || 'http://localhost:8000',
+      scoreLevel: process.env.NUXT_PUBLIC_SCORE_LEVEL || 'basic',
     },
   },
   routeRules: {
