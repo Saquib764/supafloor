@@ -38,6 +38,10 @@ def get_pipeline_config() -> dict[str, Any]:
     return _merge_defaults(data)
 
 
+def clear_pipeline_config_cache() -> None:
+    get_pipeline_config.cache_clear()
+
+
 def _default_config() -> dict[str, Any]:
     return {
         "pipeline": {

@@ -33,3 +33,6 @@ class UpdateConfigRequest(BaseModel):
     score_level: Optional[str] = None
     score_threshold: Optional[float] = Field(default=None, ge=0, le=10)
     generate_max_attempts: Optional[int] = Field(default=None, ge=1)
+    target_areas: Optional[str] = None
+    connection_graph: Optional[str] = None
+    centers: Optional[str] = None

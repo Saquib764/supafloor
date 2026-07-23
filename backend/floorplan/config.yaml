@@ -1,17 +1,6 @@
-# FloorPlan engine settings
-
-# Active scoring tier: basic | intermediate | advance
 score_level: basic
-
-# Accept a generated plan when this level's overall score is >= threshold
 score_threshold: 8.0
-
-# Max generation attempts when the level score is below threshold
 generate_max_attempts: 10
-
-# Pipeline provider per step/substep: deterministic | llm
-# Secrets (OPENAI_API_KEY, OPENAI_MODEL) stay in .env
-
 pipeline:
   sample_into_document:
     boundary_params: deterministic
@@ -21,10 +10,8 @@ pipeline:
     connection_graph: llm
     centers: llm
     rectangles: deterministic
-
   generate_geometry: deterministic
   place_openings: deterministic
-
 llm:
   provider: openai
   fallback: deterministic

@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from floorplan.config.pipeline import clear_pipeline_config_cache, get_pipeline_config
+
 _CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"
 
 _DEFAULTS: dict[str, Any] = {
@@ -15,15 +17,30 @@ _DEFAULTS: dict[str, Any] = {
     "generate_max_attempts": 10,
 }
 
+_PIPELINE_SUBSTEPS = ("target_areas", "connection_graph", "centers")
+_PROVIDERS = frozenset({"deterministic", "llm"})
 _SCORE_LEVELS = frozenset({"basic", "intermediate", "advance"})
+
+
+def _pipeline_substeps() -> dict[str, str]:
+    sample = get_pipeline_config()["pipeline"]["sample_into_document"]
+    return {key: str(sample[key]) for key in _PIPELINE_SUBSTEPS}
 
 
 def load_config() -> dict[str, Any]:
     """Read config.yaml fresh each call so edits apply without restart."""
     raw = yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
-        return dict(_DEFAULTS)
-    return {**_DEFAULTS, **raw}
+        raw = {}
+    cfg = {key: raw.get(key, _DEFAULTS[key]) for key in _DEFAULTS}
+    return {**_validate(cfg), **_pipeline_substeps()}
+
+
+def _validate_provider(value: Any, field: str) -> str:
+    mode = str(value)
+    if mode not in _PROVIDERS:
+        raise ValueError(f"{field} must be one of {sorted(_PROVIDERS)}")
+    return mode
 
 
 def _validate(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -40,7 +57,6 @@ def _validate(cfg: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("generate_max_attempts must be >= 1")
 
     return {
-        **cfg,
         "score_level": level,
         "score_threshold": threshold,
         "generate_max_attempts": attempts,
@@ -48,12 +64,22 @@ def _validate(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def save_config(updates: dict[str, Any]) -> dict[str, Any]:
-    """Merge score updates into config.yaml and return the applied config."""
+    """Merge score and pipeline updates into config.yaml and return the applied config."""
     raw = yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
         raw = {}
-    merged = _validate({**load_config(), **updates})
+
+    merged = {**load_config(), **updates}
+    validated = _validate({key: merged[key] for key in _DEFAULTS})
     for key in _DEFAULTS:
-        raw[key] = merged[key]
+        raw[key] = validated[key]
+
+    pipeline_updates = {key: _validate_provider(merged[key], key) for key in _PIPELINE_SUBSTEPS if key in updates}
+    if pipeline_updates:
+        raw.setdefault("pipeline", {})
+        raw["pipeline"].setdefault("sample_into_document", {})
+        raw["pipeline"]["sample_into_document"].update(pipeline_updates)
+        clear_pipeline_config_cache()
+
     _CONFIG_PATH.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False), encoding="utf-8")
     return load_config()

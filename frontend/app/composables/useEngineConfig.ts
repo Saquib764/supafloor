@@ -1,10 +1,31 @@
-import type { EngineConfig, ScoreLevel } from '~/types/floorplan'
-import { SCORE_LEVELS } from '~/types/floorplan'
+import type { EngineConfig, PipelineProvider, ScoreLevel } from '~/types/floorplan'
+import { PIPELINE_PROVIDERS, SCORE_LEVELS } from '~/types/floorplan'
 
 const DEFAULT_CONFIG: EngineConfig = {
   score_level: 'basic',
   score_threshold: 8,
   generate_max_attempts: 10,
+  target_areas: 'deterministic',
+  connection_graph: 'deterministic',
+  centers: 'deterministic',
+}
+
+function normalizeProvider(value: unknown, fallback: PipelineProvider): PipelineProvider {
+  return typeof value === 'string' && PIPELINE_PROVIDERS.includes(value as PipelineProvider)
+    ? value as PipelineProvider
+    : fallback
+}
+
+function pipelineProvider(
+  raw: Partial<EngineConfig> | Record<string, unknown>,
+  key: 'target_areas' | 'connection_graph' | 'centers',
+  fallback: PipelineProvider,
+): PipelineProvider {
+  if (key in raw && raw[key] != null) {
+    return normalizeProvider(raw[key], fallback)
+  }
+  const pipeline = raw.pipeline as { sample_into_document?: Record<string, unknown> } | undefined
+  return normalizeProvider(pipeline?.sample_into_document?.[key], fallback)
 }
 
 function normalizeConfig(raw: Partial<EngineConfig> | Record<string, unknown>): EngineConfig {
@@ -13,6 +34,9 @@ function normalizeConfig(raw: Partial<EngineConfig> | Record<string, unknown>): 
     score_level: level && SCORE_LEVELS.includes(level) ? level : DEFAULT_CONFIG.score_level,
     score_threshold: Number(raw.score_threshold ?? DEFAULT_CONFIG.score_threshold),
     generate_max_attempts: Number(raw.generate_max_attempts ?? DEFAULT_CONFIG.generate_max_attempts),
+    target_areas: pipelineProvider(raw, 'target_areas', DEFAULT_CONFIG.target_areas),
+    connection_graph: pipelineProvider(raw, 'connection_graph', DEFAULT_CONFIG.connection_graph),
+    centers: pipelineProvider(raw, 'centers', DEFAULT_CONFIG.centers),
   }
 }
 

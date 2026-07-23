@@ -93,6 +93,8 @@ export interface RuleResult {
 
 export type ScoreLevel = 'basic' | 'intermediate' | 'advance'
 
+export type PipelineProvider = 'deterministic' | 'llm'
+
 export type ScoreCategory =
   | 'geometry'
   | 'topology'
@@ -105,10 +107,15 @@ export type ScoreCategory =
 
 export const SCORE_LEVELS: ScoreLevel[] = ['basic', 'intermediate', 'advance']
 
+export const PIPELINE_PROVIDERS: PipelineProvider[] = ['deterministic', 'llm']
+
 export interface EngineConfig {
   score_level: ScoreLevel
   score_threshold: number
   generate_max_attempts: number
+  target_areas: PipelineProvider
+  connection_graph: PipelineProvider
+  centers: PipelineProvider
 }
 
 export const SCORE_LEVEL_CATEGORY_ADDS: Record<ScoreLevel, readonly ScoreCategory[]> = {
