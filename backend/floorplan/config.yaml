@@ -1,6 +1,6 @@
 score_level: basic
 score_threshold: 8.0
-generate_max_attempts: 1
+generate_max_attempts: 5
 notch_ratio_min: 0.1
 notch_ratio_max: 0.6
 pipeline:
