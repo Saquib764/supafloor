@@ -1,14 +1,17 @@
 score_level: basic
 score_threshold: 8.0
 generate_max_attempts: 10
+# Fraction of start-rect width/height used when sampling each notch
+notch_ratio_min: 0.1
+notch_ratio_max: 0.6
 pipeline:
   sample_into_document:
     boundary_params: deterministic
     space_names: deterministic
-    target_areas: llm
+    target_areas: deterministic
     entry_point: deterministic
-    connection_graph: llm
-    centers: llm
+    connection_graph: deterministic
+    centers: deterministic
     rectangles: deterministic
   generate_geometry: deterministic
   place_openings: deterministic

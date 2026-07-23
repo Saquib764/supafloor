@@ -15,6 +15,8 @@ _DEFAULTS: dict[str, Any] = {
     "score_level": "basic",
     "score_threshold": 8.0,
     "generate_max_attempts": 10,
+    "notch_ratio_min": 0.1,
+    "notch_ratio_max": 0.3,
 }
 
 _PIPELINE_SUBSTEPS = ("target_areas", "connection_graph", "centers")
@@ -56,10 +58,17 @@ def _validate(cfg: dict[str, Any]) -> dict[str, Any]:
     if attempts < 1:
         raise ValueError("generate_max_attempts must be >= 1")
 
+    notch_min = float(cfg.get("notch_ratio_min", _DEFAULTS["notch_ratio_min"]))
+    notch_max = float(cfg.get("notch_ratio_max", _DEFAULTS["notch_ratio_max"]))
+    if not 0.0 < notch_min <= notch_max <= 1.0:
+        raise ValueError("notch_ratio_min/max must satisfy 0 < min <= max <= 1")
+
     return {
         "score_level": level,
         "score_threshold": threshold,
         "generate_max_attempts": attempts,
+        "notch_ratio_min": notch_min,
+        "notch_ratio_max": notch_max,
     }
 
 

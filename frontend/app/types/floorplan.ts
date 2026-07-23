@@ -119,8 +119,9 @@ export interface EngineConfig {
 }
 
 export const SCORE_LEVEL_CATEGORY_ADDS: Record<ScoreLevel, readonly ScoreCategory[]> = {
-  basic: ['geometry', 'topology', 'construction', 'architecture', 'aesthetics'],
-  intermediate: ['privacy', 'circulation'],
+  // basic = room shape + spatial positioning only
+  basic: ['geometry', 'construction', 'aesthetics'],
+  intermediate: ['topology', 'architecture', 'privacy', 'circulation'],
   advance: ['daylight'],
 }
 
@@ -142,7 +143,7 @@ const RULE_CATEGORY: Record<string, ScoreCategory> = {
   minimum_width: 'geometry',
   rectangularity: 'construction',
   shape_quality: 'construction',
-  aspect_quality: 'architecture',
+  aspect_quality: 'construction',
   reachability: 'topology',
   required_rooms: 'topology',
   doors_on_walls: 'topology',

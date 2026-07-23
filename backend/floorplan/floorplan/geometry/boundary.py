@@ -9,6 +9,7 @@ from typing import Any, Optional
 from shapely.geometry import Polygon, box
 from shapely.validation import make_valid
 
+from floorplan.config import load_config
 from floorplan.geometry.ops import to_points
 from floorplan.constants import TARGET_AREAS_SQFT, pick_target_area
 from floorplan.schemas.models import Boundary
@@ -151,6 +152,9 @@ def sample_boundary_params(
     aspect = rng.uniform(0.75, 1.4)
     w = max(6, int(round(math.sqrt(target_area * aspect))))
     h = max(6, int(round(target_area / w)))
+    cfg = load_config()
+    lo = float(cfg["notch_ratio_min"])
+    hi = float(cfg["notch_ratio_max"])
     n = rng.randint(0, 4)
     notches: list[dict[str, Any]] = []
     # Sample notch sizes against the original rect; corners chosen sequentially at apply time
@@ -158,8 +162,8 @@ def sample_boundary_params(
         notches.append(
             {
                 "corner": rng.choice(_CORNERS),
-                "w": max(1, int(round(rng.uniform(0.1, 0.3) * w))),
-                "h": max(1, int(round(rng.uniform(0.1, 0.3) * h))),
+                "w": max(1, int(round(rng.uniform(lo, hi) * w))),
+                "h": max(1, int(round(rng.uniform(lo, hi) * h))),
             }
         )
     return {

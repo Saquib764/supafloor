@@ -20,9 +20,10 @@ DEFAULT_WEIGHTS = {
 SCORE_LEVELS = ("basic", "intermediate", "advance")
 
 # Each tier adds categories and rules on top of prior tiers.
+# basic = room shape + spatial positioning only
 SCORE_LEVEL_CATEGORY_ADDS: dict[str, frozenset[str]] = {
-    "basic": frozenset({"geometry", "topology", "construction", "architecture", "aesthetics"}),
-    "intermediate": frozenset({"privacy", "circulation"}),
+    "basic": frozenset({"geometry", "construction", "aesthetics"}),
+    "intermediate": frozenset({"topology", "architecture", "privacy", "circulation"}),
     "advance": frozenset({"daylight"}),
 }
 
@@ -42,7 +43,7 @@ RULE_CATEGORY = {
     "minimum_width": "geometry",
     "rectangularity": "construction",
     "shape_quality": "construction",
-    "aspect_quality": "architecture",
+    "aspect_quality": "construction",
     "reachability": "topology",
     "required_rooms": "topology",
     "doors_on_walls": "topology",
