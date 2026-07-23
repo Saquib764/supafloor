@@ -17,6 +17,7 @@ const activeTab = ref('score')
 const draft = reactive({
   score_level: 'basic' as ScoreLevel,
   score_threshold: 8,
+  generate_max_attempts: 10,
   target_areas: 'deterministic' as PipelineProvider,
   connection_graph: 'deterministic' as PipelineProvider,
   centers: 'deterministic' as PipelineProvider,
@@ -42,6 +43,7 @@ const providerItems = PIPELINE_PROVIDERS.map(p => ({
 function syncDraftFromConfig() {
   draft.score_level = config.value.score_level
   draft.score_threshold = config.value.score_threshold
+  draft.generate_max_attempts = config.value.generate_max_attempts
   draft.target_areas = config.value.target_areas
   draft.connection_graph = config.value.connection_graph
   draft.centers = config.value.centers
@@ -66,6 +68,7 @@ async function onSave(close: () => void) {
     const updates: Partial<EngineConfig> = {
       score_level: draft.score_level,
       score_threshold: Number(draft.score_threshold),
+      generate_max_attempts: Number(draft.generate_max_attempts),
       target_areas: draft.target_areas,
       connection_graph: draft.connection_graph,
       centers: draft.centers,
@@ -133,6 +136,19 @@ async function onSave(close: () => void) {
                   :min="0"
                   :max="10"
                   :step="0.1"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <UFormField
+                label="Max generation attempts"
+                hint="Retry generation up to this many times when the score is below threshold"
+              >
+                <UInput
+                  v-model.number="draft.generate_max_attempts"
+                  type="number"
+                  :min="1"
+                  :step="1"
                   class="w-full"
                 />
               </UFormField>

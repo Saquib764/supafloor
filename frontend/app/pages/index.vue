@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FloorplanEntry } from '~/components/FloorplanList.vue'
-import { FLOORPLAN_TARGET_AREAS_SQFT } from '~/types/floorplan'
+import { FLOORPLAN_DEFAULT_TARGET_AREA_SQFT, FLOORPLAN_TARGET_AREAS_SQFT } from '~/types/floorplan'
 
 const api = useFloorplanApi()
 
@@ -135,7 +135,7 @@ async function onSelect(id: string) {
 
 async function onGenerate(payload?: { bedroomCount?: number, targetArea?: number }) {
   const rooms = payload?.bedroomCount ?? selected.value?.bedroomCount ?? 3
-  const targetArea = payload?.targetArea ?? FLOORPLAN_TARGET_AREAS_SQFT[1]
+  const targetArea = payload?.targetArea ?? FLOORPLAN_DEFAULT_TARGET_AREA_SQFT
   acting.value = true
   error.value = null
   try {
@@ -201,7 +201,7 @@ onMounted(async () => {
   try {
     await refreshList()
     if (!floorplans.value.length) {
-      await onGenerate({ bedroomCount: 3, targetArea: FLOORPLAN_TARGET_AREAS_SQFT[1] })
+      await onGenerate({ bedroomCount: 3, targetArea: FLOORPLAN_DEFAULT_TARGET_AREA_SQFT })
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)

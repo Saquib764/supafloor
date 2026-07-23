@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FLOORPLAN_AREA_UNIT, FLOORPLAN_TARGET_AREAS_SQFT } from '~/types/floorplan'
+import { FLOORPLAN_AREA_UNIT, FLOORPLAN_DEFAULT_TARGET_AREA_SQFT, FLOORPLAN_TARGET_AREAS_SQFT } from '~/types/floorplan'
 
 export interface FloorplanEntry {
   id: string
@@ -25,7 +25,7 @@ const emit = defineEmits<{
 }>()
 
 const rooms = ref(3)
-const targetArea = ref<number>(FLOORPLAN_TARGET_AREAS_SQFT[1])
+const targetArea = ref<number>(FLOORPLAN_DEFAULT_TARGET_AREA_SQFT)
 const settingsOpen = ref(false)
 
 watch(

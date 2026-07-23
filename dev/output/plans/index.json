@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "id": "1928f8cead07",
+    "label": "3-room",
+    "bedroom_count": 3,
+    "room_count": 10,
+    "path": "1928f8cead07.json"
+  }
+]

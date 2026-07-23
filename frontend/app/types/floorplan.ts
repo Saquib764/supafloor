@@ -2,6 +2,7 @@ export const FLOORPLAN_LINEAR_UNIT = 'ft'
 export const FLOORPLAN_AREA_UNIT = 'ft²'
 
 export const FLOORPLAN_TARGET_AREAS_SQFT = [150, 400, 600, 900, 1200, 1500, 2000, 2500, 3000, 4000, 4500, 5000] as const
+export const FLOORPLAN_DEFAULT_TARGET_AREA_SQFT = 1200
 
 export type RoomType =
   | 'living'
