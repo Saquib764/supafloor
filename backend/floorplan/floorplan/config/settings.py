@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"
 
 _DEFAULTS: dict[str, Any] = {
     "score_level": "basic",
@@ -55,29 +55,12 @@ def _validate(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def save_config(updates: dict[str, Any]) -> dict[str, Any]:
-    """Merge updates into config.yaml and return the applied config."""
+    """Merge score/layout updates into config.yaml and return the applied config."""
+    raw = yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        raw = {}
     merged = _validate({**load_config(), **updates})
-    # Keep only known keys plus any extras already present.
-    known = set(_DEFAULTS)
-    out = {k: merged[k] for k in merged if k in known or k in updates}
-    for key, default in _DEFAULTS.items():
-        out.setdefault(key, default)
-
-    lines = [
-        "# FloorPlan engine settings",
-        "",
-        "# Active scoring tier: basic | intermediate | advance",
-        f"score_level: {out['score_level']}",
-        "",
-        "# Accept a generated plan when this level's overall score is >= threshold",
-        f"score_threshold: {out['score_threshold']}",
-        "",
-        "# Max generation attempts when the level score is below threshold",
-        f"generate_max_attempts: {out['generate_max_attempts']}",
-        "",
-        "# Layout generation mode: cpsat | llm",
-        f"layout_mode: {out['layout_mode']}",
-        "",
-    ]
-    _CONFIG_PATH.write_text("\n".join(lines), encoding="utf-8")
+    for key in _DEFAULTS:
+        raw[key] = merged[key]
+    _CONFIG_PATH.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False), encoding="utf-8")
     return load_config()

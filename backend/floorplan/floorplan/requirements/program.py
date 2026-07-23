@@ -43,7 +43,7 @@ def ensuite_name(bedroom: str, kind: str) -> str:
 
 
 def _bedroom_names(n: int) -> list[str]:
-    """Sleeping rooms for n = total_rooms (count of bedrooms)."""
+    """Sleeping rooms for n bedrooms."""
     return [bedroom_name(i) for i in range(1, n + 1)]
 
 
@@ -60,9 +60,9 @@ def _ensuite_for(bedroom: str, rng: random.Random) -> list[str]:
     return out
 
 
-def space_names_for(total_rooms: int, rng: random.Random) -> list[str]:
-    """total_rooms = count of bedrooms (or Living/Sleeping when 1)."""
-    n = max(1, int(total_rooms))
+def space_names_for(bedroom_count: int, rng: random.Random) -> list[str]:
+    """Bedroom count (or Living/Sleeping when 1)."""
+    n = max(1, int(bedroom_count))
     names: list[str] = []
 
     if n == 1:

@@ -62,7 +62,6 @@ def _sample_from_saved(
         svg=svg,
         png_b64=png_b64,
         metadata={
-            "total_rooms": requirements.get("bedroom_count"),
             "target_area": requirements.get("target_area_sqft"),
             "topology_hash": topology_hash(plan),
             "geometry_hash": geometry_hash(plan),
@@ -75,14 +74,14 @@ def _sample_from_saved(
 
 
 def _build_sample(
-    total_rooms: int,
+    bedroom_count: int,
     *,
     target_area: float | None,
     seed: int,
     include_renders: bool,
     write_artifacts: bool,
 ) -> tuple[dict[str, Any], DatasetSample]:
-    document = generate_plan_document(total_rooms, target_area=target_area, seed=seed)
+    document = generate_plan_document(bedroom_count, target_area=target_area, seed=seed)
     sample = _sample_from_saved(document, include_renders=include_renders, write_artifacts=write_artifacts)
     return document, sample
 
@@ -96,7 +95,7 @@ def _level_score(sample: DatasetSample, level: str) -> float:
 
 
 def _build_sample_meeting_threshold(
-    total_rooms: int,
+    bedroom_count: int,
     *,
     target_area: float | None,
     seed: int,
@@ -116,7 +115,7 @@ def _build_sample_meeting_threshold(
     sample: DatasetSample | None = None
     for attempt in range(max(1, attempts)):
         document, sample = _build_sample(
-            total_rooms,
+            bedroom_count,
             target_area=target_area,
             seed=seed + attempt,
             include_renders=False,
@@ -136,7 +135,7 @@ def _build_sample_meeting_threshold(
 
 
 def generate_sample(
-    total_rooms: int = 3,
+    bedroom_count: int = 3,
     *,
     target_area: float | None = None,
     seed: int = 0,
@@ -148,7 +147,7 @@ def generate_sample(
 ) -> DatasetSample:
     """Generate a plan and optionally persist canonical JSON."""
     document, sample = _build_sample_meeting_threshold(
-        total_rooms,
+        bedroom_count,
         target_area=target_area,
         seed=seed,
         include_renders=include_renders,
@@ -165,7 +164,7 @@ def generate_sample(
 def generate_dataset(
     n: int = 10,
     *,
-    total_rooms: int | None = None,
+    bedroom_count: int | None = None,
     seed: int = 0,
     out_dir: Optional[str | Path] = None,
     include_renders: bool = False,
@@ -182,7 +181,7 @@ def generate_dataset(
 
     attempts = 0
     while len(samples) < n and attempts < n * 5:
-        rooms = total_rooms if total_rooms is not None else 1 + (attempts % 4)
+        rooms = bedroom_count if bedroom_count is not None else 1 + (attempts % 4)
         document, sample = _build_sample_meeting_threshold(
             rooms,
             target_area=pick_target_area(index=attempts),
@@ -211,7 +210,7 @@ def generate_dataset(
         index = [
             {
                 "id": s.id,
-                "total_rooms": s.metadata.get("total_rooms"),
+                "bedroom_count": s.requirements.get("bedroom_count"),
                 "overall": s.scores.overall if s.scores else None,
                 "valid": s.metadata.get("valid"),
                 "topology_hash": s.metadata.get("topology_hash"),

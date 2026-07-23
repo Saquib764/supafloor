@@ -22,7 +22,7 @@ class EvaluateRequest(BaseModel):
 
 
 class GenerateRequest(BaseModel):
-    total_rooms: int = Field(default=3, ge=1, le=8)
+    bedroom_count: int = Field(default=3, ge=1, le=8)
     target_area: Optional[float] = Field(default=None, gt=0)
     seed: int = 0
     include_renders: bool = True

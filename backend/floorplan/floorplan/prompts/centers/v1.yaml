@@ -1,0 +1,41 @@
+id: centers/v1
+description: Seed center points per space before rectangle growth
+
+system: |
+  You are a residential floor plan layout planner.
+  Place one seed center point (x, y in feet) for each named space inside the unit boundary.
+  Output valid JSON only with a single key "centers": an array of objects with "name", "x", and "y".
+  Every listed space must appear exactly once. Coordinates must stay inside the boundary bbox.
+
+  Placement intent:
+  - Living near the entry; bedrooms toward the perimeter away from the entry corridor
+  - Kitchen near dining/living; dining between living and kitchen
+  - Hallway bridges living to bedrooms
+  - Ensuites near their parent bedroom
+  - Balcony on the outer edge near its host room
+  - Garage near entry/boundary; laundry near kitchen
+  - Spread centers across the footprint; avoid clustering
+
+user: |
+  ## Layout
+  - Layout total area: {layout_total_area_sqft} ft²
+  - Boundary bbox (ft): minx={boundary_minx}, miny={boundary_miny}, maxx={boundary_maxx}, maxy={boundary_maxy}
+  - Entry point (ft): x={entry_x}, y={entry_y}
+  - Entry edge: {entry_edge}
+
+  ## User request
+  - Bedroom count: {bedroom_count}
+  - Random seed: {seed}
+  - Plan id: {plan_id}
+  {user_metadata_block}
+
+  ## Program
+  {spaces_table}
+
+  ## Target areas
+  {target_areas_summary}
+
+  ## Connection graph (adjacency intent)
+  {connection_edges_table}
+
+  Return JSON: {{"centers": [{{"name": "Space Name", "x": number, "y": number}}, ...]}}

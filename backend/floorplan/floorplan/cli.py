@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> None:
                 json.dumps(
                     {
                         "id": sample.id,
-                        "total_rooms": sample.requirements.get("total_rooms"),
+                        "bedroom_count": sample.requirements.get("bedroom_count"),
                         "overall": sample.scores.overall if sample.scores else None,
                         "valid": sample.metadata.get("valid"),
                     },
@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.cmd == "dataset":
         samples = generate_dataset(
             n=args.n,
-            total_rooms=args.rooms,
+            bedroom_count=args.rooms,
             seed=args.seed,
             out_dir=args.out,
             include_renders=args.renders,

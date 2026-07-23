@@ -71,7 +71,7 @@ def list_documents(root: Path | None = None) -> list[dict[str, Any]]:
             {
                 "id": summary.get("id") or path.stem,
                 "label": summary.get("name") or f"{requirements.get('bedroom_count', '?')}-room",
-                "total_rooms": requirements.get("bedroom_count"),
+                "bedroom_count": requirements.get("bedroom_count"),
                 "room_count": summary.get("room_count") or len(doc.get("rooms") or []),
                 "path": path.name,
             }

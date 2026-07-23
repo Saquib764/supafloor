@@ -11,3 +11,29 @@ generate_max_attempts: 10
 
 # Layout generation mode: cpsat | llm
 layout_mode: cpsat
+
+# Pipeline provider per step/substep: deterministic | llm
+# Secrets (OPENAI_API_KEY, OPENAI_MODEL) stay in .env
+
+pipeline:
+  sample_into_document:
+    boundary_params: deterministic
+    space_names: deterministic
+    target_areas: llm
+    entry_point: deterministic
+    connection_graph: llm
+    centers: llm
+    rectangles: deterministic
+
+  generate_geometry: deterministic
+  place_openings: deterministic
+
+llm:
+  provider: openai
+  fallback: deterministic
+  timeout_seconds: 30
+  centers_post_process: true
+  prompts:
+    target_areas: target_areas/v1
+    connection_graph: connection_graph/v1
+    centers: centers/v1

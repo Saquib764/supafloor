@@ -7,7 +7,7 @@ const api = useFloorplanApi()
 interface LoadedFloorplan {
   id: string
   label: string
-  totalRooms: number
+  bedroomCount: number
   plan: FloorPlan
   scores: ScoreBreakdown
   svg: string
@@ -33,7 +33,7 @@ const listItems = computed<FloorplanEntry[]>(() =>
   floorplans.value.map(fp => ({
     id: fp.id,
     label: fp.label,
-    totalRooms: fp.totalRooms,
+    bedroomCount: fp.bedroomCount,
     overall: fp.scores?.overall ?? null,
   })),
 )
@@ -66,7 +66,7 @@ function entryFromSample(sample: Record<string, any>): LoadedFloorplan {
   return {
     id: sample.id,
     label: requirements.label ?? `${requirements.bedroom_count ?? '?'}-room`,
-    totalRooms: Number(requirements.bedroom_count ?? sample.metadata?.total_rooms ?? 3),
+    bedroomCount: Number(requirements.bedroom_count ?? 3),
     plan: sample.floor_plan,
     scores: sample.scores,
     svg: sample.svg || '',
@@ -100,7 +100,7 @@ async function refreshList() {
     next.push({
       id: item.id,
       label: item.label,
-      totalRooms: item.total_rooms,
+      bedroomCount: item.bedroom_count,
       plan: { id: item.id, name: item.label, rooms: [], doors: [], windows: [] } as unknown as FloorPlan,
       scores: { overall: null } as unknown as ScoreBreakdown,
       svg: '',
@@ -133,8 +133,8 @@ async function onSelect(id: string) {
   }
 }
 
-async function onGenerate(payload?: { totalRooms?: number, targetArea?: number }) {
-  const rooms = payload?.totalRooms ?? selected.value?.totalRooms ?? 3
+async function onGenerate(payload?: { bedroomCount?: number, targetArea?: number }) {
+  const rooms = payload?.bedroomCount ?? selected.value?.bedroomCount ?? 3
   const targetArea = payload?.targetArea ?? FLOORPLAN_TARGET_AREAS_SQFT[1]
   acting.value = true
   error.value = null
@@ -201,7 +201,7 @@ onMounted(async () => {
   try {
     await refreshList()
     if (!floorplans.value.length) {
-      await onGenerate({ totalRooms: 3, targetArea: FLOORPLAN_TARGET_AREAS_SQFT[1] })
+      await onGenerate({ bedroomCount: 3, targetArea: FLOORPLAN_TARGET_AREAS_SQFT[1] })
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)

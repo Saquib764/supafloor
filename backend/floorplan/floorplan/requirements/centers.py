@@ -140,6 +140,11 @@ def _clamp_inside(p: tuple[float, float], boundary_poly: Polygon) -> tuple[float
     return (float(rp.x), float(rp.y))
 
 
+def clamp_center_inside(p: tuple[float, float], boundary_poly: Polygon) -> tuple[float, float]:
+    """Move a point inside the boundary polygon if needed."""
+    return _clamp_inside(p, boundary_poly)
+
+
 def _coverage_domain(boundary_poly: Polygon) -> Polygon:
     """Inset slightly so thin notches don't dominate empty-distance."""
     eroded = boundary_poly.buffer(-1.25)

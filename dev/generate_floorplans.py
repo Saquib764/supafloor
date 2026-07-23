@@ -69,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
         index.append(
             {
                 "id": plan_document_id(document),
-                "total_rooms": document.get("requirements", {}).get("bedroom_count"),
+                "bedroom_count": document.get("requirements", {}).get("bedroom_count"),
                 "name": document.get("summary", {}).get("name"),
                 "json": json_path.name,
                 "png": files["png"],

@@ -11,7 +11,6 @@ from shapely.geometry import Polygon
 from floorplan.geometry.authors import make_room
 from floorplan.geometry.boundary import boundary_from_params, sample_boundary_params
 from floorplan.geometry.ops import area as polygon_area
-from floorplan.requirements.centers import sample_centers
 from floorplan.requirements.context import (
     _place_doors,
     _place_windows,
@@ -20,9 +19,12 @@ from floorplan.requirements.context import (
     run_generation,
 )
 from floorplan.requirements.entry import sample_entry_point
-from floorplan.requirements.graph import build_connection_graph
 from floorplan.requirements.grow import grow_rectangles
-from floorplan.requirements.program import pick_selected_areas, scale_selected_areas, space_names_for
+from floorplan.config.pipeline import pipeline_settings_snapshot, substep_provider
+from floorplan.llm.centers import resolve_centers
+from floorplan.llm.connection_graph import resolve_connection_graph
+from floorplan.llm.target_areas import resolve_selected_areas
+from floorplan.requirements.program import space_names_for
 from floorplan.schemas.enums import RoomType, ZoneType
 from floorplan.schemas.models import Boundary, Door, FloorPlan, Point2D, Room, Window
 from floorplan.topology import build_adjacency
@@ -98,14 +100,14 @@ def _generation_params(doc: dict[str, Any]) -> dict[str, Any]:
 
 
 def seed_document(
-    total_rooms: int,
+    bedroom_count: int,
     *,
     target_area: float | None = None,
     seed: int = 0,
     plan_id: str | None = None,
 ) -> dict[str, Any]:
     """Create an empty plan document from user inputs."""
-    n = max(1, int(total_rooms))
+    n = max(1, int(bedroom_count))
     pid = plan_id or uuid4().hex[:12]
     return {
         "schema_version": SCHEMA_VERSION,
@@ -143,6 +145,10 @@ def seed_document(
         "rooms": [],
         "openings": {"doors": [], "windows": []},
         "boundary": {"exterior": []},
+        "pipeline": {
+            "configured": pipeline_settings_snapshot(),
+            "executed": {},
+        },
     }
 
 
@@ -177,17 +183,31 @@ def sample_into_document(doc: dict[str, Any]) -> None:
 
     boundary, _ = boundary_from_params(boundary_params["start_rect"], boundary_params.get("notches") or [])
     boundary_poly = Polygon([(p.x, p.y) for p in boundary.exterior])
-    selected_areas = scale_selected_areas(pick_selected_areas(names, rng), boundary_poly.area)
+    selected_areas, target_areas_exec = resolve_selected_areas(
+        names,
+        boundary_poly.area,
+        doc,
+        rng,
+        boundary_params=boundary_params,
+    )
 
     entry = sample_entry_point(boundary_poly, rng)
-    connection_graph = build_connection_graph(names)
-    centers = sample_centers(
+    connection_graph, graph_exec = resolve_connection_graph(
+        names,
+        doc,
+        selected_areas=selected_areas,
+        layout_total_area_sqft=boundary_poly.area,
+    )
+    centers, centers_exec = resolve_centers(
         names,
         selected_areas,
         boundary_poly,
         entry["entry_point"],
         connection_graph,
+        doc,
         rng,
+        entry_edge=entry.get("entry_edge"),
+        layout_total_area_sqft=boundary_poly.area,
     )
     rectangles = grow_rectangles(
         names,
@@ -212,6 +232,25 @@ def sample_into_document(doc: dict[str, Any]) -> None:
     }
     for key in _SAMPLING_KEYS:
         sampling[key] = sampled[key]
+
+    doc.setdefault("pipeline", {})
+    doc["pipeline"]["configured"] = pipeline_settings_snapshot()
+    doc["pipeline"]["executed"] = {
+        "sample_into_document": {
+            "target_areas": {
+                "provider": substep_provider("sample_into_document", "target_areas"),
+                **target_areas_exec,
+            },
+            "connection_graph": {
+                "provider": substep_provider("sample_into_document", "connection_graph"),
+                **graph_exec,
+            },
+            "centers": {
+                "provider": substep_provider("sample_into_document", "centers"),
+                **centers_exec,
+            },
+        },
+    }
 
     req["boundary_room"] = boundary_room
     req["rooms_requested"] = _rooms_requested(names, selected_areas, set())
@@ -320,14 +359,14 @@ def finalize_derived(doc: dict[str, Any]) -> None:
 
 
 def generate_plan_document(
-    total_rooms: int = 3,
+    bedroom_count: int = 3,
     *,
     target_area: float | None = None,
     seed: int = 0,
     plan_id: str | None = None,
 ) -> dict[str, Any]:
     """Generate canonical plan JSON end-to-end."""
-    doc = seed_document(total_rooms, target_area=target_area, seed=seed, plan_id=plan_id)
+    doc = seed_document(bedroom_count, target_area=target_area, seed=seed, plan_id=plan_id)
     sample_into_document(doc)
     generate_geometry(doc)
     place_openings(doc)

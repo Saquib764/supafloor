@@ -73,7 +73,7 @@ async def import_image(
 @router.post("/generate")
 def generate(body: GenerateRequest) -> dict:
     sample = engine.generate_sample(
-        total_rooms=body.total_rooms,
+        bedroom_count=body.bedroom_count,
         target_area=body.target_area,
         seed=body.seed,
         include_renders=body.include_renders,

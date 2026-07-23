@@ -110,7 +110,7 @@
         </div>
         <div class="controls">
           <label>Rooms
-            <select v-model.number="totalRooms" @change="loadDemo">
+            <select v-model.number="bedroomCount" @change="loadDemo">
               <option v-for="n in [1,2,3,4]" :key="n" :value="n">{{ n }}-room</option>
             </select>
           </label>
@@ -182,7 +182,7 @@
       const API = localStorage.getItem('floorplanApi') || 'http://localhost:8000'
       createApp({
         setup() {
-          const totalRooms = ref(3)
+          const bedroomCount = ref(3)
           const plan = ref(null)
           const scores = ref(null)
           const adjacency = ref({})
@@ -213,8 +213,8 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  total_rooms: totalRooms.value,
-                  seed: totalRooms.value,
+                  bedroom_count: bedroomCount.value,
+                  seed: bedroomCount.value,
                   include_renders: true,
                   save: false,
                 }),
@@ -242,7 +242,7 @@
           async function generate() {
             const res = await fetch(`${API}/floorplan/generate`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ total_rooms: totalRooms.value, seed: Date.now()%10000, include_renders: true, save: false })
+              body: JSON.stringify({ bedroom_count: bedroomCount.value, seed: Date.now()%10000, include_renders: true, save: false })
             })
             if (!res.ok) throw new Error(await res.text())
             const sample = await res.json()
@@ -285,7 +285,7 @@
             await loadDemo()
           })
           return {
-            totalRooms, plan, scores, adjacency, svg, selectedRoomId, inspection, error,
+            bedroomCount, plan, scores, adjacency, svg, selectedRoomId, inspection, error,
             showLabels, showDimensions, showTopology, jsonOpen, scale, pan, categories, pretty,
             loadDemo, refreshRender, generate, selectRoom, onWheel, onDown, onMove, onUp
           }

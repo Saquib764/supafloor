@@ -1,0 +1,10 @@
+prompts:
+  target_areas/v1:
+    file: target_areas/v1.yaml
+    output: json_object
+  connection_graph/v1:
+    file: connection_graph/v1.yaml
+    output: json_object
+  centers/v1:
+    file: centers/v1.yaml
+    output: json_object

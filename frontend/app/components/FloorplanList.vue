@@ -4,7 +4,7 @@ import { FLOORPLAN_AREA_UNIT, FLOORPLAN_TARGET_AREAS_SQFT } from '~/types/floorp
 export interface FloorplanEntry {
   id: string
   label: string
-  totalRooms: number
+  bedroomCount: number
   overall: number | null
 }
 
@@ -20,7 +20,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'select', id: string): void
-  (e: 'generate', payload: { totalRooms: number, targetArea: number }): void
+  (e: 'generate', payload: { bedroomCount: number, targetArea: number }): void
   (e: 'delete', id: string): void
 }>()
 
@@ -29,7 +29,7 @@ const targetArea = ref<number>(FLOORPLAN_TARGET_AREAS_SQFT[1])
 const settingsOpen = ref(false)
 
 watch(
-  () => props.items.find(i => i.id === props.selectedId)?.totalRooms,
+  () => props.items.find(i => i.id === props.selectedId)?.bedroomCount,
   (value) => {
     if (value != null) rooms.value = value
   },
@@ -73,7 +73,7 @@ watch(
           color="primary"
           :loading="generating"
           :disabled="generating"
-          @click="emit('generate', { totalRooms: Number(rooms), targetArea: Number(targetArea) })"
+          @click="emit('generate', { bedroomCount: Number(rooms), targetArea: Number(targetArea) })"
         >
           Generate
         </UButton>
