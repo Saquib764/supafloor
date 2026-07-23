@@ -1,21 +1,18 @@
-import type { EngineConfig, LayoutMode, ScoreLevel } from '~/types/floorplan'
-import { LAYOUT_MODES, SCORE_LEVELS } from '~/types/floorplan'
+import type { EngineConfig, ScoreLevel } from '~/types/floorplan'
+import { SCORE_LEVELS } from '~/types/floorplan'
 
 const DEFAULT_CONFIG: EngineConfig = {
   score_level: 'basic',
   score_threshold: 8,
   generate_max_attempts: 10,
-  layout_mode: 'cpsat',
 }
 
 function normalizeConfig(raw: Partial<EngineConfig> | Record<string, unknown>): EngineConfig {
   const level = raw.score_level as ScoreLevel | undefined
-  const mode = raw.layout_mode as LayoutMode | undefined
   return {
     score_level: level && SCORE_LEVELS.includes(level) ? level : DEFAULT_CONFIG.score_level,
     score_threshold: Number(raw.score_threshold ?? DEFAULT_CONFIG.score_threshold),
     generate_max_attempts: Number(raw.generate_max_attempts ?? DEFAULT_CONFIG.generate_max_attempts),
-    layout_mode: mode && LAYOUT_MODES.includes(mode) ? mode : DEFAULT_CONFIG.layout_mode,
   }
 }
 

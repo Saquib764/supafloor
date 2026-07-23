@@ -13,11 +13,9 @@ _DEFAULTS: dict[str, Any] = {
     "score_level": "basic",
     "score_threshold": 8.0,
     "generate_max_attempts": 10,
-    "layout_mode": "cpsat",
 }
 
 _SCORE_LEVELS = frozenset({"basic", "intermediate", "advance"})
-_LAYOUT_MODES = frozenset({"cpsat", "llm"})
 
 
 def load_config() -> dict[str, Any]:
@@ -33,10 +31,6 @@ def _validate(cfg: dict[str, Any]) -> dict[str, Any]:
     if level not in _SCORE_LEVELS:
         raise ValueError(f"score_level must be one of {sorted(_SCORE_LEVELS)}")
 
-    mode = str(cfg.get("layout_mode", _DEFAULTS["layout_mode"]))
-    if mode not in _LAYOUT_MODES:
-        raise ValueError(f"layout_mode must be one of {sorted(_LAYOUT_MODES)}")
-
     threshold = float(cfg.get("score_threshold", _DEFAULTS["score_threshold"]))
     if not 0.0 <= threshold <= 10.0:
         raise ValueError("score_threshold must be between 0 and 10")
@@ -50,12 +44,11 @@ def _validate(cfg: dict[str, Any]) -> dict[str, Any]:
         "score_level": level,
         "score_threshold": threshold,
         "generate_max_attempts": attempts,
-        "layout_mode": mode,
     }
 
 
 def save_config(updates: dict[str, Any]) -> dict[str, Any]:
-    """Merge score/layout updates into config.yaml and return the applied config."""
+    """Merge score updates into config.yaml and return the applied config."""
     raw = yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
         raw = {}

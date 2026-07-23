@@ -93,8 +93,6 @@ export interface RuleResult {
 
 export type ScoreLevel = 'basic' | 'intermediate' | 'advance'
 
-export type LayoutMode = 'cpsat' | 'llm'
-
 export type ScoreCategory =
   | 'geometry'
   | 'topology'
@@ -107,13 +105,10 @@ export type ScoreCategory =
 
 export const SCORE_LEVELS: ScoreLevel[] = ['basic', 'intermediate', 'advance']
 
-export const LAYOUT_MODES: LayoutMode[] = ['cpsat', 'llm']
-
 export interface EngineConfig {
   score_level: ScoreLevel
   score_threshold: number
   generate_max_attempts: number
-  layout_mode: LayoutMode
 }
 
 export const SCORE_LEVEL_CATEGORY_ADDS: Record<ScoreLevel, readonly ScoreCategory[]> = {
