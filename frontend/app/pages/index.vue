@@ -246,7 +246,10 @@ onMounted(async () => {
     <aside
       class="absolute right-0 top-0 bottom-0 z-10 w-80 flex flex-col border-l border-gray-800/80 bg-gray-950/85 backdrop-blur-md"
     >
-      <FloorplanScores :scores="selected?.scores ?? null" />
+      <FloorplanRightPanel
+        :scores="selected?.scores ?? null"
+        :plan="selected?.plan ?? null"
+      />
     </aside>
 
     <FloorplanEditorBar

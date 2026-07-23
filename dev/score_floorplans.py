@@ -107,6 +107,12 @@ def main(argv: list[str] | None = None) -> int:
             details.append(f"![{plan.name}]({image_rel})")
             details.append("")
         details.append(scores.summary)
+        layout_prompt = files.get("layout_prompt") or ""
+        if layout_prompt:
+            details.append("")
+            details.append("### Layout prompt")
+            details.append("")
+            details.append(layout_prompt)
         details.append("")
         details.append(f"Full report: [{score_md_name}]({score_md_name})")
         details.append("")
