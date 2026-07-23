@@ -9,6 +9,7 @@ import {
 
 const props = defineProps<{
   scores: ScoreBreakdown | null
+  hideTitle?: boolean
 }>()
 
 const { config, ensureLoaded } = useEngineConfig()
@@ -57,8 +58,14 @@ const levelLabels: Record<ScoreLevel, string> = {
 
 <template>
   <div class="flex flex-col h-full">
-    <div class="shrink-0 p-4 border-b border-gray-800/80 space-y-3">
-      <h2 class="text-lg font-semibold text-white">
+    <div
+      v-if="!hideTitle || hasScores"
+      class="shrink-0 p-4 border-b border-gray-800/80 space-y-3"
+    >
+      <h2
+        v-if="!hideTitle"
+        class="text-lg font-semibold text-white"
+      >
         Stats
       </h2>
 

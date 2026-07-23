@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from floorplan.dataset.layout_prompt import build_layout_prompt
 from floorplan.evaluator import score_label
 from floorplan.renderer import render_png
 from floorplan.schemas.models import FloorPlan, ScoreBreakdown
@@ -30,6 +31,7 @@ def write_plan_artifacts(
 
     (directory / png_name).write_bytes(render_png(plan, size=size, layers=_RENDER_LAYERS))
 
+    layout_prompt = build_layout_prompt(plan)
     per_plan_lines = [
         f"# Score report — {plan.name}",
         "",
@@ -39,8 +41,10 @@ def write_plan_artifacts(
         "",
         scores.summary,
         "",
-        scores.report,
     ]
+    if layout_prompt:
+        per_plan_lines.extend(["### Layout prompt", "", layout_prompt, ""])
+    per_plan_lines.append(scores.report)
     (directory / score_md_name).write_text("\n".join(per_plan_lines))
 
     hard_failures = [r.rule_id for r in scores.rules if r.hard and not r.passed]
@@ -49,6 +53,7 @@ def write_plan_artifacts(
         "plan_name": plan.name,
         "overall": scores.overall,
         "summary": scores.summary,
+        "layout_prompt": layout_prompt,
         "categories": {
             "geometry": scores.geometry,
             "topology": scores.topology,
@@ -64,7 +69,12 @@ def write_plan_artifacts(
         "image": png_name,
     }
     (directory / score_json_name).write_text(json.dumps(score_json, indent=2))
-    return {"png": png_name, "score_md": score_md_name, "score_json": score_json_name}
+    return {
+        "png": png_name,
+        "score_md": score_md_name,
+        "score_json": score_json_name,
+        "layout_prompt": layout_prompt,
+    }
 
 
 def score_row(plan: FloorPlan, scores: ScoreBreakdown, *, score_md_name: str, png_name: str | None) -> dict[str, Any]:
