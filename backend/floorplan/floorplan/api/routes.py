@@ -6,8 +6,9 @@ from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from floorplan.config import load_config, save_config
 from floorplan.dataset import delete_saved_plan, list_saved_plans, load_sample
-from floorplan.schemas.requests import EvaluateRequest, GenerateRequest, RenderRequest
+from floorplan.schemas.requests import EvaluateRequest, GenerateRequest, RenderRequest, UpdateConfigRequest
 from floorplan.services.engine import FloorPlanEngine
 
 router = APIRouter(prefix="/floorplan", tags=["floorplan"])
@@ -17,6 +18,26 @@ engine = FloorPlanEngine()
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "engine": "floorplan-v1"}
+
+
+@router.get("/config")
+def get_config() -> dict[str, Any]:
+    """Expose engine settings from config.yaml."""
+    return load_config()
+
+
+@router.put("/config")
+def put_config(body: UpdateConfigRequest) -> dict[str, Any]:
+    """Update config.yaml; takes effect immediately without restart."""
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        return load_config()
+    try:
+        return save_config(updates)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(500, f"Failed to write config.yaml: {exc}") from exc
 
 
 @router.post("/evaluate")

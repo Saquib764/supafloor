@@ -20,6 +20,7 @@ from .requests import (
     EvaluateRequest,
     GenerateRequest,
     RenderRequest,
+    UpdateConfigRequest,
 )
 
 __all__ = [
@@ -42,4 +43,5 @@ __all__ = [
     "EvaluateRequest",
     "GenerateRequest",
     "RenderRequest",
+    "UpdateConfigRequest",
 ]

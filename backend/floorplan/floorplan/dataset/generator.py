@@ -6,13 +6,14 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
+from floorplan.config import load_config
+from floorplan.constants import pick_target_area
 from floorplan.dataset.artifacts import write_plan_artifacts
 from floorplan.dataset.store import delete_document, list_documents, load_document, plans_dir, save_document, scores_dir
 from floorplan.evaluator import hard_failures, score_plan
 from floorplan.renderer import render_plan
 from floorplan.requirements import generate_plan_document
 from floorplan.requirements.plan_io import document_to_plan, plan_document_id
-from floorplan.constants import pick_target_area
 from floorplan.schemas.models import DatasetSample
 from floorplan.topology import (
     constraint_graph_from_plan,
@@ -86,6 +87,54 @@ def _build_sample(
     return document, sample
 
 
+def _level_score(sample: DatasetSample, level: str) -> float:
+    if sample.scores is None:
+        return 0.0
+    if sample.scores.levels and level in sample.scores.levels:
+        return float(sample.scores.levels[level])
+    return float(sample.scores.overall)
+
+
+def _build_sample_meeting_threshold(
+    total_rooms: int,
+    *,
+    target_area: float | None,
+    seed: int,
+    include_renders: bool,
+    write_artifacts: bool,
+    level: str | None = None,
+    threshold: float | None = None,
+    max_attempts: int | None = None,
+) -> tuple[dict[str, Any], DatasetSample]:
+    """Generate until the active level score meets threshold, or attempts are exhausted."""
+    cfg = load_config()
+    level = str(cfg["score_level"]) if level is None else level
+    threshold = float(cfg["score_threshold"]) if threshold is None else threshold
+    attempts = int(cfg["generate_max_attempts"]) if max_attempts is None else max_attempts
+
+    document: dict[str, Any] | None = None
+    sample: DatasetSample | None = None
+    for attempt in range(max(1, attempts)):
+        document, sample = _build_sample(
+            total_rooms,
+            target_area=target_area,
+            seed=seed + attempt,
+            include_renders=False,
+            write_artifacts=False,
+        )
+        if _level_score(sample, level) >= threshold:
+            break
+
+    assert document is not None and sample is not None
+    if include_renders or write_artifacts:
+        sample = _sample_from_saved(
+            document,
+            include_renders=include_renders,
+            write_artifacts=write_artifacts,
+        )
+    return document, sample
+
+
 def generate_sample(
     total_rooms: int = 3,
     *,
@@ -93,14 +142,20 @@ def generate_sample(
     seed: int = 0,
     include_renders: bool = True,
     save: bool = False,
+    score_level: str | None = None,
+    score_threshold: float | None = None,
+    max_attempts: int | None = None,
 ) -> DatasetSample:
     """Generate a plan and optionally persist canonical JSON."""
-    document, sample = _build_sample(
+    document, sample = _build_sample_meeting_threshold(
         total_rooms,
         target_area=target_area,
         seed=seed,
         include_renders=include_renders,
         write_artifacts=save,
+        level=score_level,
+        threshold=score_threshold,
+        max_attempts=max_attempts,
     )
     if save:
         save_document(document)
@@ -114,20 +169,29 @@ def generate_dataset(
     seed: int = 0,
     out_dir: Optional[str | Path] = None,
     include_renders: bool = False,
+    score_level: str | None = None,
+    score_threshold: float | None = None,
+    max_attempts: int | None = None,
 ) -> list[DatasetSample]:
     samples: list[DatasetSample] = []
     documents: list[dict[str, Any]] = []
     seen_hashes: set[str] = set()
+    attempts_budget = (
+        max_attempts if max_attempts is not None else int(load_config()["generate_max_attempts"])
+    )
 
     attempts = 0
     while len(samples) < n and attempts < n * 5:
         rooms = total_rooms if total_rooms is not None else 1 + (attempts % 4)
-        document, sample = _build_sample(
+        document, sample = _build_sample_meeting_threshold(
             rooms,
             target_area=pick_target_area(index=attempts),
-            seed=seed + attempts,
+            seed=seed + attempts * attempts_budget,
             include_renders=include_renders,
             write_artifacts=False,
+            level=score_level,
+            threshold=score_threshold,
+            max_attempts=max_attempts,
         )
         attempts += 1
         key = f"{sample.metadata.get('topology_hash')}:{sample.metadata.get('geometry_hash')}"

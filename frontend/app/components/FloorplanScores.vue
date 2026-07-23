@@ -11,7 +11,19 @@ const props = defineProps<{
   scores: ScoreBreakdown | null
 }>()
 
-const level = ref<ScoreLevel>('advance')
+const { config, ensureLoaded } = useEngineConfig()
+const level = ref<ScoreLevel>(config.value.score_level)
+
+watch(
+  () => config.value.score_level,
+  (value) => {
+    if (SCORE_LEVELS.includes(value)) level.value = value
+  },
+)
+
+onMounted(() => {
+  ensureLoaded().catch(() => undefined)
+})
 
 const hasScores = computed(() =>
   props.scores?.overall != null && Array.isArray(props.scores.rules),
