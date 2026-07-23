@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 from typing import Any
 
@@ -93,6 +94,10 @@ def space_names_for(bedroom_count: int, rng: random.Random) -> list[str]:
     return names
 
 
+def _floor_area(area: float) -> float:
+    return float(max(1, math.floor(area)))
+
+
 def scale_selected_areas(
     selected: dict[str, float],
     boundary_area: float,
@@ -103,9 +108,9 @@ def scale_selected_areas(
     total = sum(selected.values())
     cap = boundary_area * fill_ratio
     if total <= cap or total <= 0:
-        return dict(selected)
+        return {name: _floor_area(area) for name, area in selected.items()}
     factor = cap / total
-    return {name: round(area * factor, 3) for name, area in selected.items()}
+    return {name: _floor_area(area * factor) for name, area in selected.items()}
 
 
 def pick_selected_areas(names: list[str], rng: random.Random) -> dict[str, float]:

@@ -160,7 +160,7 @@ def _rooms_requested(
     return [
         {
             "name": name,
-            "target_area_sqft": round(float(selected_areas[name]), 3) if name in selected_areas else None,
+            "target_area_sqft": int(selected_areas[name]) if name in selected_areas else None,
             "room_type": _room_type_for_name(name).value,
             "zone": _zone_for_name(name).value,
             "generated": name in generated_names,

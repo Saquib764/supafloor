@@ -1,8 +1,6 @@
 score_level: basic
 score_threshold: 8.0
-# Max generation retries until score_level meets score_threshold
 generate_max_attempts: 1
-# Fraction of start-rect width/height used when sampling each notch
 notch_ratio_min: 0.1
 notch_ratio_max: 0.6
 pipeline:

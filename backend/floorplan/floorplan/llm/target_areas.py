@@ -32,7 +32,7 @@ def _clamp_llm_areas(raw: dict[str, float], names: list[str]) -> dict[str, float
         value = float(raw[name])
         if value <= 0:
             raise ValueError(f"Invalid area for {name}: {value}")
-        out[name] = round(max(lo, min(hi, value)), 3)
+        out[name] = float(max(1, int(max(lo, min(hi, value)))))
     return out
 
 

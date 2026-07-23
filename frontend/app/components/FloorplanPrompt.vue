@@ -5,39 +5,19 @@ const props = defineProps<{
   plan: FloorPlan | null
 }>()
 
-const prompt = ref('')
-const schema = ref('')
-
-watch(() => props.plan?.id, () => {
-  prompt.value = ''
-  schema.value = ''
+const prompt = computed(() => {
+  if (!props.plan?.rooms.length) return ''
+  return buildLayoutPrompt(props.plan)
 })
 
-function computePrompt() {
-  if (!props.plan) {
-    prompt.value = ''
-    schema.value = ''
-    return
-  }
-  prompt.value = buildLayoutPrompt(props.plan)
-  schema.value = buildLayoutSchema(props.plan)
-}
+const schema = computed(() => {
+  if (!props.plan?.rooms.length) return ''
+  return buildLayoutSchema(props.plan)
+})
 </script>
 
 <template>
   <div class="flex flex-col h-full">
-    <div class="shrink-0 p-4 border-b border-gray-800/80 space-y-3">
-      <UButton
-        block
-        color="primary"
-        variant="soft"
-        :disabled="!plan"
-        @click="computePrompt"
-      >
-        Compute prompt
-      </UButton>
-    </div>
-
     <div class="flex-1 overflow-y-auto custom-scrollbar p-4">
       <p
         v-if="!plan"
@@ -49,7 +29,7 @@ function computePrompt() {
         v-else-if="!prompt"
         class="text-sm text-gray-400"
       >
-        Click compute to describe each room by name and location.
+        This plan has no rooms.
       </p>
       <template v-else>
         <pre class="whitespace-pre-wrap text-sm leading-relaxed text-gray-200 font-sans">{{ prompt }}</pre>
