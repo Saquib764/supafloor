@@ -135,14 +135,26 @@ export function buildLayoutPrompt(plan: FloorPlan): string {
   }).join('\n')
 }
 
+function selectedAreas(plan: FloorPlan): Record<string, number> {
+  const raw = plan.metadata?.selected_areas
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, number> = {}
+  for (const [name, area] of Object.entries(raw as Record<string, unknown>)) {
+    const value = Number(area)
+    if (Number.isFinite(value)) out[name] = value
+  }
+  return out
+}
+
 export function buildLayoutSchema(plan: FloorPlan): string {
   if (!plan.rooms.length) return ''
 
+  const targets = selectedAreas(plan)
   const rooms = [...plan.rooms]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(room => ({
       name: room.name,
-      actual_area_sqft: roundCoord(polygonArea(room.polygon)),
+      target_area_sqft: targets[room.name] != null ? roundCoord(targets[room.name]!) : null,
     }))
 
   const layoutPolygon = plan.boundary?.exterior?.length

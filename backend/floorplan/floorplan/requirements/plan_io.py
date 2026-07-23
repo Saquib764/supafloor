@@ -426,6 +426,15 @@ def document_to_plan(document: dict[str, Any]) -> FloorPlan:
     exterior = [Point2D(x=float(p["x"]), y=float(p["y"])) for p in boundary_data.get("exterior") or []]
     boundary = Boundary(exterior=exterior) if exterior else None
 
+    selected_areas: dict[str, float] = {}
+    for row in (document.get("requirements") or {}).get("rooms_requested") or []:
+        name = row.get("name")
+        area = row.get("target_area_sqft")
+        if name and area is not None:
+            selected_areas[str(name)] = float(area)
+    for name, area in ((document.get("sampling") or {}).get("selected_areas") or {}).items():
+        selected_areas.setdefault(str(name), float(area))
+
     plan_id = str(summary.get("id") or "unknown")
     return FloorPlan(
         id=plan_id,
@@ -434,5 +443,5 @@ def document_to_plan(document: dict[str, Any]) -> FloorPlan:
         doors=doors,
         windows=windows,
         boundary=boundary,
-        metadata={"plan_id": plan_id},
+        metadata={"plan_id": plan_id, "selected_areas": selected_areas},
     )
