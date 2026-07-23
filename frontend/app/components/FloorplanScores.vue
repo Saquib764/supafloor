@@ -11,10 +11,18 @@ const props = defineProps<{
   scores: ScoreBreakdown | null
 }>()
 
-const configuredLevel = useRuntimeConfig().public.scoreLevel as ScoreLevel | undefined
-const level = ref<ScoreLevel>(
-  configuredLevel && SCORE_LEVELS.includes(configuredLevel) ? configuredLevel : 'basic',
-)
+const api = useFloorplanApi()
+const level = ref<ScoreLevel>('basic')
+
+onMounted(async () => {
+  try {
+    const cfg = await api.getConfig()
+    if (SCORE_LEVELS.includes(cfg.score_level)) level.value = cfg.score_level
+  }
+  catch {
+    // Keep default basic when API config is unavailable.
+  }
+})
 
 const hasScores = computed(() =>
   props.scores?.overall != null && Array.isArray(props.scores.rules),

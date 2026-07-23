@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from floorplan.config import load_config
 from floorplan.dataset import delete_saved_plan, list_saved_plans, load_sample
 from floorplan.schemas.requests import EvaluateRequest, GenerateRequest, RenderRequest
 from floorplan.services.engine import FloorPlanEngine
@@ -17,6 +18,12 @@ engine = FloorPlanEngine()
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "engine": "floorplan-v1"}
+
+
+@router.get("/config")
+def config() -> dict[str, Any]:
+    """Expose engine settings from config.yaml."""
+    return load_config()
 
 
 @router.post("/evaluate")

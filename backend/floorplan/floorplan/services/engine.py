@@ -23,12 +23,8 @@ class FloorPlanEngine:
         return import_bw_image(image_bytes, **kwargs)
 
     def generate_sample(self, **kwargs):
-        from app.config import settings
         from floorplan.dataset import generate_sample
 
-        kwargs.setdefault("score_level", settings.score_level)
-        kwargs.setdefault("score_threshold", settings.score_threshold)
-        kwargs.setdefault("max_attempts", settings.generate_max_attempts)
         return generate_sample(**kwargs)
 
     def list_saved_plans(self):

@@ -6,12 +6,8 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from floorplan.constants import (
-    GENERATE_MAX_ATTEMPTS,
-    SCORE_LEVEL,
-    SCORE_THRESHOLD,
-    pick_target_area,
-)
+from floorplan.config import load_config
+from floorplan.constants import pick_target_area
 from floorplan.dataset.artifacts import write_plan_artifacts
 from floorplan.dataset.store import delete_document, list_documents, load_document, plans_dir, save_document, scores_dir
 from floorplan.evaluator import hard_failures, score_plan
@@ -106,14 +102,19 @@ def _build_sample_meeting_threshold(
     seed: int,
     include_renders: bool,
     write_artifacts: bool,
-    score_level: str = SCORE_LEVEL,
-    score_threshold: float = SCORE_THRESHOLD,
-    max_attempts: int = GENERATE_MAX_ATTEMPTS,
+    level: str | None = None,
+    threshold: float | None = None,
+    max_attempts: int | None = None,
 ) -> tuple[dict[str, Any], DatasetSample]:
     """Generate until the active level score meets threshold, or attempts are exhausted."""
+    cfg = load_config()
+    level = str(cfg["score_level"]) if level is None else level
+    threshold = float(cfg["score_threshold"]) if threshold is None else threshold
+    attempts = int(cfg["generate_max_attempts"]) if max_attempts is None else max_attempts
+
     document: dict[str, Any] | None = None
     sample: DatasetSample | None = None
-    for attempt in range(max(1, max_attempts)):
+    for attempt in range(max(1, attempts)):
         document, sample = _build_sample(
             total_rooms,
             target_area=target_area,
@@ -121,7 +122,7 @@ def _build_sample_meeting_threshold(
             include_renders=False,
             write_artifacts=False,
         )
-        if _level_score(sample, score_level) >= score_threshold:
+        if _level_score(sample, level) >= threshold:
             break
 
     assert document is not None and sample is not None
@@ -141,9 +142,9 @@ def generate_sample(
     seed: int = 0,
     include_renders: bool = True,
     save: bool = False,
-    score_level: str = SCORE_LEVEL,
-    score_threshold: float = SCORE_THRESHOLD,
-    max_attempts: int = GENERATE_MAX_ATTEMPTS,
+    score_level: str | None = None,
+    score_threshold: float | None = None,
+    max_attempts: int | None = None,
 ) -> DatasetSample:
     """Generate a plan and optionally persist canonical JSON."""
     document, sample = _build_sample_meeting_threshold(
@@ -152,8 +153,8 @@ def generate_sample(
         seed=seed,
         include_renders=include_renders,
         write_artifacts=save,
-        score_level=score_level,
-        score_threshold=score_threshold,
+        level=score_level,
+        threshold=score_threshold,
         max_attempts=max_attempts,
     )
     if save:
@@ -168,13 +169,16 @@ def generate_dataset(
     seed: int = 0,
     out_dir: Optional[str | Path] = None,
     include_renders: bool = False,
-    score_level: str = SCORE_LEVEL,
-    score_threshold: float = SCORE_THRESHOLD,
-    max_attempts: int = GENERATE_MAX_ATTEMPTS,
+    score_level: str | None = None,
+    score_threshold: float | None = None,
+    max_attempts: int | None = None,
 ) -> list[DatasetSample]:
     samples: list[DatasetSample] = []
     documents: list[dict[str, Any]] = []
     seen_hashes: set[str] = set()
+    attempts_budget = (
+        max_attempts if max_attempts is not None else int(load_config()["generate_max_attempts"])
+    )
 
     attempts = 0
     while len(samples) < n and attempts < n * 5:
@@ -182,11 +186,11 @@ def generate_dataset(
         document, sample = _build_sample_meeting_threshold(
             rooms,
             target_area=pick_target_area(index=attempts),
-            seed=seed + attempts * max_attempts,
+            seed=seed + attempts * attempts_budget,
             include_renders=include_renders,
             write_artifacts=False,
-            score_level=score_level,
-            score_threshold=score_threshold,
+            level=score_level,
+            threshold=score_threshold,
             max_attempts=max_attempts,
         )
         attempts += 1

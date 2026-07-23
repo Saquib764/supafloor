@@ -79,5 +79,15 @@ export function useFloorplanApi(baseUrl?: string) {
     return res.json()
   }
 
-  return { render, evaluate, generate, listPlans, loadPlan, deletePlan, importImage }
+  async function getConfig() {
+    const res = await fetch(`${apiBase}/floorplan/config`)
+    if (!res.ok) throw new Error(await res.text())
+    return res.json() as Promise<{
+      score_level: 'basic' | 'intermediate' | 'advance'
+      score_threshold: number
+      generate_max_attempts: number
+    }>
+  }
+
+  return { render, evaluate, generate, listPlans, loadPlan, deletePlan, importImage, getConfig }
 }
