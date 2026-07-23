@@ -11,17 +11,18 @@ const props = defineProps<{
   scores: ScoreBreakdown | null
 }>()
 
-const api = useFloorplanApi()
-const level = ref<ScoreLevel>('basic')
+const { config, ensureLoaded } = useEngineConfig()
+const level = ref<ScoreLevel>(config.value.score_level)
 
-onMounted(async () => {
-  try {
-    const cfg = await api.getConfig()
-    if (SCORE_LEVELS.includes(cfg.score_level)) level.value = cfg.score_level
-  }
-  catch {
-    // Keep default basic when API config is unavailable.
-  }
+watch(
+  () => config.value.score_level,
+  (value) => {
+    if (SCORE_LEVELS.includes(value)) level.value = value
+  },
+)
+
+onMounted(() => {
+  ensureLoaded().catch(() => undefined)
 })
 
 const hasScores = computed(() =>

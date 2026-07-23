@@ -8,3 +8,6 @@ score_threshold: 8.0
 
 # Max generation attempts when the level score is below threshold
 generate_max_attempts: 10
+
+# Layout generation mode: cpsat | llm
+layout_mode: cpsat

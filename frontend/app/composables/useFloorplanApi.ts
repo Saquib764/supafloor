@@ -82,12 +82,28 @@ export function useFloorplanApi(baseUrl?: string) {
   async function getConfig() {
     const res = await fetch(`${apiBase}/floorplan/config`)
     if (!res.ok) throw new Error(await res.text())
-    return res.json() as Promise<{
-      score_level: 'basic' | 'intermediate' | 'advance'
-      score_threshold: number
-      generate_max_attempts: number
-    }>
+    return res.json() as Promise<EngineConfig>
   }
 
-  return { render, evaluate, generate, listPlans, loadPlan, deletePlan, importImage, getConfig }
+  async function updateConfig(updates: Partial<EngineConfig>) {
+    const res = await fetch(`${apiBase}/floorplan/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json() as Promise<EngineConfig>
+  }
+
+  return {
+    render,
+    evaluate,
+    generate,
+    listPlans,
+    loadPlan,
+    deletePlan,
+    importImage,
+    getConfig,
+    updateConfig,
+  }
 }
