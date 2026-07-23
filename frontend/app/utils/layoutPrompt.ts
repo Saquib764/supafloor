@@ -26,12 +26,31 @@ function joinNames(names: string[]): string {
   return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`
 }
 
-function polygonCentroid(polygon: Array<{ x: number, y: number }>): { x: number, y: number } {
-  const ring = polygon.length >= 2
+function openRing(polygon: Array<{ x: number, y: number }>): Array<{ x: number, y: number }> {
+  return polygon.length >= 2
     && polygon[0]!.x === polygon.at(-1)!.x
     && polygon[0]!.y === polygon.at(-1)!.y
     ? polygon.slice(0, -1)
     : polygon
+}
+
+function roundCoord(value: number): number {
+  return Math.round(value * 1000) / 1000
+}
+
+function polygonArea(polygon: Array<{ x: number, y: number }>): number {
+  const ring = openRing(polygon)
+  let area = 0
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]!
+    const b = ring[(i + 1) % ring.length]!
+    area += a.x * b.y - b.x * a.y
+  }
+  return Math.abs(area) * 0.5
+}
+
+function polygonCentroid(polygon: Array<{ x: number, y: number }>): { x: number, y: number } {
+  const ring = openRing(polygon)
   let area = 0
   let cx = 0
   let cy = 0
@@ -114,4 +133,46 @@ export function buildLayoutPrompt(plan: FloorPlan): string {
     if (linked.length) line += `, next to ${joinNames(linked)}`
     return `${line}.`
   }).join('\n')
+}
+
+export function buildLayoutSchema(plan: FloorPlan): string {
+  if (!plan.rooms.length) return ''
+
+  const rooms = [...plan.rooms]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(room => ({
+      name: room.name,
+      actual_area_sqft: roundCoord(polygonArea(room.polygon)),
+    }))
+
+  const layoutPolygon = plan.boundary?.exterior?.length
+    ? plan.boundary.exterior.map(point => ({
+        x: roundCoord(point.x),
+        y: roundCoord(point.y),
+      }))
+    : []
+
+  return JSON.stringify({ rooms, layout_polygon: layoutPolygon }, null, 2)
+}
+
+export function buildRoomOutput(plan: FloorPlan): string {
+  if (!plan.rooms.length) return '[]'
+
+  const rooms = [...plan.rooms]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((room) => {
+      const row: Record<string, unknown> = {
+        name: room.name,
+        actual_area_sqft: roundCoord(polygonArea(room.polygon)),
+        polygon: room.polygon.map(point => ({
+          x: roundCoord(point.x),
+          y: roundCoord(point.y),
+        })),
+      }
+      if (room.room_type) row.room_type = room.room_type
+      if (room.zone) row.zone = room.zone
+      return row
+    })
+
+  return JSON.stringify(rooms, null, 2)
 }

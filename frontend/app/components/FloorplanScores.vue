@@ -77,7 +77,7 @@ const levelLabels: Record<ScoreLevel, string> = {
           v-for="l in SCORE_LEVELS"
           :key="l"
           type="button"
-          class="flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors"
+          class="flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors cursor-pointer"
           :class="level === l
             ? 'bg-primary-500/20 text-primary-400'
             : 'text-gray-400 hover:text-gray-200'"

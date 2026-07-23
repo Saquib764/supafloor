@@ -1,22 +1,26 @@
 <script setup lang="ts">
-import { buildLayoutPrompt } from '~/utils/layoutPrompt'
+import { buildLayoutPrompt, buildLayoutSchema } from '~/utils/layoutPrompt'
 
 const props = defineProps<{
   plan: FloorPlan | null
 }>()
 
 const prompt = ref('')
+const schema = ref('')
 
 watch(() => props.plan?.id, () => {
   prompt.value = ''
+  schema.value = ''
 })
 
 function computePrompt() {
   if (!props.plan) {
     prompt.value = ''
+    schema.value = ''
     return
   }
   prompt.value = buildLayoutPrompt(props.plan)
+  schema.value = buildLayoutSchema(props.plan)
 }
 </script>
 
@@ -47,10 +51,18 @@ function computePrompt() {
       >
         Click compute to describe each room by name and location.
       </p>
-      <pre
-        v-else
-        class="whitespace-pre-wrap text-sm leading-relaxed text-gray-200 font-sans"
-      >{{ prompt }}</pre>
+      <template v-else>
+        <pre class="whitespace-pre-wrap text-sm leading-relaxed text-gray-200 font-sans">{{ prompt }}</pre>
+        <div
+          v-if="schema"
+          class="mt-6 space-y-2"
+        >
+          <p class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            Schema
+          </p>
+          <pre class="rounded-lg border border-gray-800 bg-gray-950/60 p-3 overflow-x-auto text-xs leading-relaxed text-gray-300"><code>{{ schema }}</code></pre>
+        </div>
+      </template>
     </div>
   </div>
 </template>

@@ -1,0 +1,24 @@
+{
+  "id": "dc09cb8878af",
+  "plan_name": "3-room",
+  "overall": 2.58,
+  "summary": "This floor plan scores **2.58/10 (Poor)** for \u201c3-room\u201d with 14 rooms, 398.0 ft\u00b2 total room area. It fails 3 hard rule(s): Minimum Area, Minimum Width, Window Lines. Strong areas include circulation efficiency, room proportions, storage adequacy. Weaker areas include living size, natural light, wet core compactness. Highest category is circulation (8.5); lowest is daylight (2.3).",
+  "layout_prompt": "Room 1 Bath is in the north-west, next to Living.\nHallway is in the north-east, next to Living and Room 3.\nLiving is in the north-center, next to Dining, Hallway, and Room 1 Bath.\nDining is in the north-west, next to Kitchen, Living, and Room 3 Bath.\nRoom 3 is in the west-center, next to Hallway, Room 1, and Room 3 Toilet.\nRoom 3 Toilet is in the center, next to Room 3.\nRoom 3 Bath is in the west-center, next to Dining.\nKitchen is in the center, next to Dining.\nRoom 1 Closet is in the north-center, next to Room 1.\nCloset is in the south-west, next to Room 2.\nRoom 1 Toilet is in the south-west, next to Room 2.\nRoom 1 is in the south-east, next to Room 1 Closet, Room 2 Bath, and Room 3.\nRoom 2 Bath is in the north-center, next to Room 1 and Room 2.\nRoom 2 is in the south-west, next to Closet, Room 1 Toilet, and Room 2 Bath.",
+  "categories": {
+    "geometry": 6.0,
+    "topology": 10.0,
+    "construction": 4.51,
+    "privacy": 7.5,
+    "circulation": 8.53,
+    "daylight": 2.3,
+    "architecture": 7.07,
+    "aesthetics": 7.41
+  },
+  "hard_failures": [
+    "minimum_area",
+    "minimum_width",
+    "windows_on_exterior"
+  ],
+  "report_file": "dc09cb8878af.score.md",
+  "image": "dc09cb8878af.png"
+}

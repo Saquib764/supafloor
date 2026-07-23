@@ -53,6 +53,25 @@ def _dedupe_closed(coords: list[tuple[int, int]]) -> list[tuple[int, int]]:
     return out
 
 
+def _remove_collinear(coords: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Drop vertices that lie on the same axis-aligned segment as their neighbors.
+
+    One pass is enough for Manhattan rings: mid-edge points are redundant, corners turn 90°.
+    """
+    if len(coords) < 3:
+        return coords
+    n = len(coords)
+    out: list[tuple[int, int]] = []
+    for i, pt in enumerate(coords):
+        prev = coords[(i - 1) % n]
+        nxt = coords[(i + 1) % n]
+        if (prev[0] == pt[0] == nxt[0]) or (prev[1] == pt[1] == nxt[1]):
+            continue
+        out.append(pt)
+    out = _dedupe_closed(out)
+    return out if len(out) >= 3 else coords
+
+
 def force_manhattan(coords: list[tuple[float, float]]) -> list[tuple[int, int]]:
     """Snap to integers and insert elbows so every edge is horizontal or vertical."""
     if not coords:
@@ -72,7 +91,7 @@ def force_manhattan(coords: list[tuple[float, float]]) -> list[tuple[int, int]]:
     lx, ly = forced[-1]
     if lx != fx and ly != fy:
         forced.append((fx, ly))
-    return _dedupe_closed(forced)
+    return _remove_collinear(_dedupe_closed(forced))
 
 
 def is_manhattan(coords: list[tuple[float, float]]) -> bool:

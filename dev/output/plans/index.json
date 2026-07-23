@@ -1,51 +1,9 @@
 [
   {
-    "id": "3625cd31af41",
+    "id": "dc09cb8878af",
     "label": "3-room",
     "bedroom_count": 3,
-    "room_count": 13,
-    "path": "3625cd31af41.json"
-  },
-  {
-    "id": "1e6dc5c589bb",
-    "label": "3-room",
-    "bedroom_count": 3,
-    "room_count": 10,
-    "path": "1e6dc5c589bb.json"
-  },
-  {
-    "id": "bdf90c197aad",
-    "label": "3-room",
-    "bedroom_count": 3,
-    "room_count": 10,
-    "path": "bdf90c197aad.json"
-  },
-  {
-    "id": "cacde6db9ec0",
-    "label": "3-room",
-    "bedroom_count": 3,
-    "room_count": 11,
-    "path": "cacde6db9ec0.json"
-  },
-  {
-    "id": "c3a806649e27",
-    "label": "3-room",
-    "bedroom_count": 3,
-    "room_count": 10,
-    "path": "c3a806649e27.json"
-  },
-  {
-    "id": "bd78bd14beea",
-    "label": "3-room",
-    "bedroom_count": 3,
-    "room_count": 11,
-    "path": "bd78bd14beea.json"
-  },
-  {
-    "id": "9244ec949953",
-    "label": "3-room",
-    "bedroom_count": 3,
-    "room_count": 13,
-    "path": "9244ec949953.json"
+    "room_count": 14,
+    "path": "dc09cb8878af.json"
   }
 ]
