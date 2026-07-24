@@ -1,0 +1,20 @@
+{
+  "model_target": "google/gemma-4-E4B-it (Unsloth LoRA)",
+  "format": "both",
+  "chat_roles": [
+    "system",
+    "user",
+    "model"
+  ],
+  "count": 1,
+  "skipped": 0,
+  "source": "/workspace/dev/output/plans",
+  "output": "/workspace/dev/output/unsloth/gemma4_e4b_sft.jsonl",
+  "fields": {
+    "prompt": "Natural-language room locations / adjacencies",
+    "schema": "Room target areas + boundary layout_polygon JSON",
+    "output": "Room polygon JSON (training target)",
+    "messages": "Gemma-4 ChatML with role=model for the response",
+    "instruction/input": "Alpaca aliases of prompt/schema for Studio mapping"
+  }
+}
