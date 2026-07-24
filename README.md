@@ -44,8 +44,9 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 # Tests
 uv run pytest -q
 
-# Generate a small dataset
-uv run floorplan dataset -n 20 --out ../../floorplan_dataset
+# Generate a basic-level deterministic corpus (no LLM)
+uv run floorplan dataset -n 5000 --seed 0 --score-level basic --workers 4 \
+  --out ../../floorplan_dataset/basic_5000
 ```
 
 Open the viewer: `frontend/public/floorplan-viewer.html` (expects API at `http://localhost:8000`).
