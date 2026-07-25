@@ -11,7 +11,7 @@ build/
 floorplan_dataset/
 *.png
 !frontend/public/**
-!dev/output/**
+!backend/floorplan/dev/output/**
 .DS_Store
 node_modules/
 .nuxt/

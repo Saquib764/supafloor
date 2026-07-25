@@ -1,11 +1,21 @@
-"""Natural-language layout prompts from floor plan geometry."""
+"""Layout prompt / schema / room-output builders for UI and training export."""
 
 from __future__ import annotations
 
-from floorplan.geometry import bounding_box, centroid
+from typing import Any
+
+from floorplan.geometry import area, bounding_box, centroid
 from floorplan.schemas.models import FloorPlan
 
 _REGION_BAND = 1 / 3
+
+
+def _round_coord(value: float) -> float:
+    return round(float(value), 3)
+
+
+def _point(x: float, y: float) -> dict[str, float]:
+    return {"x": _round_coord(x), "y": _round_coord(y)}
 
 
 def _region_label(nx: float, ny: float) -> str:
@@ -19,8 +29,8 @@ def _region_label(nx: float, ny: float) -> str:
         return 0
 
     yb, xb = band(ny), band(nx)
-    ns = { -1: "north", 1: "south" }.get(yb)
-    ew = { -1: "west", 1: "east" }.get(xb)
+    ns = {-1: "north", 1: "south"}.get(yb)
+    ew = {-1: "west", 1: "east"}.get(xb)
 
     if ns and ew:
         return f"{ns}-{ew}"
@@ -56,6 +66,21 @@ def _door_neighbors(plan: FloorPlan) -> dict[str, set[str]]:
     return neighbors
 
 
+def _selected_areas(plan: FloorPlan) -> dict[str, float]:
+    raw = (plan.metadata or {}).get("selected_areas")
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, float] = {}
+    for name, value in raw.items():
+        try:
+            area_sqft = float(value)
+        except (TypeError, ValueError):
+            continue
+        if area_sqft == area_sqft:  # not NaN
+            out[str(name)] = area_sqft
+    return out
+
+
 def build_layout_prompt(plan: FloorPlan) -> str:
     """Describe each room name and relative location in words only."""
     if not plan.rooms:
@@ -77,3 +102,55 @@ def build_layout_prompt(plan: FloorPlan) -> str:
         lines.append(f"{line}.")
 
     return "\n".join(lines)
+
+
+def build_layout_schema(plan: FloorPlan) -> dict[str, Any]:
+    """Target areas + layout polygon (Prompt tab schema)."""
+    if not plan.rooms:
+        return {"rooms": [], "layout_polygon": []}
+
+    targets = _selected_areas(plan)
+    rooms = [
+        {
+            "name": room.name,
+            "target_area_sqft": _round_coord(targets[room.name]) if room.name in targets else None,
+        }
+        for room in sorted(plan.rooms, key=lambda r: r.name)
+    ]
+    exterior = plan.boundary.exterior if plan.boundary else []
+    layout_polygon = [_point(p.x, p.y) for p in exterior]
+    return {"rooms": rooms, "layout_polygon": layout_polygon}
+
+
+def build_room_output(plan: FloorPlan) -> list[dict[str, Any]]:
+    """Per-room polygons (Output tab)."""
+    if not plan.rooms:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for room in sorted(plan.rooms, key=lambda r: r.name):
+        coords = room.coords()
+        rows.append(
+            {
+                "name": room.name,
+                "actual_area_sqft": _round_coord(area(coords)),
+                "polygon": [_point(x, y) for x, y in coords],
+                "room_type": room.room_type.value,
+                "zone": room.zone.value,
+            }
+        )
+    return rows
+
+
+def build_training_example(plan: FloorPlan) -> dict[str, Any] | None:
+    """One supervised pair: topology text + schema → room polygons."""
+    if not plan.rooms:
+        return None
+    return {
+        "id": str((plan.metadata or {}).get("plan_id") or plan.id),
+        "input": {
+            "prompt": build_layout_prompt(plan),
+            "schema": build_layout_schema(plan),
+        },
+        "output": build_room_output(plan),
+    }

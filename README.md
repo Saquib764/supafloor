@@ -54,12 +54,21 @@ Open the viewer: `frontend/public/floorplan-viewer.html` (expects API at `http:/
 ## Dev scripts
 
 ```bash
+cd backend/floorplan
+
 # Generate JSON + PNG into a folder
-uv run --project backend/floorplan python dev/generate_floorplans.py --out dev/output --count 5
+uv run python dev/generate_floorplans.py --out dev/output/plans --count 5
 
 # Score that folder → README.md with embedded images + human-readable reports
-uv run --project backend/floorplan python dev/score_floorplans.py --dir dev/output
+uv run python dev/score_floorplans.py --dir dev/output/plans
+
+# Export Prompt→Output training JSONL from a corpus folder
+uv run python dev/export_training.py \
+  --dir ../../floorplan_dataset/basic_5000 \
+  --out ../../floorplan_dataset/basic_5000_train.jsonl
 ```
+
+See `backend/floorplan/dev/README.md` for details.
 
 ## V1 capabilities
 

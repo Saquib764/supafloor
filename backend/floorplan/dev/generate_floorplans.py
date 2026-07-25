@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generate floor plans into a target folder as canonical plan JSON + PNG images.
 
-Usage (from repo root):
+Usage (from backend/floorplan):
 
-    uv run --project backend/floorplan python dev/generate_floorplans.py --out dev/output/plans --count 5
-    uv run --project backend/floorplan python dev/generate_floorplans.py --out /tmp/plans --rooms 3 --count 3
+    uv run python dev/generate_floorplans.py --out dev/output/plans --count 5
+    uv run python dev/generate_floorplans.py --out /tmp/plans --rooms 3 --count 3
 
 Each sample writes:
   <out>/001.json   — canonical plan JSON
@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--size", type=int, default=800, help="PNG render size")
     args = parser.parse_args(argv)
 
-    service_root = Path(__file__).resolve().parents[1] / "backend" / "floorplan"
+    service_root = Path(__file__).resolve().parents[1]
     if str(service_root) not in sys.path:
         sys.path.insert(0, str(service_root))
 
