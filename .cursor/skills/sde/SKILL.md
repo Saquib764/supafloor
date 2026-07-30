@@ -81,6 +81,12 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │       │   ├── main.py           # app factory, CORS, router registration
 │       │   ├── config.py
 │       │   └── tests/
+│       ├── dev/                  # Manual check scripts + outputs
+│       │   ├── README.md
+│       │   ├── generate_floorplans.py
+│       │   ├── score_floorplans.py
+│       │   ├── export_training.py
+│       │   └── output/           # sample plans / scores
 │       └── floorplan/            # FloorPlan purpose module
 │           ├── api/              # /floorplan/* HTTP routes
 │           ├── assets/           # static engine assets
@@ -97,26 +103,20 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │           ├── cli.py            # CLI entry (uv run floorplan …)
 │           └── __init__.py
 │
-├── frontend/                     # Viewer / debug UI
-│   ├── package.json
-│   ├── public/
-│   │   └── floorplan-viewer.html # standalone Vue viewer
-│   └── app/
-│       ├── types/
-│       │   └── floorplan.ts
-│       ├── pages/
-│       │   └── floorplan/
-│       │       └── index.vue
-│       ├── components/
-│       │   └── floorplan/        # Canvas, Inspector, Scores
-│       └── composables/
-│           └── floorplan/        # API client
-│
-└── dev/                          # Manual check scripts + outputs
-    ├── README.md
-    ├── generate_floorplans.py    # write JSON + PNG to a folder
-    ├── score_floorplans.py       # score folder → README reports
-    └── output/                   # tracked sample outputs
+└── frontend/                     # Viewer / debug UI
+    ├── package.json
+    ├── public/
+    │   └── floorplan-viewer.html # standalone Vue viewer
+    └── app/
+        ├── types/
+        │   └── floorplan.ts
+        ├── pages/
+        │   └── floorplan/
+        │       └── index.vue
+        ├── components/
+        │   └── floorplan/        # Canvas, Inspector, Scores
+        └── composables/
+            └── floorplan/        # API client
 ```
 
 ## Domain placement rules
@@ -132,11 +132,11 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 | Server shell | `backend/floorplan/app/` |
 | Orchestration | `backend/floorplan/floorplan/services/` |
 | Dataset export | `backend/floorplan/floorplan/dataset/` |
-| Manual scripts | `dev/` |
+| Manual scripts | `backend/floorplan/dev/` |
 | Viewer UI | `frontend/app/.../floorplan/` |
 
 ## Tooling
 
 - Backend: **uv** from `backend/floorplan/` (`uv sync --group dev`, `uv run uvicorn app.main:app --reload`)
 - Tests: `uv run pytest -q` from `backend/floorplan/`
-- Dev checks: `dev/generate_floorplans.py`, `dev/score_floorplans.py`
+- Dev checks: `dev/generate_floorplans.py`, `dev/score_floorplans.py`, `dev/export_training.py` (from `backend/floorplan/`)

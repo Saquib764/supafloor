@@ -1,4 +1,4 @@
-"""Persist canonical plan JSON under dev/output/plans/."""
+"""Persist canonical plan JSON under backend/floorplan/dev/output/plans/."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from typing import Any
 
 from floorplan.requirements.plan_io import plan_document_id
 
-# Repo: backend/floorplan/floorplan/dataset/store.py → ../../../.. = repo root
-_OUTPUT_ROOT = Path(__file__).resolve().parents[4] / "dev" / "output"
+# store.py → ../../.. = backend/floorplan (service root)
+_OUTPUT_ROOT = Path(__file__).resolve().parents[2] / "dev" / "output"
 _DEFAULT_PLANS_DIR = _OUTPUT_ROOT / "plans"
 _DEFAULT_SCORES_DIR = _OUTPUT_ROOT / "score"
 

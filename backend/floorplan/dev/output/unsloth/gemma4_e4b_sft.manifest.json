@@ -8,8 +8,8 @@
   ],
   "count": 1,
   "skipped": 0,
-  "source": "/workspace/dev/output/plans",
-  "output": "/workspace/dev/output/unsloth/gemma4_e4b_sft.jsonl",
+  "source": "/workspace/backend/floorplan/dev/output/plans",
+  "output": "/workspace/backend/floorplan/dev/output/unsloth/gemma4_e4b_sft.jsonl",
   "fields": {
     "prompt": "Natural-language room locations / adjacencies",
     "schema": "Room target areas + boundary layout_polygon JSON",

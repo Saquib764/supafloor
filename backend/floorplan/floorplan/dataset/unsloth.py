@@ -5,6 +5,9 @@ Unsloth Studio accepts local JSONL. For Gemma 4 IT LoRA, use ChatML-style
 
 Each row also carries Alpaca-style columns so Studio can map:
   instruction ← prompt, input ← schema, output ← output
+
+Builds on ``build_training_example`` (prompt / schema / output), then wraps
+those fields into Unsloth-ready chat or Alpaca text columns.
 """
 
 from __future__ import annotations
@@ -13,11 +16,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
-from floorplan.dataset.layout_prompt import (
-    build_layout_prompt,
-    build_layout_schema,
-    build_room_output,
-)
+from floorplan.dataset.layout_prompt import build_training_example
 from floorplan.requirements.plan_io import document_to_plan
 from floorplan.schemas.models import FloorPlan
 
@@ -32,6 +31,8 @@ SYSTEM_PROMPT = (
     "described in the prompt."
 )
 
+_SKIP_NAMES = frozenset({"index.json", "manifest.json", "scores_index.json"})
+
 
 def _user_content(prompt: str, schema: str) -> str:
     return f"Layout prompt:\n{prompt}\n\nSchema:\n{schema}"
@@ -39,14 +40,16 @@ def _user_content(prompt: str, schema: str) -> str:
 
 def build_sft_parts(plan: FloorPlan) -> dict[str, str] | None:
     """Return prompt / schema / output strings, or None if the plan has no rooms."""
-    prompt = build_layout_prompt(plan)
-    schema = build_layout_schema(plan)
-    if not prompt or not schema:
+    example = build_training_example(plan)
+    if example is None:
+        return None
+    prompt = example["input"]["prompt"]
+    if not prompt:
         return None
     return {
         "prompt": prompt,
-        "schema": schema,
-        "output": build_room_output(plan),
+        "schema": json.dumps(example["input"]["schema"], indent=2),
+        "output": json.dumps(example["output"], indent=2),
     }
 
 
@@ -69,12 +72,10 @@ def build_unsloth_row(
     }
 
     if fmt in ("alpaca", "both"):
-        # Studio Alpaca mapping: instruction / input / output
         row["instruction"] = parts["prompt"]
         row["input"] = parts["schema"]
 
     if fmt in ("messages", "both"):
-        # Gemma 4 IT chat roles — response role must be "model"
         row["messages"] = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": _user_content(parts["prompt"], parts["schema"])},
@@ -86,11 +87,10 @@ def build_unsloth_row(
 
 def iter_plan_documents(directory: Path) -> Iterable[tuple[str, dict[str, Any]]]:
     """Yield (stem, document) for each ``*.json`` plan file (skips index/manifest)."""
-    skip = {"index.json", "manifest.json"}
     for path in sorted(directory.glob("*.json")):
-        if path.name in skip:
+        if path.name in _SKIP_NAMES or path.name.endswith(".score.json"):
             continue
-        document = json.loads(path.read_text())
+        document = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(document, dict) or "rooms" not in document:
             continue
         yield path.stem, document

@@ -1,14 +1,21 @@
-"""Natural-language layout prompts, schemas, and room JSON from floor plan geometry."""
+"""Layout prompt / schema / room-output builders for UI and training export."""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from floorplan.geometry import area, bounding_box, centroid
 from floorplan.schemas.models import FloorPlan
 
 _REGION_BAND = 1 / 3
+
+
+def _round_coord(value: float) -> float:
+    return round(float(value), 3)
+
+
+def _point(x: float, y: float) -> dict[str, float]:
+    return {"x": _round_coord(x), "y": _round_coord(y)}
 
 
 def _region_label(nx: float, ny: float) -> str:
@@ -59,25 +66,18 @@ def _door_neighbors(plan: FloorPlan) -> dict[str, set[str]]:
     return neighbors
 
 
-def _round_coord(value: float) -> float:
-    return round(float(value), 3)
-
-
-def _point_row(x: float, y: float) -> dict[str, float]:
-    return {"x": _round_coord(x), "y": _round_coord(y)}
-
-
 def _selected_areas(plan: FloorPlan) -> dict[str, float]:
-    raw = plan.metadata.get("selected_areas")
+    raw = (plan.metadata or {}).get("selected_areas")
     if not isinstance(raw, dict):
         return {}
     out: dict[str, float] = {}
-    for name, area_value in raw.items():
+    for name, value in raw.items():
         try:
-            value = float(area_value)
+            area_sqft = float(value)
         except (TypeError, ValueError):
             continue
-        out[str(name)] = value
+        if area_sqft == area_sqft:  # not NaN
+            out[str(name)] = area_sqft
     return out
 
 
@@ -104,42 +104,53 @@ def build_layout_prompt(plan: FloorPlan) -> str:
     return "\n".join(lines)
 
 
-def build_layout_schema(plan: FloorPlan) -> str:
-    """JSON schema: room target areas + boundary polygon (pretty-printed)."""
+def build_layout_schema(plan: FloorPlan) -> dict[str, Any]:
+    """Target areas + layout polygon (Prompt tab schema)."""
     if not plan.rooms:
-        return ""
+        return {"rooms": [], "layout_polygon": []}
 
     targets = _selected_areas(plan)
     rooms = [
         {
             "name": room.name,
-            "target_area_sqft": (
-                _round_coord(targets[room.name]) if room.name in targets else None
-            ),
+            "target_area_sqft": _round_coord(targets[room.name]) if room.name in targets else None,
         }
         for room in sorted(plan.rooms, key=lambda r: r.name)
     ]
-    layout_polygon = [
-        _point_row(p.x, p.y) for p in (plan.boundary.exterior if plan.boundary else [])
-    ]
-    return json.dumps({"rooms": rooms, "layout_polygon": layout_polygon}, indent=2)
+    exterior = plan.boundary.exterior if plan.boundary else []
+    layout_polygon = [_point(p.x, p.y) for p in exterior]
+    return {"rooms": rooms, "layout_polygon": layout_polygon}
 
 
-def build_room_output(plan: FloorPlan) -> str:
-    """JSON room polygons the model should emit (pretty-printed)."""
+def build_room_output(plan: FloorPlan) -> list[dict[str, Any]]:
+    """Per-room polygons (Output tab)."""
     if not plan.rooms:
-        return "[]"
+        return []
 
-    rooms: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for room in sorted(plan.rooms, key=lambda r: r.name):
-        row: dict[str, Any] = {
-            "name": room.name,
-            "actual_area_sqft": _round_coord(area(room.coords())),
-            "polygon": [_point_row(p.x, p.y) for p in room.polygon],
-        }
-        if room.room_type is not None:
-            row["room_type"] = room.room_type.value
-        if room.zone is not None:
-            row["zone"] = room.zone.value
-        rooms.append(row)
-    return json.dumps(rooms, indent=2)
+        coords = room.coords()
+        rows.append(
+            {
+                "name": room.name,
+                "actual_area_sqft": _round_coord(area(coords)),
+                "polygon": [_point(x, y) for x, y in coords],
+                "room_type": room.room_type.value,
+                "zone": room.zone.value,
+            }
+        )
+    return rows
+
+
+def build_training_example(plan: FloorPlan) -> dict[str, Any] | None:
+    """One supervised pair: topology text + schema → room polygons."""
+    if not plan.rooms:
+        return None
+    return {
+        "id": str((plan.metadata or {}).get("plan_id") or plan.id),
+        "input": {
+            "prompt": build_layout_prompt(plan),
+            "schema": build_layout_schema(plan),
+        },
+        "output": build_room_output(plan),
+    }

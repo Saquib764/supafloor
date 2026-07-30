@@ -24,11 +24,24 @@ uv run floorplan serve --reload --port 8000
 uv run pytest -q
 ```
 
+## Dev scripts
+
+```bash
+uv run python dev/generate_floorplans.py --out dev/output/plans --count 5
+uv run python dev/score_floorplans.py --dir dev/output/plans
+uv run python dev/export_training.py \
+  --dir ../../floorplan_dataset/basic_5000 \
+  --out ../../floorplan_dataset/basic_5000_train.jsonl
+```
+
+See `dev/README.md`.
+
 ## Layout
 
 ```
 backend/floorplan/          # service root (this directory)
   app/                      # FastAPI server shell
+  dev/                      # manual generate / score / export scripts
   floorplan/                # floor plan purpose module
     api/                    # /floorplan/* routes
     dataset/                # sample generator

@@ -2,7 +2,7 @@
 """Export created floor plans to an Unsloth-ready Gemma 4 LoRA JSONL dataset.
 
 After generating plans (``dev/generate_floorplans.py`` or ``floorplan dataset``),
-run this to build prompt / schema / output rows for Unsloth Studio upload.
+run this to wrap prompt / schema / output into Unsloth Studio upload format.
 
 Gemma 4 IT format (LoRA SFT):
   - JSONL with a ``messages`` array
@@ -10,9 +10,11 @@ Gemma 4 IT format (LoRA SFT):
   - Also writes Alpaca columns ``instruction`` / ``input`` / ``output``
     (mapped from prompt / schema / output) for Studio auto-detect
 
-Usage (from repo root):
+For the generic Prompt→Output JSONL (no chat wrapper), use ``export_training.py``.
 
-    uv run --project backend/floorplan python dev/export_unsloth_dataset.py \\
+Usage (from backend/floorplan):
+
+    uv run python dev/export_unsloth_dataset.py \\
       --dir dev/output/plans \\
       --out dev/output/unsloth/gemma4_e4b_sft.jsonl
 """
@@ -55,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Plans directory not found: {args.dir}", file=sys.stderr)
         return 1
 
-    service_root = Path(__file__).resolve().parents[1] / "backend" / "floorplan"
+    service_root = Path(__file__).resolve().parents[1]
     if str(service_root) not in sys.path:
         sys.path.insert(0, str(service_root))
 
