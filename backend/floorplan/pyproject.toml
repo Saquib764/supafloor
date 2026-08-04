@@ -35,10 +35,11 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["app", "floorplan"]
+packages = ["app", "floorplan", "extraction"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "floorplan/prompts" = "floorplan/prompts"
+"extraction/prompts" = "extraction/prompts"
 
 [tool.uv]
 package = true
