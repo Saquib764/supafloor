@@ -68,11 +68,11 @@ export function useFloorplanApi(baseUrl?: string) {
     return res.json() as Promise<{ deleted: string }>
   }
 
-  async function importImage(file: File, feetPerPixel = 0.05) {
+  async function extractImage(file: File, canvasSize = 1024) {
     const form = new FormData()
     form.append('file', file)
     const res = await fetch(
-      `${apiBase}/floorplan/import?feet_per_pixel=${encodeURIComponent(String(feetPerPixel))}`,
+      `${apiBase}/floorplan/extract?canvas_size=${encodeURIComponent(String(canvasSize))}`,
       { method: 'POST', body: form },
     )
     if (!res.ok) throw new Error(await res.text())
@@ -102,7 +102,7 @@ export function useFloorplanApi(baseUrl?: string) {
     listPlans,
     loadPlan,
     deletePlan,
-    importImage,
+    extractImage,
     getConfig,
     updateConfig,
   }

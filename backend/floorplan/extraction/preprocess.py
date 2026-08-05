@@ -30,29 +30,33 @@ def _to_bw_morph(rgb: Image.Image) -> Image.Image:
 
     # step = cv2.erode(step, kernel, iterations=MORPH_ITERATIONS)
     # step = cv2.dilate(step, kernel, iterations=MORPH_ITERATIONS)
-    _, bw = cv2.threshold(step, THRESHOLD_VALUE, 255, cv2.THRESH_BINARY)
-    return Image.fromarray(bw, mode="L").convert("RGB")
+    # _, step = cv2.threshold(step, THRESHOLD_VALUE, 255, cv2.THRESH_BINARY)
+    return Image.fromarray(step, mode="L").convert("RGB")
 
 
-def prepare_canvas(source: bytes | Path | str) -> tuple[bytes, Image.Image, dict[str, Any]]:
-    """Fit image inside CANVAS_SIZE, center on white square canvas. Returns PNG bytes, PIL image, metadata."""
+def prepare_canvas(
+    source: bytes | Path | str,
+    *,
+    canvas_size: int = CANVAS_SIZE,
+) -> tuple[bytes, Image.Image, dict[str, Any]]:
+    """Fit image inside canvas_size, center on white square canvas. Returns PNG bytes, PIL image, metadata."""
     img = _load_image(source)
     orig_w, orig_h = img.size
-    scale = min(1.0, CANVAS_SIZE / max(orig_w, orig_h))
+    scale = min(1.0, canvas_size / max(orig_w, orig_h))
     new_w = max(1, round(orig_w * scale))
     new_h = max(1, round(orig_h * scale))
     resized = img.resize((new_w, new_h), Image.LANCZOS)
 
-    canvas = Image.new("RGB", (CANVAS_SIZE, CANVAS_SIZE), "white")
-    offset_x = (CANVAS_SIZE - new_w) // 2
-    offset_y = (CANVAS_SIZE - new_h) // 2
+    canvas = Image.new("RGB", (canvas_size, canvas_size), "white")
+    offset_x = (canvas_size - new_w) // 2
+    offset_y = (canvas_size - new_h) // 2
     canvas.paste(resized, (offset_x, offset_y))
     canvas = _to_bw_morph(canvas)
 
     buf = io.BytesIO()
     canvas.save(buf, format="PNG")
     meta = {
-        "canvas_size": CANVAS_SIZE,
+        "canvas_size": canvas_size,
         "original_size": [orig_w, orig_h],
         "scaled_size": [new_w, new_h],
         "scale": scale,

@@ -9,7 +9,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from extraction.constants import CANVAS_SIZE
+from extraction.constants import CANVAS_SIZE as DEFAULT_CANVAS_SIZE
 
 _FILL_COLORS = (
     "#E8D5B7",
@@ -23,9 +23,9 @@ _FILL_COLORS = (
 )
 
 
-def _setup_ax(ax: plt.Axes) -> None:
-    ax.set_xlim(1, CANVAS_SIZE)
-    ax.set_ylim(CANVAS_SIZE, 1)
+def _setup_ax(ax: plt.Axes, canvas_size: int) -> None:
+    ax.set_xlim(1, canvas_size)
+    ax.set_ylim(canvas_size, 1)
     ax.set_aspect("equal")
     ax.axis("off")
 
@@ -57,18 +57,19 @@ def plot_rooms(
     *,
     background: Image.Image | None = None,
     out_path: Path | str | None = None,
+    canvas_size: int = DEFAULT_CANVAS_SIZE,
 ) -> bytes:
     """Render room polygons. With background: side-by-side canvas + polygons. Returns PNG bytes."""
-    panel_in = CANVAS_SIZE / 100
+    panel_in = canvas_size / 100
     if background is not None:
         fig, (ax_img, ax_poly) = plt.subplots(1, 2, figsize=(2 * panel_in, panel_in), dpi=100)
-        _setup_ax(ax_img)
-        ax_img.imshow(background, extent=(1, CANVAS_SIZE, CANVAS_SIZE, 1))
-        _setup_ax(ax_poly)
+        _setup_ax(ax_img, canvas_size)
+        ax_img.imshow(background, extent=(1, canvas_size, canvas_size, 1))
+        _setup_ax(ax_poly, canvas_size)
         _draw_polygons(ax_poly, rooms)
     else:
         fig, ax_poly = plt.subplots(figsize=(panel_in, panel_in), dpi=100)
-        _setup_ax(ax_poly)
+        _setup_ax(ax_poly, canvas_size)
         _draw_polygons(ax_poly, rooms)
 
     fig.patch.set_facecolor("white")

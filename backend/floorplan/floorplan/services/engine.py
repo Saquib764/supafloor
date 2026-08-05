@@ -5,22 +5,18 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from floorplan.evaluator import score_plan
-from floorplan.importer import import_bw_image
 from floorplan.renderer import render_plan
 from floorplan.schemas.models import FloorPlan
 
 
 class FloorPlanEngine:
-    """Deterministic residential floor plan engine (no LLM)."""
+    """Residential floor plan engine."""
 
     def score(self, plan: FloorPlan, weights: Optional[dict[str, float]] = None):
         return score_plan(plan, weights=weights)
 
     def render(self, plan: FloorPlan, **kwargs) -> dict[str, Any]:
         return render_plan(plan, **kwargs)
-
-    def import_image(self, image_bytes: bytes, **kwargs) -> FloorPlan:
-        return import_bw_image(image_bytes, **kwargs)
 
     def generate_sample(self, **kwargs):
         from floorplan.dataset import generate_sample

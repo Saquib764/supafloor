@@ -13,7 +13,7 @@ import argparse
 import sys
 from pathlib import Path
 
-_DEFAULT_IMAGE = Path("out/fp.webp")
+_DEFAULT_IMAGE = Path("out/abc.drawio.png")
 _DEFAULT_OUT = Path("out")
 
 

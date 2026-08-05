@@ -12,7 +12,7 @@ from extraction.llm import image_part, parse_structured_messages
 from extraction.plot import plot_rooms
 from extraction.preprocess import prepare_canvas
 from extraction.prompts import render_prompt
-from extraction.schemas import ExtractionResponse
+from extraction.schemas import ExtractionResponse, extraction_response_model
 
 _DEFAULT_PROMPT = "v1"
 
@@ -32,13 +32,14 @@ def _output_stem(image: bytes | Path | str, stem: str | None) -> str:
 
 def _make_meta(
     *,
+    canvas_size: int,
     prompt: str,
     used_model: str,
     preprocess_meta: dict[str, Any],
     rooms: list[dict[str, Any]],
 ) -> dict[str, Any]:
     return {
-        "canvas_size": CANVAS_SIZE,
+        "canvas_size": canvas_size,
         "model": used_model,
         "prompt": prompt,
         "preprocess": preprocess_meta,
@@ -80,6 +81,7 @@ def _normalize_rooms(parsed: ExtractionResponse) -> list[dict[str, Any]]:
 def extract_rooms(
     image: bytes | Path | str,
     *,
+    canvas_size: int = CANVAS_SIZE,
     prompt: str = _DEFAULT_PROMPT,
     out_dir: Path | str | None = None,
     stem: str | None = None,
@@ -92,8 +94,8 @@ def extract_rooms(
         plot_png — polygon plot PNG
         debug_png — side-by-side canvas + polygon PNG
     """
-    canvas_png, canvas_img, preprocess_meta = prepare_canvas(image)
-    system, user = render_prompt(prompt, canvas_size=CANVAS_SIZE)
+    canvas_png, canvas_img, preprocess_meta = prepare_canvas(image, canvas_size=canvas_size)
+    system, user = render_prompt(prompt, canvas_size=canvas_size)
     used_model = EXTRACTION_MODEL
     save_dir = Path(out_dir) if out_dir is not None else None
     file_stem = _output_stem(image, stem)
@@ -110,16 +112,20 @@ def extract_rooms(
         },
     ]
 
+    response_model = (
+        ExtractionResponse if canvas_size == CANVAS_SIZE else extraction_response_model(canvas_size)
+    )
     parsed = parse_structured_messages(
         messages,
-        ExtractionResponse,
+        response_model,
         model=used_model,
         prompt_cache_key=cache_key,
     )
     rooms = _normalize_rooms(parsed)
-    plot_png = plot_rooms(rooms)
-    debug_png = plot_rooms(rooms, background=canvas_img)
+    plot_png = plot_rooms(rooms, canvas_size=canvas_size)
+    debug_png = plot_rooms(rooms, background=canvas_img, canvas_size=canvas_size)
     meta = _make_meta(
+        canvas_size=canvas_size,
         prompt=prompt,
         used_model=used_model,
         preprocess_meta=preprocess_meta,

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from extraction.constants import CANVAS_SIZE
+from extraction.extract import extract_rooms
+from extraction.to_floorplan import rooms_to_floorplan
 from floorplan.config import load_config, save_config
 from floorplan.dataset import delete_saved_plan, list_saved_plans, load_sample
 from floorplan.schemas.requests import EvaluateRequest, GenerateRequest, RenderRequest, UpdateConfigRequest
@@ -57,17 +61,24 @@ def render(body: RenderRequest) -> dict[str, Any]:
     )
 
 
-@router.post("/import")
-async def import_image(
+@router.post("/extract")
+async def extract_image(
     file: UploadFile = File(...),
-    feet_per_pixel: float = 0.05,
-) -> dict:
+    canvas_size: int = CANVAS_SIZE,
+) -> dict[str, Any]:
     data = await file.read()
     try:
-        plan = engine.import_image(data, feet_per_pixel=feet_per_pixel)
+        rooms, meta, plot_png, debug_png = extract_rooms(data, canvas_size=canvas_size)
+        floor_plan = rooms_to_floorplan(rooms, canvas_size=canvas_size, meta=meta)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return plan.model_dump()
+    return {
+        "rooms": rooms,
+        "meta": meta,
+        "floor_plan": floor_plan.model_dump(),
+        "plot_png_b64": base64.b64encode(plot_png).decode("ascii"),
+        "debug_png_b64": base64.b64encode(debug_png).decode("ascii"),
+    }
 
 
 @router.post("/generate")

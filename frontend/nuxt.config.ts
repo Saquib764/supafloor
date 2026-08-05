@@ -21,6 +21,6 @@ export default defineNuxtConfig({
   },
   routeRules: {
     '/': { ssr: false },
-    '/importer': { ssr: false },
+    '/extract': { ssr: false },
   },
 })

@@ -4,7 +4,7 @@ const api = useFloorplanApi()
 const plan = ref<FloorPlan | null>(null)
 const scores = ref<ScoreBreakdown | null>(null)
 const svg = ref('')
-const importing = ref(false)
+const extracting = ref(false)
 const error = ref<string | null>(null)
 const showLabels = ref(true)
 const showDimensions = ref(false)
@@ -27,16 +27,16 @@ async function refreshRender() {
   svg.value = rendered.svg
 }
 
-async function onImport(payload: { file: File, feetPerPixel: number }) {
-  importing.value = true
+async function onExtract(payload: { file: File, canvasSize: number }) {
+  extracting.value = true
   error.value = null
   try {
-    const imported = await api.importImage(payload.file, payload.feetPerPixel)
+    const extracted = await api.extractImage(payload.file, payload.canvasSize)
     const [rendered, evaluated] = await Promise.all([
-      api.render(imported, layers.value),
-      api.evaluate(imported),
+      api.render(extracted.floor_plan, layers.value),
+      api.evaluate(extracted.floor_plan),
     ])
-    plan.value = imported
+    plan.value = extracted.floor_plan
     svg.value = rendered.svg
     scores.value = evaluated
     await nextTick()
@@ -44,7 +44,7 @@ async function onImport(payload: { file: File, feetPerPixel: number }) {
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
-    importing.value = false
+    extracting.value = false
   }
 }
 
@@ -66,10 +66,10 @@ watch(layers, () => {
     <aside
       class="absolute left-0 top-0 bottom-0 z-10 w-72 flex flex-col border-r border-gray-800/80 bg-gray-950/85 backdrop-blur-md"
     >
-      <FloorplanImporterPanel
+      <FloorplanExtractionPanel
         class="min-h-0 flex-1"
-        :importing="importing"
-        @import="onImport"
+        :extracting="extracting"
+        @extract="onExtract"
       />
     </aside>
 
