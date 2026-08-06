@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from extraction.constants import CANVAS_SIZE, EXTRACTION_MODEL
+from extraction.constants import CANVAS_SIZE, EXTRACTION_MODEL, LLM_PROVIDER, REPLICATE_MODEL
 from extraction.llm import image_part, parse_structured_messages
 from extraction.plot import plot_rooms
 from extraction.preprocess import prepare_canvas
@@ -96,7 +96,7 @@ def extract_rooms(
     """
     canvas_png, canvas_img, preprocess_meta = prepare_canvas(image, canvas_size=canvas_size)
     system, user = render_prompt(prompt, canvas_size=canvas_size)
-    used_model = EXTRACTION_MODEL
+    used_model = REPLICATE_MODEL if LLM_PROVIDER == "replicate" else EXTRACTION_MODEL
     save_dir = Path(out_dir) if out_dir is not None else None
     file_stem = _output_stem(image, stem)
     cache_key = _prompt_cache_key(canvas_png, prompt)
@@ -120,6 +120,7 @@ def extract_rooms(
         response_model,
         model=used_model,
         prompt_cache_key=cache_key,
+        image_png=canvas_png,
     )
     rooms = _normalize_rooms(parsed)
     plot_png = plot_rooms(rooms, canvas_size=canvas_size)
