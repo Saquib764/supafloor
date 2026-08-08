@@ -1,5 +1,12 @@
 [
   {
+    "id": "a5a3eda8662b",
+    "label": "3-room",
+    "bedroom_count": 3,
+    "room_count": 8,
+    "path": "a5a3eda8662b.json"
+  },
+  {
     "id": "a62a7ba7a954",
     "label": "3-room",
     "bedroom_count": 3,
