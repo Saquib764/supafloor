@@ -1,10 +1,15 @@
 <script setup lang="ts">
 const props = withDefaults(defineProps<{
   svg?: string
+  pngB64?: string
+  viewMode?: 'simple' | 'realistic'
   plan?: FloorPlan | null
   highlightRoomId?: string | null
   background?: boolean
 }>(), {
+  svg: '',
+  pngB64: '',
+  viewMode: 'simple',
   background: false,
 })
 
@@ -86,12 +91,22 @@ defineExpose({ resetView })
     >
       <div
         class="origin-center transition-transform duration-75 [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:block"
-        :class="background ? '[&_svg]:drop-shadow-2xl' : '[&_svg]:drop-shadow-lg'"
+        :class="background ? '[&_svg]:drop-shadow-2xl [&_img]:drop-shadow-2xl' : '[&_svg]:drop-shadow-lg [&_img]:drop-shadow-lg'"
         :style="{
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
         }"
-        v-html="svg || ''"
-      />
+      >
+        <img
+          v-if="viewMode === 'realistic' && pngB64"
+          :src="`data:image/png;base64,${pngB64}`"
+          alt="Floor plan"
+          class="max-w-full h-auto block"
+        >
+        <div
+          v-else
+          v-html="svg || ''"
+        />
+      </div>
     </div>
   </div>
 </template>

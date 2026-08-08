@@ -4,14 +4,24 @@ export function useFloorplanApi(baseUrl?: string) {
   const config = useRuntimeConfig()
   const apiBase = baseUrl ?? config.public.floorplanApi ?? DEFAULT_API
 
-  async function render(plan: unknown, layers?: string[]) {
+  async function render(plan: unknown, layers?: string[], size = 800) {
     const res = await fetch(`${apiBase}/floorplan/render`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan, layers }),
+      body: JSON.stringify({ plan, layers, size }),
     })
     if (!res.ok) throw new Error(await res.text())
-    return res.json()
+    return res.json() as Promise<RenderResult>
+  }
+
+  async function exportRealistic(plan: FloorPlan, size = 1024) {
+    const res = await fetch(`${apiBase}/floorplan/export/realistic`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan, size }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json() as Promise<{ png_b64: string, size: number, metadata: Record<string, unknown> }>
   }
 
   async function evaluate(plan: unknown) {
@@ -97,6 +107,7 @@ export function useFloorplanApi(baseUrl?: string) {
 
   return {
     render,
+    exportRealistic,
     evaluate,
     generate,
     listPlans,

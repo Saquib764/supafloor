@@ -9,13 +9,13 @@ Requires [uv](https://docs.astral.sh/uv/).
 ```bash
 cd backend/floorplan
 uv sync --group dev
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 Alternative via CLI:
 
 ```bash
-uv run floorplan serve --reload --port 8000
+uv run floorplan serve --reload --port 8001
 ```
 
 ## Tests

@@ -27,6 +27,8 @@ const showLabels = ref(true)
 const showDimensions = ref(false)
 const showTopology = ref(true)
 const showCirculation = ref(false)
+const viewMode = ref<'simple' | 'realistic'>('simple')
+const pngB64 = ref('')
 const canvasRef = ref<{ resetView: () => void } | null>(null)
 
 const listItems = computed<FloorplanEntry[]>(() =>
@@ -56,6 +58,24 @@ async function refreshRender(entry: LoadedFloorplan) {
   entry.svg = rendered.svg
 }
 
+async function refreshRealistic(entry: LoadedFloorplan) {
+  const exported = await api.exportRealistic(entry.plan)
+  if (selectedId.value === entry.id) pngB64.value = exported.png_b64
+}
+
+async function refreshSelectedView() {
+  const entry = selected.value
+  if (!entry?.plan.rooms?.length) {
+    pngB64.value = ''
+    return
+  }
+  if (viewMode.value === 'realistic') {
+    await refreshRealistic(entry)
+  } else if (!entry.svg) {
+    await refreshRender(entry)
+  }
+}
+
 async function refreshSelectedRender() {
   if (!selected.value) return
   await refreshRender(selected.value)
@@ -83,7 +103,8 @@ async function applySample(sample: Record<string, any>, select = true) {
     selectedId.value = entry.id
     selectedRoomId.value = entry.plan.rooms[0]?.id ?? null
   }
-  if (!entry.svg) await refreshRender(entry)
+  if (viewMode.value === 'realistic') await refreshRealistic(entry)
+  else if (!entry.svg) await refreshRender(entry)
 }
 
 async function refreshList() {
@@ -124,7 +145,7 @@ async function onSelect(id: string) {
       await applySample(sample, true)
     } else {
       selectedRoomId.value = entry.plan.rooms[0]?.id ?? null
-      if (!entry.svg) await refreshRender(entry)
+      await refreshSelectedView()
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -194,8 +215,18 @@ async function onAction(action: string) {
 }
 
 watch(layers, () => {
-  refreshSelectedRender().catch(() => undefined)
+  if (viewMode.value === 'simple') {
+    refreshSelectedRender().catch(() => undefined)
+  }
 })
+
+watch(viewMode, () => {
+  refreshSelectedView().catch(() => undefined)
+})
+
+watch(() => selected.value?.plan, () => {
+  refreshSelectedView().catch(() => undefined)
+}, { deep: true })
 
 onMounted(async () => {
   try {
@@ -215,7 +246,9 @@ onMounted(async () => {
       ref="canvasRef"
       class="absolute inset-0 z-0"
       background
+      :view-mode="viewMode"
       :svg="selected?.svg"
+      :png-b64="pngB64"
       :plan="selected?.plan ?? null"
       :highlight-room-id="selectedRoomId"
     />
@@ -252,27 +285,33 @@ onMounted(async () => {
       />
     </aside>
 
+    <div class="absolute top-4 left-72 right-80 z-10 flex justify-center pointer-events-none">
+      <FloorplanViewModeToggle v-model="viewMode" />
+    </div>
+
     <FloorplanEditorBar
       class="absolute bottom-4 left-72 right-80 z-10"
       @reset-view="canvasRef?.resetView()"
     >
       <template #controls>
-        <UCheckbox
-          v-model="showLabels"
-          label="Labels"
-        />
-        <UCheckbox
-          v-model="showDimensions"
-          label="Dimensions"
-        />
-        <UCheckbox
-          v-model="showTopology"
-          label="Topology"
-        />
-        <UCheckbox
-          v-model="showCirculation"
-          label="Circulation"
-        />
+        <template v-if="viewMode === 'simple'">
+          <UCheckbox
+            v-model="showLabels"
+            label="Labels"
+          />
+          <UCheckbox
+            v-model="showDimensions"
+            label="Dimensions"
+          />
+          <UCheckbox
+            v-model="showTopology"
+            label="Topology"
+          />
+          <UCheckbox
+            v-model="showCirculation"
+            label="Circulation"
+          />
+        </template>
       </template>
     </FloorplanEditorBar>
 

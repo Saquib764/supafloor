@@ -29,6 +29,13 @@ class GenerateRequest(BaseModel):
     save: bool = True
 
 
+class RealisticExportRequest(BaseModel):
+    plan: FloorPlan | None = None
+    rooms: list[dict] | None = None
+    canvas_size: int = 1024
+    size: int = Field(default=1024, ge=256, le=2048)
+
+
 class UpdateConfigRequest(BaseModel):
     score_level: Optional[str] = None
     score_threshold: Optional[float] = Field(default=None, ge=0, le=10)

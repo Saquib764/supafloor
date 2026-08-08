@@ -1,0 +1,22 @@
+{
+  "id": "a62a7ba7a954",
+  "plan_name": "3-room",
+  "overall": 5.38,
+  "summary": "This floor plan scores **5.38/10 (Weak)** for \u201c3-room\u201d with 9 rooms, 1120.0 ft\u00b2 total room area. It fails 1 hard rule(s): Window Lines. Strong areas include living size, bedroom ratio, room proportions. Weaker areas include natural light, privacy, wet core compactness. Highest category is geometry (10.0); lowest is privacy (2.5).",
+  "layout_prompt": "Hallway is in the north-west, next to Living and Room 3.\nLiving is in the north-east, next to Dining, Hallway, and Room 2.\nRoom 3 is in the west-center, next to Hallway.\nDining is in the west-center, next to Kitchen, Living, and Room 1.\nKitchen is in the center, next to Dining.\nRoom 1 Closet is in the south-east, next to Room 1.\nRoom 2 is in the south-west, next to Living.\nRoom 1 is in the south-east, next to Dining, Room 1 Bath, and Room 1 Closet.\nRoom 1 Bath is in the north-center, next to Room 1.",
+  "categories": {
+    "geometry": 10.0,
+    "topology": 10.0,
+    "construction": 6.33,
+    "privacy": 2.5,
+    "circulation": 7.17,
+    "daylight": 2.54,
+    "architecture": 8.0,
+    "aesthetics": 7.7
+  },
+  "hard_failures": [
+    "windows_on_exterior"
+  ],
+  "report_file": "a62a7ba7a954.score.md",
+  "image": "a62a7ba7a954.png"
+}

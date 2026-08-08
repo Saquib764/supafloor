@@ -10,6 +10,8 @@ const showLabels = ref(true)
 const showDimensions = ref(false)
 const showTopology = ref(true)
 const showCirculation = ref(false)
+const viewMode = ref<'simple' | 'realistic'>('simple')
+const pngB64 = ref('')
 const canvasRef = ref<{ resetView: () => void } | null>(null)
 
 const layers = computed(() => {
@@ -20,6 +22,27 @@ const layers = computed(() => {
   if (showCirculation.value) list.push('circulation')
   return list
 })
+
+async function refreshRealistic() {
+  if (!plan.value?.rooms.length) {
+    pngB64.value = ''
+    return
+  }
+  const exported = await api.exportRealistic(plan.value)
+  pngB64.value = exported.png_b64
+}
+
+async function refreshView() {
+  if (!plan.value?.rooms.length) {
+    pngB64.value = ''
+    return
+  }
+  if (viewMode.value === 'realistic') {
+    await refreshRealistic()
+  } else {
+    await refreshRender()
+  }
+}
 
 async function refreshRender() {
   if (!plan.value) return
@@ -39,6 +62,9 @@ async function onExtract(payload: { file: File, canvasSize: number }) {
     plan.value = extracted.floor_plan
     svg.value = rendered.svg
     scores.value = evaluated
+    if (viewMode.value === 'realistic') {
+      await refreshRealistic()
+    }
     await nextTick()
     canvasRef.value?.resetView()
   } catch (e) {
@@ -49,8 +75,18 @@ async function onExtract(payload: { file: File, canvasSize: number }) {
 }
 
 watch(layers, () => {
-  refreshRender().catch(() => undefined)
+  if (viewMode.value === 'simple') {
+    refreshRender().catch(() => undefined)
+  }
 })
+
+watch(viewMode, () => {
+  refreshView().catch(() => undefined)
+})
+
+watch(plan, () => {
+  refreshView().catch(() => undefined)
+}, { deep: true })
 </script>
 
 <template>
@@ -59,7 +95,9 @@ watch(layers, () => {
       ref="canvasRef"
       class="absolute inset-0 z-0"
       background
+      :view-mode="viewMode"
       :svg="svg"
+      :png-b64="pngB64"
       :plan="plan"
     />
 
@@ -76,33 +114,39 @@ watch(layers, () => {
     <aside
       class="absolute right-0 top-0 bottom-0 z-10 w-80 flex flex-col border-l border-gray-800/80 bg-gray-950/85 backdrop-blur-md"
     >
-      <FloorplanScores
-        :key="scores?.overall ?? 'empty'"
+      <FloorplanRightPanel
         :scores="scores"
+        :plan="plan"
       />
     </aside>
+
+    <div class="absolute top-4 left-72 right-80 z-10 flex justify-center pointer-events-none">
+      <FloorplanViewModeToggle v-model="viewMode" />
+    </div>
 
     <FloorplanEditorBar
       class="absolute bottom-4 left-72 right-80 z-10"
       @reset-view="canvasRef?.resetView()"
     >
       <template #controls>
-        <UCheckbox
-          v-model="showLabels"
-          label="Labels"
-        />
-        <UCheckbox
-          v-model="showDimensions"
-          label="Dimensions"
-        />
-        <UCheckbox
-          v-model="showTopology"
-          label="Topology"
-        />
-        <UCheckbox
-          v-model="showCirculation"
-          label="Circulation"
-        />
+        <template v-if="viewMode === 'simple'">
+          <UCheckbox
+            v-model="showLabels"
+            label="Labels"
+          />
+          <UCheckbox
+            v-model="showDimensions"
+            label="Dimensions"
+          />
+          <UCheckbox
+            v-model="showTopology"
+            label="Topology"
+          />
+          <UCheckbox
+            v-model="showCirculation"
+            label="Circulation"
+          />
+        </template>
       </template>
     </FloorplanEditorBar>
 

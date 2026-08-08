@@ -12,7 +12,14 @@ from extraction.extract import extract_rooms
 from extraction.to_floorplan import rooms_to_floorplan
 from floorplan.config import load_config, save_config
 from floorplan.dataset import delete_saved_plan, list_saved_plans, load_sample
-from floorplan.schemas.requests import EvaluateRequest, GenerateRequest, RenderRequest, UpdateConfigRequest
+from export.render import export_realistic
+from floorplan.schemas.requests import (
+    EvaluateRequest,
+    GenerateRequest,
+    RealisticExportRequest,
+    RenderRequest,
+    UpdateConfigRequest,
+)
 from floorplan.services.engine import FloorPlanEngine
 
 router = APIRouter(prefix="/floorplan", tags=["floorplan"])
@@ -59,6 +66,22 @@ def render(body: RenderRequest) -> dict[str, Any]:
         layers=body.layers,
         highlight_room_id=body.highlight_room_id,
     )
+
+
+@router.post("/export/realistic")
+def export_realistic_route(body: RealisticExportRequest) -> dict[str, Any]:
+    """POST /floorplan/export/realistic → 1024 PNG as base64."""
+    if body.plan is None and not body.rooms:
+        raise HTTPException(400, "Provide either plan or rooms")
+    try:
+        return export_realistic(
+            plan=body.plan,
+            rooms=body.rooms,
+            canvas_size=body.canvas_size,
+            size=body.size,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/extract")
