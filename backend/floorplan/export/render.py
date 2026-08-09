@@ -17,7 +17,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.axes import Axes
 
-from export.draw import draw_door, draw_wall, draw_window
+from export.draw import draw_door, draw_polygon, draw_wall, draw_window
 from floorplan.schemas.models import FloorPlan
 
 Coord = tuple[float, float]
@@ -254,6 +254,11 @@ def _add_window(ax: Axes, start: Coord, end: Coord) -> None:
     )
 
 
+def _draw_room_polygons(ax: Axes, geom: _PixelGeom) -> None:
+    for _, polygon, _ in geom.rooms:
+        draw_polygon(ax, polygon)
+
+
 def _add_room_labels(ax: Axes, geom: _PixelGeom) -> int:
     count = 0
     for _, polygon, label in geom.rooms:
@@ -270,6 +275,7 @@ def _render_geom(geom: _PixelGeom) -> tuple[bytes, int, int]:
         raise ValueError("Floor plan has no rooms")
 
     fig, ax = _create_canvas(geom.size)
+    _draw_room_polygons(ax, geom)
     edge_counts = _collect_edges(geom.rooms)
     openings = geom.doors + geom.windows
     edge_gaps = _match_openings_to_edges(edge_counts, openings)

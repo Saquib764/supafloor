@@ -10,7 +10,7 @@ from typing import Any, Optional
 from floorplan.config import load_config
 from floorplan.constants import pick_target_area
 from floorplan.dataset.artifacts import write_plan_artifacts
-from floorplan.dataset.store import delete_document, list_documents, load_document, plans_dir, save_document, scores_dir
+from floorplan.dataset.store import delete_document, list_documents, load_document, plan_dir, save_document
 from floorplan.evaluator import hard_failures, score_plan
 from floorplan.renderer import render_plan
 from floorplan.requirements import generate_plan_document
@@ -44,7 +44,7 @@ def _sample_from_saved(
 
     plan_id = plan_document_id(document)
     if write_artifacts:
-        write_plan_artifacts(plan, scores, scores_dir(), plan_id=plan_id)
+        write_plan_artifacts(plan, scores, plan_dir(plan_id), plan_id=plan_id)
 
     summary = document.get("summary") or {}
     requirements = document.get("requirements") or {}

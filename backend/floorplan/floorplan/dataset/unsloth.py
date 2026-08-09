@@ -86,8 +86,21 @@ def build_unsloth_row(
 
 
 def iter_plan_documents(directory: Path) -> Iterable[tuple[str, dict[str, Any]]]:
-    """Yield (stem, document) for each ``*.json`` plan file (skips index/manifest)."""
-    for path in sorted(directory.glob("*.json")):
+    """Yield (plan_id, document) for each saved plan (flat JSON or ``{id}/floorplan.json``)."""
+    from floorplan.dataset.store import PLAN_JSON
+
+    for path in sorted(directory.iterdir()):
+        if path.is_dir():
+            json_path = path / PLAN_JSON
+            if not json_path.exists():
+                continue
+            document = json.loads(json_path.read_text(encoding="utf-8"))
+            if not isinstance(document, dict) or "rooms" not in document:
+                continue
+            yield path.name, document
+            continue
+        if path.suffix != ".json":
+            continue
         if path.name in _SKIP_NAMES or path.name.endswith(".score.json"):
             continue
         document = json.loads(path.read_text(encoding="utf-8"))

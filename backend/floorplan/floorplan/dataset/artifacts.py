@@ -1,4 +1,4 @@
-"""Write PNG renders and score markdown sidecars for saved plans."""
+"""Write PNG renders and score sidecars for saved plans."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from floorplan.dataset.layout_prompt import build_layout_prompt
+from floorplan.dataset.store import PLAN_JSON, PLAN_PNG, SCORE_JSON, SCORE_MD
 from floorplan.evaluator import score_label
 from floorplan.renderer import render_png
 from floorplan.schemas.models import FloorPlan, ScoreBreakdown
@@ -24,20 +25,16 @@ def write_plan_artifacts(
 ) -> dict[str, str]:
     """Render PNG and write score sidecars. Returns filenames."""
     directory.mkdir(parents=True, exist_ok=True)
-    stem = plan_id
-    png_name = f"{stem}.png"
-    score_md_name = f"{stem}.score.md"
-    score_json_name = f"{stem}.score.json"
 
-    (directory / png_name).write_bytes(render_png(plan, size=size, layers=_RENDER_LAYERS))
+    (directory / PLAN_PNG).write_bytes(render_png(plan, size=size, layers=_RENDER_LAYERS))
 
     layout_prompt = build_layout_prompt(plan)
     per_plan_lines = [
         f"# Score report — {plan.name}",
         "",
-        f"Source: `../plans/{stem}.json`",
+        f"Source: `{PLAN_JSON}`",
         "",
-        f"![{plan.name}]({png_name})",
+        f"![{plan.name}]({PLAN_PNG})",
         "",
         scores.summary,
         "",
@@ -45,7 +42,7 @@ def write_plan_artifacts(
     if layout_prompt:
         per_plan_lines.extend(["### Layout prompt", "", layout_prompt, ""])
     per_plan_lines.append(scores.report)
-    (directory / score_md_name).write_text("\n".join(per_plan_lines))
+    (directory / SCORE_MD).write_text("\n".join(per_plan_lines))
 
     hard_failures = [r.rule_id for r in scores.rules if r.hard and not r.passed]
     score_json: dict[str, Any] = {
@@ -65,14 +62,14 @@ def write_plan_artifacts(
             "aesthetics": scores.aesthetics,
         },
         "hard_failures": hard_failures,
-        "report_file": score_md_name,
-        "image": png_name,
+        "report_file": SCORE_MD,
+        "image": PLAN_PNG,
     }
-    (directory / score_json_name).write_text(json.dumps(score_json, indent=2))
+    (directory / SCORE_JSON).write_text(json.dumps(score_json, indent=2))
     return {
-        "png": png_name,
-        "score_md": score_md_name,
-        "score_json": score_json_name,
+        "png": PLAN_PNG,
+        "score_md": SCORE_MD,
+        "score_json": SCORE_JSON,
         "layout_prompt": layout_prompt,
     }
 
