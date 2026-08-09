@@ -11,7 +11,7 @@ from extraction.constants import CANVAS_SIZE
 from extraction.extract import extract_rooms
 from extraction.to_floorplan import rooms_to_floorplan
 from floorplan.config import load_config, save_config
-from floorplan.dataset import delete_saved_plan, list_saved_plans, load_sample
+from dataset import delete_saved_plan, list_saved_plans, load_sample
 from export.render import export_realistic
 from floorplan.schemas.requests import (
     EvaluateRequest,
@@ -79,6 +79,9 @@ def export_realistic_route(body: RealisticExportRequest) -> dict[str, Any]:
             rooms=body.rooms,
             canvas_size=body.canvas_size,
             size=body.size,
+            room_outline_thick=body.room_outline_thick,
+            boundary_thick=body.boundary_thick,
+            opening_thick=body.opening_thick,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
-from floorplan.dataset.layout_prompt import build_training_example
+from dataset.layout_prompt import build_training_example
 from floorplan.requirements.plan_io import document_to_plan
 from floorplan.schemas.models import FloorPlan
 
@@ -87,7 +87,7 @@ def build_unsloth_row(
 
 def iter_plan_documents(directory: Path) -> Iterable[tuple[str, dict[str, Any]]]:
     """Yield (plan_id, document) for each saved plan (flat JSON or ``{id}/floorplan.json``)."""
-    from floorplan.dataset.store import PLAN_JSON
+    from dataset.store import PLAN_JSON
 
     for path in sorted(directory.iterdir()):
         if path.is_dir():

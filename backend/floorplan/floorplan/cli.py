@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from floorplan.dataset import generate_dataset, generate_sample
+from dataset import generate_dataset, generate_sample
 
 
 def main(argv: list[str] | None = None) -> None:

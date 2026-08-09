@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import base64
 import io
-import math
 import random
 import re
-from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,19 +14,17 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.axes import Axes
+from shapely.geometry import Polygon
+from shapely.ops import unary_union
 
-from export.draw import draw_door, draw_polygon, draw_wall, draw_window
+from export.draw import draw_door, draw_polygon, draw_window
 from floorplan.schemas.models import FloorPlan
 
 Coord = tuple[float, float]
-Edge = tuple[Coord, Coord]
-Gap = tuple[float, float]
 
-_EXTERIOR_THICK = 8.0
-_INTERIOR_THICK = 3.0
-_EDGE_KEY_PREC = 1
-_MATCH_TOL = 8.0
-_MIN_WALL_PIECE = 4.0
+DEFAULT_ROOM_OUTLINE_THICK = 4.0
+DEFAULT_BOUNDARY_THICK = 8.0
+DEFAULT_OPENING_THICK = 12.0
 
 
 @dataclass
@@ -46,127 +42,9 @@ def _open_ring(polygon: list[Coord]) -> list[Coord]:
     return list(polygon)
 
 
-def _edge_key(a: Coord, b: Coord) -> tuple[float, float, float, float]:
-    if a > b:
-        a, b = b, a
-    return (
-        round(a[0], _EDGE_KEY_PREC),
-        round(a[1], _EDGE_KEY_PREC),
-        round(b[0], _EDGE_KEY_PREC),
-        round(b[1], _EDGE_KEY_PREC),
-    )
-
-
-def _edge_from_key(key: tuple[float, float, float, float]) -> Edge:
-    return (key[0], key[1]), (key[2], key[3])
-
-
-def _lerp(a: Coord, b: Coord, t: float) -> Coord:
-    return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
-
-
-def _project_t(p: Coord, a: Coord, b: Coord) -> float:
-    dx, dy = b[0] - a[0], b[1] - a[1]
-    len2 = dx * dx + dy * dy
-    if len2 < 1e-12:
-        return 0.0
-    return ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2
-
-
-def _dist_to_segment(p: Coord, a: Coord, b: Coord) -> float:
-    t = max(0.0, min(1.0, _project_t(p, a, b)))
-    q = _lerp(a, b, t)
-    return math.hypot(p[0] - q[0], p[1] - q[1])
-
-
-def _opening_gap(start: Coord, end: Coord, a: Coord, b: Coord) -> Gap | None:
-    if _dist_to_segment(start, a, b) > _MATCH_TOL or _dist_to_segment(end, a, b) > _MATCH_TOL:
-        return None
-    t0, t1 = _project_t(start, a, b), _project_t(end, a, b)
-    lo, hi = sorted((t0, t1))
-    if hi < -0.02 or lo > 1.02:
-        return None
-    return max(0.0, lo), min(1.0, hi)
-
-
-def _merge_gaps(gaps: list[Gap]) -> list[Gap]:
-    if not gaps:
-        return []
-    ordered = sorted(gaps)
-    merged: list[Gap] = [ordered[0]]
-    for lo, hi in ordered[1:]:
-        prev_lo, prev_hi = merged[-1]
-        if lo <= prev_hi + 0.5:
-            merged[-1] = (prev_lo, max(prev_hi, hi))
-        else:
-            merged.append((lo, hi))
-    return merged
-
-
-def _split_edge(a: Coord, b: Coord, gaps: list[Gap]) -> list[Edge]:
-    if not gaps:
-        return [(a, b)]
-    pieces: list[Edge] = []
-    cursor = 0.0
-    for lo, hi in _merge_gaps(gaps):
-        if lo - cursor >= _MIN_WALL_PIECE:
-            pieces.append((_lerp(a, b, cursor), _lerp(a, b, lo)))
-        cursor = max(cursor, hi)
-    if 1.0 - cursor >= _MIN_WALL_PIECE:
-        pieces.append((_lerp(a, b, cursor), _lerp(a, b, 1.0)))
-    return pieces
-
-
-def _collect_edges(rooms: list[tuple[str, list[Coord], str]]) -> Counter[tuple[float, float, float, float]]:
-    counts: Counter[tuple[float, float, float, float]] = Counter()
-    for _, polygon, _ in rooms:
-        ring = _open_ring(polygon)
-        for i in range(len(ring)):
-            counts[_edge_key(ring[i], ring[(i + 1) % len(ring)])] += 1
-    return counts
-
-
-def _match_openings_to_edges(
-    edges: Counter[tuple[float, float, float, float]],
-    openings: list[tuple[Coord, Coord]],
-) -> dict[tuple[float, float, float, float], list[Gap]]:
-    gaps: dict[tuple[float, float, float, float], list[Gap]] = defaultdict(list)
-    for start, end in openings:
-        best_key: tuple[float, float, float, float] | None = None
-        best_gap: Gap | None = None
-        best_len = 0.0
-        for key in edges:
-            a, b = _edge_from_key(key)
-            gap = _opening_gap(start, end, a, b)
-            if gap is None:
-                continue
-            span = gap[1] - gap[0]
-            if span > best_len:
-                best_len = span
-                best_key = key
-                best_gap = gap
-        if best_key is not None and best_gap is not None:
-            gaps[best_key].append(best_gap)
-    return gaps
-
-
 def _slug_name(name: str, index: int) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
     return slug or f"room_{index + 1}"
-
-
-def _opening_lines(openings: list[dict[str, Any]]) -> list[tuple[Coord, Coord]]:
-    lines: list[tuple[Coord, Coord]] = []
-    for item in openings:
-        start = item.get("start") or {}
-        end = item.get("end") or {}
-        lines.append(
-            (
-                (float(start["x"]), float(start["y"])),
-                (float(end["x"]), float(end["y"])),
-            )
-        )
-    return lines
 
 
 def _geom_from_rooms(
@@ -196,8 +74,8 @@ def _geom_from_plan(plan: FloorPlan, size: int) -> _PixelGeom:
         geom.rooms.append((room.name, list(room.coords()), display))
     for door in plan.doors:
         geom.doors.append(((door.start.x, door.start.y), (door.end.x, door.end.y)))
-    for win in plan.windows:
-        geom.windows.append(((win.start.x, win.start.y), (win.end.x, win.end.y)))
+    for window in plan.windows:
+        geom.windows.append(((window.start.x, window.start.y), (window.end.x, window.end.y)))
     return geom
 
 
@@ -218,15 +96,6 @@ def _resolve_geom(
     raise ValueError("Provide either plan or rooms")
 
 
-def _polygon_centroid(polygon: list[Coord]) -> Coord:
-    ring = _open_ring(polygon)
-    if not ring:
-        return (0.0, 0.0)
-    xs = [p[0] for p in ring]
-    ys = [p[1] for p in ring]
-    return (sum(xs) / len(xs), sum(ys) / len(ys))
-
-
 def _create_canvas(size: int) -> tuple[Any, Axes]:
     fig = plt.figure(figsize=(size / 100, size / 100), dpi=100)
     ax = fig.add_axes([0, 0, 1, 1])
@@ -239,27 +108,73 @@ def _create_canvas(size: int) -> tuple[Any, Axes]:
     return fig, ax
 
 
-def _add_door(ax: Axes, start: Coord, end: Coord) -> None:
-    length = math.hypot(end[0] - start[0], end[1] - start[1])
-    draw_door(ax, start, end, door_width=max(length * 0.85, 20.0), thickness=2.0)
-
-
-def _add_window(ax: Axes, start: Coord, end: Coord) -> None:
-    draw_window(
-        ax,
-        start,
-        end,
-        overall_thickness=_EXTERIOR_THICK,
-        line_thickness=1.5,
-    )
-
-
-def _draw_room_polygons(ax: Axes, geom: _PixelGeom) -> None:
+def _room_polygons(geom: _PixelGeom) -> list[Polygon]:
+    polys: list[Polygon] = []
     for _, polygon, _ in geom.rooms:
-        draw_polygon(ax, polygon)
+        ring = _open_ring(polygon)
+        if len(ring) >= 3:
+            polys.append(Polygon(ring))
+    return polys
 
 
-def _add_room_labels(ax: Axes, geom: _PixelGeom) -> int:
+def _union_boundary_rings(geom: _PixelGeom) -> list[list[Coord]]:
+    polys = _room_polygons(geom)
+    if not polys:
+        return []
+    merged = unary_union(polys)
+    if merged.is_empty:
+        return []
+
+    if merged.geom_type == "Polygon":
+        geoms = [merged]
+    elif merged.geom_type == "MultiPolygon":
+        geoms = list(merged.geoms)
+    else:
+        return []
+
+    rings: list[list[Coord]] = []
+    for poly in geoms:
+        if poly.is_empty:
+            continue
+        rings.append([(float(x), float(y)) for x, y in poly.exterior.coords])
+    return rings
+
+
+def _draw_room_polygons(ax: Axes, geom: _PixelGeom, *, room_outline_thick: float) -> None:
+    for _, polygon, _ in geom.rooms:
+        draw_polygon(
+            ax,
+            polygon,
+            facecolor="none",
+            edgecolor="black",
+            linewidth=room_outline_thick,
+        )
+
+
+def _draw_union_boundary(ax: Axes, geom: _PixelGeom, *, boundary_thick: float) -> int:
+    count = 0
+    for ring in _union_boundary_rings(geom):
+        draw_polygon(
+            ax,
+            ring,
+            facecolor="none",
+            edgecolor="black",
+            linewidth=boundary_thick,
+        )
+        count += 1
+    return count
+
+
+def _polygon_centroid(polygon: list[Coord]) -> Coord:
+    ring = _open_ring(polygon)
+    if not ring:
+        return (0.0, 0.0)
+    xs = [p[0] for p in ring]
+    ys = [p[1] for p in ring]
+    return (sum(xs) / len(xs), sum(ys) / len(ys))
+
+
+def _draw_room_labels(ax: Axes, geom: _PixelGeom) -> int:
     count = 0
     for _, polygon, label in geom.rooms:
         rng = random.Random(f"{geom.plan_id}:{label}:{count}")
@@ -270,35 +185,43 @@ def _add_room_labels(ax: Axes, geom: _PixelGeom) -> int:
     return count
 
 
-def _render_geom(geom: _PixelGeom) -> tuple[bytes, int, int]:
+def _draw_doors(ax: Axes, geom: _PixelGeom, *, opening_thick: float) -> int:
+    count = 0
+    for start, end in geom.doors:
+        draw_door(ax, start, end, wall_thickness=opening_thick, to_the_right=count % 2 == 0)
+        count += 1
+    return count
+
+
+def _draw_windows(ax: Axes, geom: _PixelGeom, *, opening_thick: float) -> int:
+    count = 0
+    for start, end in geom.windows:
+        draw_window(ax, start, end, wall_thickness=opening_thick)
+        count += 1
+    return count
+
+
+def _render_geom(
+    geom: _PixelGeom,
+    *,
+    room_outline_thick: float,
+    boundary_thick: float,
+    opening_thick: float,
+) -> tuple[bytes, int, int, int, int, int]:
     if not geom.rooms:
         raise ValueError("Floor plan has no rooms")
 
     fig, ax = _create_canvas(geom.size)
-    _draw_room_polygons(ax, geom)
-    edge_counts = _collect_edges(geom.rooms)
-    openings = geom.doors + geom.windows
-    edge_gaps = _match_openings_to_edges(edge_counts, openings)
-
-    wall_count = 0
-    for key, count in edge_counts.items():
-        a, b = _edge_from_key(key)
-        thickness = _INTERIOR_THICK if count >= 2 else _EXTERIOR_THICK
-        for p0, p1 in _split_edge(a, b, edge_gaps.get(key, [])):
-            draw_wall(ax, p0, p1, thickness)
-            wall_count += 1
-
-    for start, end in geom.doors:
-        _add_door(ax, start, end)
-    for start, end in geom.windows:
-        _add_window(ax, start, end)
-
-    label_count = _add_room_labels(ax, geom)
+    _draw_room_polygons(ax, geom, room_outline_thick=room_outline_thick)
+    boundary_count = _draw_union_boundary(ax, geom, boundary_thick=boundary_thick)
+    door_count = _draw_doors(ax, geom, opening_thick=opening_thick)
+    window_count = _draw_windows(ax, geom, opening_thick=boundary_thick)
+    label_count = _draw_room_labels(ax, geom)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=100, pad_inches=0, facecolor="white")
     plt.close(fig)
-    return buf.getvalue(), wall_count, label_count
+    return buf.getvalue(), boundary_count, len(geom.rooms), label_count, door_count, window_count
 
 
 def export_realistic(
@@ -309,21 +232,33 @@ def export_realistic(
     windows: list[tuple[Coord, Coord]] | None = None,
     canvas_size: int = 1024,
     size: int = 1024,
+    room_outline_thick: float = DEFAULT_ROOM_OUTLINE_THICK,
+    boundary_thick: float = DEFAULT_BOUNDARY_THICK,
+    opening_thick: float = DEFAULT_OPENING_THICK,
 ) -> dict[str, Any]:
-    """Render a realistic floor plan PNG and return base64 + metadata."""
+    """Render room outlines, boundary, doors, windows, and labels; return base64 + metadata."""
+    _ = canvas_size
     geom = _resolve_geom(plan, rooms, size, doors=doors, windows=windows)
-    png, wall_count, label_count = _render_geom(geom)
+    png, boundary_count, room_count, label_count, door_count, window_count = _render_geom(
+        geom,
+        room_outline_thick=room_outline_thick,
+        boundary_thick=boundary_thick,
+        opening_thick=opening_thick,
+    )
     source = "rooms" if rooms else "floor_plan"
     return {
         "png_b64": base64.b64encode(png).decode("ascii"),
         "size": size,
         "metadata": {
-            "wall_count": wall_count,
-            "door_count": len(geom.doors),
-            "window_count": len(geom.windows),
+            "boundary_count": boundary_count,
+            "room_count": room_count,
             "label_count": label_count,
+            "door_count": door_count,
+            "window_count": window_count,
             "coord_source": source,
-            "room_count": len(geom.rooms),
             "canvas_size": size,
+            "room_outline_thick": room_outline_thick,
+            "boundary_thick": boundary_thick,
+            "opening_thick": opening_thick,
         },
     }

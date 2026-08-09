@@ -19,11 +19,11 @@ class FloorPlanEngine:
         return render_plan(plan, **kwargs)
 
     def generate_sample(self, **kwargs):
-        from floorplan.dataset import generate_sample
+        from dataset import generate_sample
 
         return generate_sample(**kwargs)
 
     def list_saved_plans(self):
-        from floorplan.dataset import list_saved_plans
+        from dataset import list_saved_plans
 
         return list_saved_plans()

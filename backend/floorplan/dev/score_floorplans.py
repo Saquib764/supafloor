@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     if str(service_root) not in sys.path:
         sys.path.insert(0, str(service_root))
 
-    from floorplan.dataset.artifacts import score_row, write_plan_artifacts
+    from dataset.artifacts import score_row, write_plan_artifacts
     from floorplan.evaluator import score_label, score_plan
     from floorplan.requirements.plan_io import plan_document_id
 

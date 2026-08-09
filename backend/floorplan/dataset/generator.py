@@ -9,8 +9,8 @@ from typing import Any, Optional
 
 from floorplan.config import load_config
 from floorplan.constants import pick_target_area
-from floorplan.dataset.artifacts import write_plan_artifacts
-from floorplan.dataset.store import delete_document, list_documents, load_document, plan_dir, save_document
+from dataset.artifacts import write_plan_artifacts
+from dataset.store import delete_document, list_documents, load_document, plan_dir, save_document
 from floorplan.evaluator import hard_failures, score_plan
 from floorplan.renderer import render_plan
 from floorplan.requirements import generate_plan_document

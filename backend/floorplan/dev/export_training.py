@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     if str(service_root) not in sys.path:
         sys.path.insert(0, str(service_root))
 
-    from floorplan.dataset.layout_prompt import build_training_example
+    from dataset.layout_prompt import build_training_example
     from floorplan.requirements.plan_io import document_to_plan, plan_document_id
 
     source: Path = args.dir

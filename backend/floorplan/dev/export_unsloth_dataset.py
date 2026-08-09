@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     if str(service_root) not in sys.path:
         sys.path.insert(0, str(service_root))
 
-    from floorplan.dataset.unsloth import export_unsloth_dataset
+    from dataset.unsloth import export_unsloth_dataset
 
     summary = export_unsloth_dataset(args.dir, args.out, fmt=args.format)
     print(json.dumps(summary, indent=2))

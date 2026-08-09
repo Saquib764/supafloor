@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 
 from matplotlib.axes import Axes
-from matplotlib.patches import Arc, Polygon as MplPolygon, Rectangle
+from matplotlib.patches import Arc, Polygon as MplPolygon
 
 Coord = tuple[float, float]
 
@@ -24,9 +24,9 @@ def draw_polygon(
     ax: Axes,
     polygon: list[Coord],
     *,
-    facecolor: str = "#F7F7F7",
-    edgecolor: str = "none",
-    linewidth: float = 0.0,
+    facecolor: str | None = "none",
+    edgecolor: str = "black",
+    linewidth: float = 1.5,
 ) -> None:
     if len(polygon) < 3:
         return
@@ -44,30 +44,20 @@ def draw_polygon(
     )
 
 
-def draw_wall(ax: Axes, start: Coord, end: Coord, thickness: float, *, color: str = "black") -> None:
-    length, angle = _segment(start, end)
+def _opening_cut_polygon(start: Coord, end: Coord, thickness: float) -> list[Coord]:
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    length = math.hypot(dx, dy)
     if length < 1e-6:
-        return
-    ax.add_patch(
-        Rectangle(start, length, thickness, angle=angle, facecolor=color, edgecolor=color)
-    )
-
-
-def draw_window(
-    ax: Axes,
-    start: Coord,
-    end: Coord,
-    *,
-    overall_thickness: float,
-    line_thickness: float,
-    color: str = "black",
-) -> None:
-    length, angle = _segment(start, end)
-    if length < 1e-6 or overall_thickness <= 2 * line_thickness:
-        return
-    ax.add_patch(Rectangle(start, length, line_thickness, angle=angle, facecolor=color, edgecolor=color))
-    inner = _shift(start, overall_thickness - line_thickness, angle + 90)
-    ax.add_patch(Rectangle(inner, length, line_thickness, angle=angle, facecolor=color, edgecolor=color))
+        return []
+    offset_x = -dy / length * (thickness / 2.0)
+    offset_y = dx / length * (thickness / 2.0)
+    return [
+        (start[0] + offset_x, start[1] + offset_y),
+        (end[0] + offset_x, end[1] + offset_y),
+        (end[0] - offset_x, end[1] - offset_y),
+        (start[0] - offset_x, start[1] - offset_y),
+    ]
 
 
 def draw_door(
@@ -75,36 +65,31 @@ def draw_door(
     start: Coord,
     end: Coord,
     *,
-    door_width: float,
-    thickness: float = 2.0,
+    wall_thickness: float,
     to_the_right: bool = True,
-    color: str = "black",
 ) -> None:
     length, angle = _segment(start, end)
     if length < 1e-6:
         return
-    doorway_width = length
-    frame_width = max((doorway_width - door_width) / 2, 0.5)
-    door_width = min(door_width, doorway_width - 2 * frame_width) if doorway_width > 2 * frame_width else door_width
 
-    ax.add_patch(Rectangle(start, frame_width, thickness, angle=angle, facecolor=color, edgecolor=color))
+    cut = _opening_cut_polygon(start, end, wall_thickness)
+    if cut:
+        draw_polygon(ax, cut, facecolor="white", edgecolor="white", linewidth=0.0)
 
-    far_frame = _shift(start, frame_width + door_width, angle)
-    ax.add_patch(Rectangle(far_frame, frame_width, thickness, angle=angle, facecolor=color, edgecolor=color))
+    door_width = length
+    hinges = start
+    leaf_angle = angle - 90 if to_the_right else angle + 90
+    leaf_end = _shift(hinges, door_width, leaf_angle)
+    ax.plot(
+        [hinges[0], leaf_end[0]],
+        [hinges[1], leaf_end[1]],
+        color="black",
+        linewidth=1.5,
+        solid_capstyle="butt",
+    )
 
-    hinges = _shift(start, frame_width, angle)
-    if to_the_right:
-        ax.add_patch(
-            Rectangle(hinges, door_width, thickness, angle=angle - 90, facecolor=color, edgecolor=color)
-        )
-    else:
-        hinges = _shift(hinges, thickness, angle + 90)
-        ax.add_patch(
-            Rectangle(hinges, thickness, door_width, angle=angle, facecolor=color, edgecolor=color)
-        )
-
-    arc_center = _shift(hinges, thickness, angle)
-    swing = door_width - thickness
+    arc_center = _shift(hinges, 1.5, angle)
+    swing = max(door_width - 1.5, length * 0.5)
     if swing <= 0:
         return
     if to_the_right:
@@ -119,7 +104,19 @@ def draw_door(
             angle=angle,
             theta1=theta1,
             theta2=theta2,
-            color=color,
+            color="black",
             linewidth=1,
         )
     )
+
+
+def draw_window(
+    ax: Axes,
+    start: Coord,
+    end: Coord,
+    *,
+    wall_thickness: float,
+) -> None:
+    cut = _opening_cut_polygon(start, end, wall_thickness)
+    if cut:
+        draw_polygon(ax, cut, facecolor="white", edgecolor="white", linewidth=0.0)

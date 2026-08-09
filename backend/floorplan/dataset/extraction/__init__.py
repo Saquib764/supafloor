@@ -7,6 +7,7 @@ from .walls import (
     extract_from_path,
     input_dir,
     output_dir,
+    prepare_extraction,
     render_extraction_png,
     write_extraction,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "extract_from_path",
     "input_dir",
     "output_dir",
+    "prepare_extraction",
     "render_extraction_png",
     "transform_extraction",
     "write_extraction",

@@ -8,7 +8,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from export.render import _opening_lines, export_realistic
+from export.render import export_realistic
 
 from .transform import transform_extraction
 
@@ -234,8 +234,10 @@ def _plan_id(document: dict[str, Any], source: Path | None = None) -> str:
     plan_id = summary.get("id")
     if plan_id:
         return str(plan_id)
-    if source is not None and source.parent.name:
-        return source.parent.name
+    if source is not None:
+        if source.name == "floorplan.json" and source.parent.name:
+            return source.parent.name
+        return source.stem
     raise ValueError("Could not determine plan id from document or path")
 
 
@@ -262,6 +264,18 @@ def extract_from_path(path: Path) -> dict[str, Any]:
     return extract_floorplan(document, plan_id=_plan_id(document, path))
 
 
+def prepare_extraction(path: Path) -> dict[str, Any]:
+    """Load a floorplan or extraction JSON and return canvas-ready extraction data."""
+    document = json.loads(path.read_text())
+    if document.get("walls"):
+        return document
+    extracted = extract_from_path(path) if path.name == "floorplan.json" else extract_floorplan(
+        document,
+        plan_id=_plan_id(document, path),
+    )
+    return transform_extraction(extracted)
+
+
 def write_extraction(extracted: dict[str, Any], directory: Path | None = None) -> Path:
     """Write extraction JSON to dataset/extraction/output/{id}.json."""
     out_dir = directory or output_dir()
@@ -280,10 +294,12 @@ def render_extraction_png(
 ) -> Path:
     """Render transformed extraction JSON to a realistic PNG."""
     openings = extracted.get("openings") or {}
+    doors = _opening_lines(openings.get("doors") or [])
+    windows = _opening_lines(openings.get("windows") or [])
     result = export_realistic(
         rooms=extracted["rooms"],
-        doors=_opening_lines(openings.get("doors") or []),
-        windows=_opening_lines(openings.get("windows") or []),
+        doors=doors,
+        windows=windows,
         size=canvas_size,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -299,7 +315,7 @@ def extract_and_write(
     canvas_size: int = 950,
 ) -> dict[str, Path]:
     """Load a floorplan JSON path, transform, write JSON, and render PNG."""
-    extracted = transform_extraction(extract_from_path(path))
+    extracted = prepare_extraction(path)
     plan_id = str(extracted["id"])
     json_path = write_extraction(extracted, output_directory)
     png_path = render_extraction_png(
