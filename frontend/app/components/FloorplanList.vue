@@ -26,7 +26,6 @@ const emit = defineEmits<{
 
 const rooms = ref(3)
 const targetArea = ref<number>(FLOORPLAN_DEFAULT_TARGET_AREA_SQFT)
-const settingsOpen = ref(false)
 
 watch(
   () => props.items.find(i => i.id === props.selectedId)?.bedroomCount,
@@ -39,18 +38,6 @@ watch(
 <template>
   <div class="flex flex-col h-full">
     <div class="shrink-0 p-4 border-b border-gray-800/80 space-y-3">
-      <div class="flex items-start gap-2">
-        <FloorplanNav class="flex-1" />
-        <UButton
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-settings"
-          aria-label="Settings"
-          @click="settingsOpen = true"
-        />
-      </div>
-
       <div>
         <p class="text-xs uppercase tracking-widest text-gray-500">
           Supafloor
@@ -143,7 +130,5 @@ watch(
         No floorplans yet
       </li>
     </ul>
-
-    <FloorplanSettingsModal v-model:open="settingsOpen" />
   </div>
 </template>

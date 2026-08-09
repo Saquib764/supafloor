@@ -105,6 +105,34 @@ export function useFloorplanApi(baseUrl?: string) {
     return res.json() as Promise<EngineConfig>
   }
 
+  async function listDatasetItems(offset = 0, limit = 50) {
+    const params = new URLSearchParams({
+      offset: String(offset),
+      limit: String(limit),
+    })
+    const res = await fetch(`${apiBase}/floorplan/dataset/basic5000?${params}`)
+    if (!res.ok) throw new Error(await res.text())
+    return res.json() as Promise<{
+      items: Array<{ stem: string }>
+      total: number
+      offset: number
+      limit: number
+      has_more: boolean
+    }>
+  }
+
+  async function loadDatasetJson(stem: string) {
+    const res = await fetch(
+      `${apiBase}/floorplan/dataset/basic5000/${encodeURIComponent(stem)}`,
+    )
+    if (!res.ok) throw new Error(await res.text())
+    return res.json() as Promise<{ stem: string, json: unknown }>
+  }
+
+  function datasetImageUrl(stem: string) {
+    return `${apiBase}/floorplan/dataset/basic5000/${encodeURIComponent(stem)}/image`
+  }
+
   return {
     render,
     exportRealistic,
@@ -116,5 +144,8 @@ export function useFloorplanApi(baseUrl?: string) {
     extractImage,
     getConfig,
     updateConfig,
+    listDatasetItems,
+    loadDatasetJson,
+    datasetImageUrl,
   }
 }

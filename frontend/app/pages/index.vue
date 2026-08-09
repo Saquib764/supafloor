@@ -253,10 +253,10 @@ onMounted(async () => {
       :highlight-room-id="selectedRoomId"
     />
 
-    <aside
-      class="absolute left-0 top-0 bottom-0 z-10 w-72 flex flex-col border-r border-gray-800/80 bg-gray-950/85 backdrop-blur-md"
-    >
-      <FloorplanList
+    <aside class="absolute left-0 top-0 bottom-0 z-20 flex">
+      <FloorplanNav />
+      <div class="flex w-72 flex-col border-r border-gray-800/80 bg-gray-950/85 backdrop-blur-md">
+        <FloorplanList
         class="min-h-0 flex-1"
         :items="listItems"
         :selected-id="selectedId"
@@ -268,12 +268,13 @@ onMounted(async () => {
         @select="onSelect"
         @generate="onGenerate"
         @delete="onDelete"
-      />
-      <FloorplanActions
-        :disabled="!selected"
-        :busy="acting"
-        @action="onAction"
-      />
+        />
+        <FloorplanActions
+          :disabled="!selected"
+          :busy="acting"
+          @action="onAction"
+        />
+      </div>
     </aside>
 
     <aside
@@ -285,12 +286,12 @@ onMounted(async () => {
       />
     </aside>
 
-    <div class="absolute top-4 left-72 right-80 z-10 flex justify-center pointer-events-none">
+    <div class="absolute top-4 left-[21.5rem] right-80 z-10 flex justify-center pointer-events-none">
       <FloorplanViewModeToggle v-model="viewMode" />
     </div>
 
     <FloorplanEditorBar
-      class="absolute bottom-4 left-72 right-80 z-10"
+      class="absolute bottom-4 left-[21.5rem] right-80 z-10"
       @reset-view="canvasRef?.resetView()"
     >
       <template #controls>

@@ -22,5 +22,6 @@ export default defineNuxtConfig({
   routeRules: {
     '/': { ssr: false },
     '/extract': { ssr: false },
+    '/dataset': { ssr: false },
   },
 })

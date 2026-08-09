@@ -48,8 +48,6 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex flex-col h-full">
     <div class="shrink-0 p-4 border-b border-gray-800/80 space-y-3">
-      <FloorplanNav />
-
       <div>
         <p class="text-xs uppercase tracking-widest text-gray-500">
           Supafloor
