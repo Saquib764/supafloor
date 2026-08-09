@@ -7,8 +7,8 @@ from typing import Any
 
 Coord = tuple[float, float]
 
-_CANVAS_SIZE = 950
-_SCALE_MIN = 700.0
+_CANVAS_SIZE = 1024
+_SCALE_MIN = 500.0
 _SCALE_MAX = 900.0
 
 
@@ -59,7 +59,6 @@ def transform_extraction(
     extracted: dict[str, Any],
     *,
     rng: random.Random | None = None,
-    canvas_size: int = _CANVAS_SIZE,
 ) -> dict[str, Any]:
     """Scale to [0, X], center on canvas, then apply random offset in [0, (canvas-X)/2]."""
     coords = _iter_coords(extracted)
@@ -78,9 +77,9 @@ def transform_extraction(
     scale = scale_target / max_dim
     scaled_w = width * scale
     scaled_h = height * scale
-    margin = (canvas_size - scale_target) / 2.0
-    offset_x = (canvas_size - scaled_w) / 2.0 + source_rng.uniform(0.0, margin)
-    offset_y = (canvas_size - scaled_h) / 2.0 + source_rng.uniform(0.0, margin)
+    margin = (_CANVAS_SIZE - scale_target - 100) / 2.0
+    offset_x = (_CANVAS_SIZE - scaled_w) / 2.0 + source_rng.uniform(-margin, margin)
+    offset_y = (_CANVAS_SIZE - scaled_h) / 2.0 + source_rng.uniform(-margin, margin)
 
     def mapper(x: float, y: float) -> Coord:
         return _map_point(

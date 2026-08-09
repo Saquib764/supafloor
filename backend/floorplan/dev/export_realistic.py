@@ -10,6 +10,7 @@ Usage (from backend/floorplan):
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 from pathlib import Path
 
@@ -38,11 +39,17 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Output PNG path (default: <input_stem>_realistic.png)",
     )
-    parser.add_argument("--size", type=int, default=950, help="Canvas size (default: 950)")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for scale, offset, and label sizes (default: random each run)",
+    )
     args = parser.parse_args(argv)
 
+    rng = random.Random(args.seed)
     input_path = args.input if args.input.is_absolute() else service_root / args.input
-    extracted = prepare_extraction(input_path)
+    extracted = prepare_extraction(input_path, rng=rng)
 
     out_path = args.output
     if out_path is None:
@@ -50,9 +57,9 @@ def main(argv: list[str] | None = None) -> int:
     elif not out_path.is_absolute():
         out_path = service_root / out_path
 
-    render_extraction_png(extracted, out_path, canvas_size=args.size)
-    print(f"Wrote {out_path} ({args.size}x{args.size})")
-    print({"id": extracted["id"], "room_count": len(extracted["rooms"]), "canvas_size": args.size})
+    render_extraction_png(extracted, out_path, rng=rng)
+    print(f"Wrote {out_path} (1024x1024)")
+    print({"id": extracted["id"], "room_count": len(extracted["rooms"]), "canvas_size": 1024})
     return 0
 
 

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import base64
 import json
+import random
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
 from export.render import export_realistic
 
-from .transform import transform_extraction
+from .transform import _CANVAS_SIZE, transform_extraction
 
 Coord = tuple[float, float]
 Edge = tuple[Coord, Coord]
@@ -264,7 +265,11 @@ def extract_from_path(path: Path) -> dict[str, Any]:
     return extract_floorplan(document, plan_id=_plan_id(document, path))
 
 
-def prepare_extraction(path: Path) -> dict[str, Any]:
+def prepare_extraction(
+    path: Path,
+    *,
+    rng: random.Random | None = None,
+) -> dict[str, Any]:
     """Load a floorplan or extraction JSON and return canvas-ready extraction data."""
     document = json.loads(path.read_text())
     if document.get("walls"):
@@ -273,7 +278,7 @@ def prepare_extraction(path: Path) -> dict[str, Any]:
         document,
         plan_id=_plan_id(document, path),
     )
-    return transform_extraction(extracted)
+    return transform_extraction(extracted, rng=rng)
 
 
 def write_extraction(extracted: dict[str, Any], directory: Path | None = None) -> Path:
@@ -290,7 +295,7 @@ def render_extraction_png(
     extracted: dict[str, Any],
     path: Path,
     *,
-    canvas_size: int = 950,
+    rng: random.Random | None = None,
 ) -> Path:
     """Render transformed extraction JSON to a realistic PNG."""
     openings = extracted.get("openings") or {}
@@ -300,7 +305,8 @@ def render_extraction_png(
         rooms=extracted["rooms"],
         doors=doors,
         windows=windows,
-        size=canvas_size,
+        size=_CANVAS_SIZE,
+        rng=rng,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(base64.b64decode(result["png_b64"]))
@@ -312,7 +318,6 @@ def extract_and_write(
     *,
     output_directory: Path | None = None,
     input_directory: Path | None = None,
-    canvas_size: int = 950,
 ) -> dict[str, Path]:
     """Load a floorplan JSON path, transform, write JSON, and render PNG."""
     extracted = prepare_extraction(path)
@@ -321,6 +326,5 @@ def extract_and_write(
     png_path = render_extraction_png(
         extracted,
         (input_directory or input_dir()) / f"{plan_id}.png",
-        canvas_size=canvas_size,
     )
     return {"json": json_path, "png": png_path}

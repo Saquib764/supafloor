@@ -174,11 +174,11 @@ def _polygon_centroid(polygon: list[Coord]) -> Coord:
     return (sum(xs) / len(xs), sum(ys) / len(ys))
 
 
-def _draw_room_labels(ax: Axes, geom: _PixelGeom) -> int:
+def _draw_room_labels(ax: Axes, geom: _PixelGeom, *, rng: random.Random | None = None) -> int:
+    source_rng = rng or random.Random()
     count = 0
     for _, polygon, label in geom.rooms:
-        rng = random.Random(f"{geom.plan_id}:{label}:{count}")
-        font_size = 16 * rng.uniform(0.82, 1.18)
+        font_size = 16 * source_rng.uniform(0.82, 1.18)
         cx, cy = _polygon_centroid(polygon)
         ax.text(cx, cy, label, ha="center", va="center", color="black", fontsize=font_size)
         count += 1
@@ -207,6 +207,7 @@ def _render_geom(
     room_outline_thick: float,
     boundary_thick: float,
     opening_thick: float,
+    rng: random.Random | None = None,
 ) -> tuple[bytes, int, int, int, int, int]:
     if not geom.rooms:
         raise ValueError("Floor plan has no rooms")
@@ -216,7 +217,7 @@ def _render_geom(
     boundary_count = _draw_union_boundary(ax, geom, boundary_thick=boundary_thick)
     door_count = _draw_doors(ax, geom, opening_thick=opening_thick)
     window_count = _draw_windows(ax, geom, opening_thick=boundary_thick)
-    label_count = _draw_room_labels(ax, geom)
+    label_count = _draw_room_labels(ax, geom, rng=rng)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=100, pad_inches=0, facecolor="white")
@@ -235,6 +236,7 @@ def export_realistic(
     room_outline_thick: float = DEFAULT_ROOM_OUTLINE_THICK,
     boundary_thick: float = DEFAULT_BOUNDARY_THICK,
     opening_thick: float = DEFAULT_OPENING_THICK,
+    rng: random.Random | None = None,
 ) -> dict[str, Any]:
     """Render room outlines, boundary, doors, windows, and labels; return base64 + metadata."""
     _ = canvas_size
@@ -244,6 +246,7 @@ def export_realistic(
         room_outline_thick=room_outline_thick,
         boundary_thick=boundary_thick,
         opening_thick=opening_thick,
+        rng=rng,
     )
     source = "rooms" if rooms else "floor_plan"
     return {
