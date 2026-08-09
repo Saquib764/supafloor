@@ -29,7 +29,6 @@ _INTERIOR_THICK = 3.0
 _EDGE_KEY_PREC = 1
 _MATCH_TOL = 8.0
 _MIN_WALL_PIECE = 4.0
-_FEET_PAD = 20.0
 
 
 @dataclass
@@ -156,27 +155,27 @@ def _slug_name(name: str, index: int) -> str:
     return slug or f"room_{index + 1}"
 
 
-def _max_coord(values: list[float]) -> float:
-    return max(values) if values else 0.0
+def _opening_lines(openings: list[dict[str, Any]]) -> list[tuple[Coord, Coord]]:
+    lines: list[tuple[Coord, Coord]] = []
+    for item in openings:
+        start = item.get("start") or {}
+        end = item.get("end") or {}
+        lines.append(
+            (
+                (float(start["x"]), float(start["y"])),
+                (float(end["x"]), float(end["y"])),
+            )
+        )
+    return lines
 
 
-def _is_feet_space(plan: FloorPlan) -> bool:
-    if plan.metadata.get("source") == "extraction":
-        return False
-    coords: list[float] = []
-    for room in plan.rooms:
-        for x, y in room.coords():
-            coords.extend((x, y))
-    return _max_coord([abs(v) for v in coords]) <= 64.0
-
-
-def _to_pixel_y(y: float, canvas_size: int, *, y_up: bool) -> float:
-    if y_up:
-        return canvas_size + 1 - y
-    return y
-
-
-def _geom_from_rooms(rooms: list[dict[str, Any]], size: int) -> _PixelGeom:
+def _geom_from_rooms(
+    rooms: list[dict[str, Any]],
+    size: int,
+    *,
+    doors: list[tuple[Coord, Coord]] | None = None,
+    windows: list[tuple[Coord, Coord]] | None = None,
+) -> _PixelGeom:
     geom = _PixelGeom(size=size)
     for i, raw in enumerate(rooms):
         name = str(raw.get("name") or f"room_{i + 1}")
@@ -184,64 +183,34 @@ def _geom_from_rooms(rooms: list[dict[str, Any]], size: int) -> _PixelGeom:
         if len(polygon) < 3:
             continue
         geom.rooms.append((_slug_name(name, i), polygon, name))
+    geom.doors = list(doors or [])
+    geom.windows = list(windows or [])
     return geom
 
 
 def _geom_from_plan(plan: FloorPlan, size: int) -> _PixelGeom:
-    canvas_size = int(plan.metadata.get("canvas_size") or size)
-    y_up = plan.metadata.get("source") == "extraction"
-    feet = _is_feet_space(plan)
-
-    xs: list[float] = []
-    ys: list[float] = []
-    for room in plan.rooms:
-        for x, y in room.coords():
-            xs.append(x)
-            ys.append(y)
-    for door in plan.doors:
-        xs.extend((door.start.x, door.end.x))
-        ys.extend((door.start.y, door.end.y))
-    for win in plan.windows:
-        xs.extend((win.start.x, win.end.x))
-        ys.extend((win.start.y, win.end.y))
-
-    if feet and xs and ys:
-        minx, maxx = min(xs), max(xs)
-        miny, maxy = min(ys), max(ys)
-        span = max(maxx - minx, maxy - miny, 1e-6)
-        scale = (size - 2 * _FEET_PAD) / span
-
-        def map_point(x: float, y: float) -> Coord:
-            px = _FEET_PAD + (x - minx) * scale
-            py = size - _FEET_PAD - (y - miny) * scale
-            return (px, py)
-    else:
-
-        def map_point(x: float, y: float) -> Coord:
-            return (x, _to_pixel_y(y, canvas_size, y_up=y_up))
-
     geom = _PixelGeom(size=size, plan_id=plan.id)
-    for i, room in enumerate(plan.rooms):
-        polygon = [map_point(x, y) for x, y in room.coords()]
+    for room in plan.rooms:
         label = room.metadata.get("label")
         display = label.strip() if isinstance(label, str) and label.strip() else room.name.replace("_", " ")
-        geom.rooms.append((room.name, polygon, display))
-
+        geom.rooms.append((room.name, list(room.coords()), display))
     for door in plan.doors:
-        geom.doors.append((map_point(door.start.x, door.start.y), map_point(door.end.x, door.end.y)))
+        geom.doors.append(((door.start.x, door.start.y), (door.end.x, door.end.y)))
     for win in plan.windows:
-        geom.windows.append((map_point(win.start.x, win.start.y), map_point(win.end.x, win.end.y)))
+        geom.windows.append(((win.start.x, win.start.y), (win.end.x, win.end.y)))
     return geom
 
 
 def _resolve_geom(
     plan: FloorPlan | None,
     rooms: list[dict[str, Any]] | None,
-    canvas_size: int,
     size: int,
+    *,
+    doors: list[tuple[Coord, Coord]] | None = None,
+    windows: list[tuple[Coord, Coord]] | None = None,
 ) -> _PixelGeom:
     if rooms:
-        geom = _geom_from_rooms(rooms, size)
+        geom = _geom_from_rooms(rooms, size, doors=doors, windows=windows)
         geom.plan_id = "rooms"
         return geom
     if plan is not None:
@@ -330,11 +299,13 @@ def export_realistic(
     *,
     plan: FloorPlan | None = None,
     rooms: list[dict[str, Any]] | None = None,
+    doors: list[tuple[Coord, Coord]] | None = None,
+    windows: list[tuple[Coord, Coord]] | None = None,
     canvas_size: int = 1024,
     size: int = 1024,
 ) -> dict[str, Any]:
     """Render a realistic floor plan PNG and return base64 + metadata."""
-    geom = _resolve_geom(plan, rooms, canvas_size, size)
+    geom = _resolve_geom(plan, rooms, size, doors=doors, windows=windows)
     png, wall_count, label_count = _render_geom(geom)
     source = "rooms" if rooms else "floor_plan"
     return {
