@@ -8,7 +8,7 @@ from typing import Any
 Coord = tuple[float, float]
 
 _CANVAS_SIZE = 1024
-_SCALE_MIN = 500.0
+_SCALE_MIN = 600.0
 _SCALE_MAX = 900.0
 
 
