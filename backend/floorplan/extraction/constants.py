@@ -6,7 +6,7 @@ from typing import Literal
 
 CANVAS_SIZE: int = 1024
 EXTRACTION_MODEL: str = "gpt-5.6-sol"
-LLM_PROVIDER: Literal["openai", "replicate"] = "replicate"
+LLM_PROVIDER: Literal["openai", "replicate"] = "openai"
 REPLICATE_MODEL: str = (
     "lucataco/gemma-4-31b-it:14c757b42dc096c7d2926c72b40503f5d4acbf1b9b27e910e6722b2a96e51cde"
 )

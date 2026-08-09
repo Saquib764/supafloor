@@ -18,6 +18,7 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
 from export.draw import draw_door, draw_polygon, draw_window
+from export.symbols import draw_room_symbol
 from floorplan.schemas.models import FloorPlan
 
 Coord = tuple[float, float]
@@ -25,6 +26,13 @@ Coord = tuple[float, float]
 DEFAULT_ROOM_OUTLINE_THICK = 4.0
 DEFAULT_BOUNDARY_THICK = 8.0
 DEFAULT_OPENING_THICK = 12.0
+BLACKNESS_MIN = 0.7
+BLACKNESS_MAX = 1.0
+
+
+def _ink_color(blackness: float) -> tuple[float, float, float]:
+    gray = 1.0 - blackness
+    return (gray, gray, gray)
 
 
 @dataclass
@@ -140,25 +148,37 @@ def _union_boundary_rings(geom: _PixelGeom) -> list[list[Coord]]:
     return rings
 
 
-def _draw_room_polygons(ax: Axes, geom: _PixelGeom, *, room_outline_thick: float) -> None:
+def _draw_room_polygons(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    room_outline_thick: float,
+    ink: tuple[float, float, float],
+) -> None:
     for _, polygon, _ in geom.rooms:
         draw_polygon(
             ax,
             polygon,
             facecolor="none",
-            edgecolor="black",
+            edgecolor=ink,
             linewidth=room_outline_thick,
         )
 
 
-def _draw_union_boundary(ax: Axes, geom: _PixelGeom, *, boundary_thick: float) -> int:
+def _draw_union_boundary(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    boundary_thick: float,
+    ink: tuple[float, float, float],
+) -> int:
     count = 0
     for ring in _union_boundary_rings(geom):
         draw_polygon(
             ax,
             ring,
             facecolor="none",
-            edgecolor="black",
+            edgecolor=ink,
             linewidth=boundary_thick,
         )
         count += 1
@@ -174,21 +194,61 @@ def _polygon_centroid(polygon: list[Coord]) -> Coord:
     return (sum(xs) / len(xs), sum(ys) / len(ys))
 
 
-def _draw_room_labels(ax: Axes, geom: _PixelGeom, *, rng: random.Random | None = None) -> int:
+def _draw_room_symbols(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    symbol_probability: float,
+    wall_thickness: float,
+    blackness: float,
+    rng: random.Random | None = None,
+) -> int:
+    if symbol_probability <= 0.0:
+        return 0
+    source_rng = rng or random.Random()
+    count = 0
+    for _, polygon, label in geom.rooms:
+        if source_rng.random() > symbol_probability:
+            continue
+        if draw_room_symbol(
+            ax,
+            polygon,
+            label,
+            wall_thickness=wall_thickness,
+            blackness=blackness,
+            rng=source_rng,
+        ):
+            count += 1
+    return count
+
+
+def _draw_room_labels(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    ink: tuple[float, float, float],
+    rng: random.Random | None = None,
+) -> int:
     source_rng = rng or random.Random()
     count = 0
     for _, polygon, label in geom.rooms:
         font_size = 16 * source_rng.uniform(0.82, 1.18)
         cx, cy = _polygon_centroid(polygon)
-        ax.text(cx, cy, label, ha="center", va="center", color="black", fontsize=font_size)
+        ax.text(cx, cy, label, ha="center", va="center", color=ink, fontsize=font_size)
         count += 1
     return count
 
 
-def _draw_doors(ax: Axes, geom: _PixelGeom, *, opening_thick: float) -> int:
+def _draw_doors(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    opening_thick: float,
+    ink: tuple[float, float, float],
+) -> int:
     count = 0
     for start, end in geom.doors:
-        draw_door(ax, start, end, wall_thickness=opening_thick, to_the_right=count % 2 == 0)
+        draw_door(ax, start, end, wall_thickness=opening_thick, to_the_right=count % 2 == 0, color=ink)
         count += 1
     return count
 
@@ -207,22 +267,44 @@ def _render_geom(
     room_outline_thick: float,
     boundary_thick: float,
     opening_thick: float,
+    symbol_probability: float = 0.0,
     rng: random.Random | None = None,
-) -> tuple[bytes, int, int, int, int, int]:
+) -> tuple[bytes, int, int, int, int, int, int, float]:
     if not geom.rooms:
         raise ValueError("Floor plan has no rooms")
 
+    source_rng = rng or random.Random()
+    blackness = source_rng.uniform(BLACKNESS_MIN, BLACKNESS_MAX)
+    ink = _ink_color(blackness)
+
     fig, ax = _create_canvas(geom.size)
-    _draw_room_polygons(ax, geom, room_outline_thick=room_outline_thick)
-    boundary_count = _draw_union_boundary(ax, geom, boundary_thick=boundary_thick)
-    door_count = _draw_doors(ax, geom, opening_thick=opening_thick)
+    _draw_room_polygons(ax, geom, room_outline_thick=room_outline_thick, ink=ink)
+    boundary_count = _draw_union_boundary(ax, geom, boundary_thick=boundary_thick, ink=ink)
+    door_count = _draw_doors(ax, geom, opening_thick=opening_thick, ink=ink)
     window_count = _draw_windows(ax, geom, opening_thick=boundary_thick)
-    label_count = _draw_room_labels(ax, geom, rng=rng)
+    symbol_count = _draw_room_symbols(
+        ax,
+        geom,
+        symbol_probability=symbol_probability,
+        wall_thickness=room_outline_thick,
+        blackness=blackness,
+        rng=source_rng,
+    )
+    label_count = _draw_room_labels(ax, geom, ink=ink, rng=source_rng)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=100, pad_inches=0, facecolor="white")
     plt.close(fig)
-    return buf.getvalue(), boundary_count, len(geom.rooms), label_count, door_count, window_count
+    return (
+        buf.getvalue(),
+        boundary_count,
+        len(geom.rooms),
+        label_count,
+        door_count,
+        window_count,
+        symbol_count,
+        blackness,
+    )
 
 
 def export_realistic(
@@ -236,16 +318,29 @@ def export_realistic(
     room_outline_thick: float = DEFAULT_ROOM_OUTLINE_THICK,
     boundary_thick: float = DEFAULT_BOUNDARY_THICK,
     opening_thick: float = DEFAULT_OPENING_THICK,
+    symbol_probability: float = 0.0,
     rng: random.Random | None = None,
 ) -> dict[str, Any]:
-    """Render room outlines, boundary, doors, windows, and labels; return base64 + metadata."""
+    """Render room outlines, boundary, doors, windows, labels, and optional symbols; return base64 + metadata."""
     _ = canvas_size
+    if not 0.0 <= symbol_probability <= 1.0:
+        raise ValueError("symbol_probability must be between 0 and 1")
     geom = _resolve_geom(plan, rooms, size, doors=doors, windows=windows)
-    png, boundary_count, room_count, label_count, door_count, window_count = _render_geom(
+    (
+        png,
+        boundary_count,
+        room_count,
+        label_count,
+        door_count,
+        window_count,
+        symbol_count,
+        blackness,
+    ) = _render_geom(
         geom,
         room_outline_thick=room_outline_thick,
         boundary_thick=boundary_thick,
         opening_thick=opening_thick,
+        symbol_probability=symbol_probability,
         rng=rng,
     )
     source = "rooms" if rooms else "floor_plan"
@@ -263,5 +358,8 @@ def export_realistic(
             "room_outline_thick": room_outline_thick,
             "boundary_thick": boundary_thick,
             "opening_thick": opening_thick,
+            "symbol_probability": symbol_probability,
+            "symbol_count": symbol_count,
+            "blackness": round(blackness, 4),
         },
     }

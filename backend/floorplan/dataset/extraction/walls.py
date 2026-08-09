@@ -295,6 +295,7 @@ def render_extraction_png(
     extracted: dict[str, Any],
     path: Path,
     *,
+    symbol_probability: float = 0.0,
     rng: random.Random | None = None,
 ) -> Path:
     """Render transformed extraction JSON to a realistic PNG."""
@@ -306,6 +307,7 @@ def render_extraction_png(
         doors=doors,
         windows=windows,
         size=_CANVAS_SIZE,
+        symbol_probability=symbol_probability,
         rng=rng,
     )
     path.parent.mkdir(parents=True, exist_ok=True)

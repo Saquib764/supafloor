@@ -13,7 +13,7 @@ import argparse
 import sys
 from pathlib import Path
 
-_DEFAULT_IMAGE = Path("out/fp1.jpeg")
+_DEFAULT_IMAGE = Path("out/simple1.png")
 _DEFAULT_OUT = Path("out")
 
 

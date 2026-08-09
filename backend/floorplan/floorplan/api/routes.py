@@ -5,7 +5,8 @@ from __future__ import annotations
 import base64
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 
 from extraction.constants import CANVAS_SIZE
 from extraction.extract import extract_rooms
@@ -20,6 +21,7 @@ from floorplan.schemas.requests import (
     RenderRequest,
     UpdateConfigRequest,
 )
+from floorplan.services.dataset_corpus import image_path, list_items, load_json
 from floorplan.services.engine import FloorPlanEngine
 
 router = APIRouter(prefix="/floorplan", tags=["floorplan"])
@@ -82,6 +84,7 @@ def export_realistic_route(body: RealisticExportRequest) -> dict[str, Any]:
             room_outline_thick=body.room_outline_thick,
             boundary_thick=body.boundary_thick,
             opening_thick=body.opening_thick,
+            symbol_probability=body.symbol_probability,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -140,3 +143,32 @@ def plan_delete(plan_id: str) -> dict[str, str]:
     except FileNotFoundError as exc:
         raise HTTPException(404, f"Plan not found: {plan_id}") from exc
     return {"deleted": plan_id}
+
+
+@router.get("/dataset/basic5000")
+def dataset_basic5000_list(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict[str, Any]:
+    return list_items(offset, limit)
+
+
+@router.get("/dataset/basic5000/{stem}")
+def dataset_basic5000_json(stem: str) -> dict[str, Any]:
+    try:
+        return {"stem": stem, "json": load_json(stem)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"Dataset item not found: {stem}") from exc
+
+
+@router.get("/dataset/basic5000/{stem}/image")
+def dataset_basic5000_image(stem: str) -> FileResponse:
+    try:
+        path = image_path(stem)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"Dataset image not found: {stem}") from exc
+    return FileResponse(path, media_type="image/png")

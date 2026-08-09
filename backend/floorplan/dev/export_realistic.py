@@ -45,6 +45,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Random seed for scale, offset, and label sizes (default: random each run)",
     )
+    parser.add_argument(
+        "--symbol-probability",
+        type=float,
+        default=0.5,
+        help="Probability [0-1] of drawing a room symbol per eligible room (default: 0)",
+    )
     args = parser.parse_args(argv)
 
     rng = random.Random(args.seed)
@@ -57,7 +63,12 @@ def main(argv: list[str] | None = None) -> int:
     elif not out_path.is_absolute():
         out_path = service_root / out_path
 
-    render_extraction_png(extracted, out_path, rng=rng)
+    render_extraction_png(
+        extracted,
+        out_path,
+        symbol_probability=args.symbol_probability,
+        rng=rng,
+    )
     print(f"Wrote {out_path} (1024x1024)")
     print({"id": extracted["id"], "room_count": len(extracted["rooms"]), "canvas_size": 1024})
     return 0

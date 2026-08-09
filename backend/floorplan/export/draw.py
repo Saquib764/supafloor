@@ -67,6 +67,7 @@ def draw_door(
     *,
     wall_thickness: float,
     to_the_right: bool = True,
+    color: str | tuple[float, float, float] = "black",
 ) -> None:
     length, angle = _segment(start, end)
     if length < 1e-6:
@@ -83,7 +84,7 @@ def draw_door(
     ax.plot(
         [hinges[0], leaf_end[0]],
         [hinges[1], leaf_end[1]],
-        color="black",
+        color=color,
         linewidth=1.5,
         solid_capstyle="butt",
     )
@@ -104,7 +105,7 @@ def draw_door(
             angle=angle,
             theta1=theta1,
             theta2=theta2,
-            color="black",
+            color=color,
             linewidth=1,
         )
     )
