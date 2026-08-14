@@ -98,10 +98,10 @@ def main(argv: list[str] | None = None) -> int:
     for json_path in json_paths:
         for variant in range(N):
             rng = random.Random(f"{json_path}:{variant}")
-            extracted = prepare_extraction(json_path, rng=rng)
+            extracted = prepare_extraction(json_path, rng=rng, symbol_probability=0.65)
             stem = f"{extracted['id']}_{variant}"
             (output_dir / f"{stem}.json").write_text(json.dumps(extracted, indent=2))
-            render_extraction_png(extracted, input_dir / f"{stem}.png", rng=rng, symbol_probability=0.65)
+            render_extraction_png(extracted, input_dir / f"{stem}.png", rng=rng)
             written += 1
             if written % 100 == 0 or written == total:
                 print(f"exported {written}/{total}", flush=True)

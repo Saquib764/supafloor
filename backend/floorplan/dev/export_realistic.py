@@ -55,7 +55,11 @@ def main(argv: list[str] | None = None) -> int:
 
     rng = random.Random(args.seed)
     input_path = args.input if args.input.is_absolute() else service_root / args.input
-    extracted = prepare_extraction(input_path, rng=rng)
+    extracted = prepare_extraction(
+        input_path,
+        rng=rng,
+        symbol_probability=args.symbol_probability,
+    )
 
     out_path = args.output
     if out_path is None:
@@ -63,14 +67,16 @@ def main(argv: list[str] | None = None) -> int:
     elif not out_path.is_absolute():
         out_path = service_root / out_path
 
-    render_extraction_png(
-        extracted,
-        out_path,
-        symbol_probability=args.symbol_probability,
-        rng=rng,
-    )
+    render_extraction_png(extracted, out_path, rng=rng)
     print(f"Wrote {out_path} (1024x1024)")
-    print({"id": extracted["id"], "room_count": len(extracted["rooms"]), "canvas_size": 1024})
+    print(
+        {
+            "id": extracted["id"],
+            "room_count": len(extracted["rooms"]),
+            "symbol_count": len(extracted.get("symbols") or []),
+            "canvas_size": 1024,
+        }
+    )
     return 0
 
 

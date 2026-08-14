@@ -13,7 +13,6 @@ from floorplan.geometry.boundary import boundary_from_params, sample_boundary_pa
 from floorplan.geometry.ops import area as polygon_area
 from floorplan.requirements.context import (
     _place_doors,
-    _place_windows,
     _room_type_for_name,
     _zone_for_name,
     run_generation,
@@ -308,7 +307,7 @@ def generate_geometry(doc: dict[str, Any]) -> None:
 
 
 def place_openings(doc: dict[str, Any]) -> None:
-    """Place doors and windows and write them into the document."""
+    """Place doors and write them into the document (no windows)."""
     plan = document_to_plan(doc)
     params = _generation_params(doc)
     doors = _place_doors(
@@ -317,7 +316,6 @@ def place_openings(doc: dict[str, Any]) -> None:
         entry_point=params.get("entry_point"),
         connection_graph=params.get("connection_graph"),
     )
-    windows = _place_windows(plan.rooms, plan.boundary or plan.ensure_boundary())
     id_to_name = {room.id: room.name for room in plan.rooms}
     doc["openings"] = {
         "doors": [
@@ -330,15 +328,7 @@ def place_openings(doc: dict[str, Any]) -> None:
             }
             for door in doors
         ],
-        "windows": [
-            {
-                "id": window.id,
-                "room_names": [id_to_name.get(rid, rid) for rid in window.room_ids],
-                "start": _point(window.start.x, window.start.y),
-                "end": _point(window.end.x, window.end.y),
-            }
-            for window in windows
-        ],
+        "windows": [],
     }
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from matplotlib.axes import Axes
@@ -186,6 +187,17 @@ def _composite_symbol(bg_rgb: np.ndarray, fg_rgba: np.ndarray) -> np.ndarray:
     return np.asarray(Image.composite(blended, bg, alpha))
 
 
+def _rotate_rgba(rgba: np.ndarray, angle_deg: float) -> np.ndarray:
+    if abs(angle_deg) < 1e-9:
+        return rgba
+    rotated = Image.fromarray(rgba).rotate(
+        angle_deg,
+        expand=True,
+        resample=Image.Resampling.BICUBIC,
+    )
+    return np.asarray(rotated)
+
+
 def _blit_symbol(
     ax: Axes,
     rgba: np.ndarray,
@@ -195,8 +207,16 @@ def _blit_symbol(
     draw_h: float,
     *,
     blackness: float = 1.0,
+    rotation_deg: float = 0.0,
 ) -> None:
     tinted = _tint_rgba(rgba, blackness)
+    if abs(rotation_deg) > 1e-9:
+        orig_h, orig_w = tinted.shape[:2]
+        tinted = _rotate_rgba(tinted, rotation_deg)
+        new_h, new_w = tinted.shape[:2]
+        if orig_w > 0 and orig_h > 0:
+            draw_w = draw_w * (new_w / orig_w)
+            draw_h = draw_h * (new_h / orig_h)
     left = cx - draw_w / 2.0
     right = cx + draw_w / 2.0
     top = cy - draw_h / 2.0
@@ -214,24 +234,23 @@ def _blit_symbol(
     ax.imshow(out_rgba, extent=(left, right, bottom, top), zorder=3)
 
 
-def draw_room_symbol(
-    ax: Axes,
+def plan_room_symbol(
     polygon: list[Coord],
     name: str,
     *,
     wall_thickness: float = 4.0,
-    blackness: float = 1.0,
     rng: random.Random | None = None,
-) -> bool:
+) -> dict[str, Any] | None:
+    """Choose image + placement for a room symbol. Returns JSON-ready placement or None."""
     if symbol_kind_for_room(name) is None:
-        return False
+        return None
     box = _fit_box(polygon)
     if box is None:
-        return False
+        return None
     source_rng = rng or random.Random()
     path = _pick_image(name, source_rng)
     if path is None:
-        return False
+        return None
     cx, cy, hw, hh = box
     rgba = _load_rgba(path)
     img_h, img_w = rgba.shape[:2]
@@ -247,5 +266,64 @@ def draw_room_symbol(
     if wall_center is not None:
         cx, cy = wall_center
 
-    _blit_symbol(ax, rgba, cx, cy, draw_w, draw_h, blackness=blackness)
+    return {
+        "room_name": name,
+        "image": path.name,
+        "x": round(float(cx), 2),
+        "y": round(float(cy), 2),
+        "width": round(float(draw_w), 2),
+        "height": round(float(draw_h), 2),
+    }
+
+
+def draw_planned_symbol(
+    ax: Axes,
+    placement: dict[str, Any],
+    *,
+    blackness: float = 1.0,
+) -> bool:
+    """Draw a symbol from a planned placement dict."""
+    image_name = str(placement.get("image") or "")
+    path = _IMAGE_BY_NAME.get(image_name)
+    if path is None:
+        return False
+    try:
+        cx = float(placement["x"])
+        cy = float(placement["y"])
+        draw_w = float(placement["width"])
+        draw_h = float(placement["height"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if draw_w <= 0 or draw_h <= 0:
+        return False
+    try:
+        rotation_deg = float(placement.get("rotation_deg") or 0.0)
+    except (TypeError, ValueError):
+        rotation_deg = 0.0
+    rgba = _load_rgba(path)
+    _blit_symbol(
+        ax,
+        rgba,
+        cx,
+        cy,
+        draw_w,
+        draw_h,
+        blackness=blackness,
+        rotation_deg=rotation_deg,
+    )
     return True
+
+
+def draw_room_symbol(
+    ax: Axes,
+    polygon: list[Coord],
+    name: str,
+    *,
+    wall_thickness: float = 4.0,
+    blackness: float = 1.0,
+    rng: random.Random | None = None,
+) -> bool:
+    placement = plan_room_symbol(polygon, name, wall_thickness=wall_thickness, rng=rng)
+    if placement is None:
+        return False
+    return draw_planned_symbol(ax, placement, blackness=blackness)

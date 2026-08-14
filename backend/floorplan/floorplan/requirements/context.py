@@ -6,14 +6,12 @@ from typing import Any
 
 from shapely.geometry import LineString, Point, Polygon, box
 
-from floorplan.geometry.authors import make_door_line, make_window_line
-from floorplan.geometry import area
+from floorplan.geometry.authors import make_door_line
 from floorplan.geometry.ops import polygon_from_boundary, polygon_from_room, shared_edge
 from floorplan.geometry.exterior import (
     EDGE_TOL as _EDGE_TOL,
     MIN_LINE_LEN as _MIN_LINE_LEN,
     room_exterior_edge as _boundary_edge,
-    room_exterior_segment as _exterior_edge,
 )
 from floorplan.geometry.boundary import boundary_from_params, force_manhattan, is_manhattan
 from floorplan.requirements.areas import name_root
@@ -25,12 +23,11 @@ from floorplan.requirements.program import (
     toilet_parent,
 )
 from floorplan.schemas.enums import RoomType, ZoneType
-from floorplan.schemas.models import Boundary, Door, Room, Window
+from floorplan.schemas.models import Boundary, Door, Room
 from floorplan.units import (
     EXTERIOR_DOOR_FT,
     INTERIOR_DOOR_FT,
     MIN_OPENING_EDGE_FT,
-    window_length_ft,
 )
 
 _MIN_SPACE_AREA = 0.5
@@ -548,59 +545,4 @@ def _reachable_ids(adj: dict[str, list[str]], rooms: list[Room]) -> set[str]:
                 seen.add(nxt)
                 stack.append(nxt)
     return seen
-
-
-def _window_segments(
-    edge: LineString,
-    count: int,
-    length: float,
-) -> list[tuple[tuple[float, float], tuple[float, float]]]:
-    if edge.length < _MIN_LINE_LEN or count <= 0:
-        return []
-    out: list[tuple[tuple[float, float], tuple[float, float]]] = []
-    use = min(length, edge.length * 0.75)
-    if use < 2.0:
-        return []
-    for i in range(count):
-        mid = edge.length * (i + 1) / (count + 1)
-        a = max(0.0, mid - use / 2.0)
-        b = min(edge.length, a + use)
-        p0 = edge.interpolate(a)
-        p1 = edge.interpolate(b)
-        if p0.coords[0] == p1.coords[0]:
-            continue
-        out.append(((float(p0.x), float(p0.y)), (float(p1.x), float(p1.y))))
-    return out
-
-
-def _window_priority(room: Room) -> tuple[int, int]:
-    root = name_root(room.name)
-    order = {"Living": 0, "Living/Sleeping": 0, "Room": 1}
-    n = 0
-    if root == "Room":
-        parts = room.name.rsplit(" ", 1)
-        n = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
-    return (order.get(root, order.get(room.name, 3)), n)
-
-
-def _place_windows(rooms: list[Room], boundary: Boundary, count: int = 2) -> list[Window]:
-    boundary_poly = polygon_from_boundary(boundary)
-    candidates = [
-        (room, edge)
-        for room in rooms
-        if (edge := _exterior_edge(room, boundary_poly)) is not None
-    ]
-    candidates.sort(key=lambda pair: _window_priority(pair[0]))
-
-    windows: list[Window] = []
-    for room, edge in candidates:
-        need = count - len(windows)
-        if need <= 0:
-            break
-        win_len = window_length_ft(area(room.coords()), edge.length)
-        for start, end in _window_segments(edge, need, win_len):
-            windows.append(make_window_line(start, end, room_ids=[room.id]))
-            if len(windows) >= count:
-                break
-    return windows
 

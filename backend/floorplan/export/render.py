@@ -18,7 +18,7 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
 from export.draw import draw_door, draw_polygon, draw_window
-from export.symbols import draw_room_symbol
+from export.symbols import draw_planned_symbol
 from floorplan.schemas.models import FloorPlan
 
 Coord = tuple[float, float]
@@ -26,6 +26,7 @@ Coord = tuple[float, float]
 DEFAULT_ROOM_OUTLINE_THICK = 4.0
 DEFAULT_BOUNDARY_THICK = 8.0
 DEFAULT_OPENING_THICK = 12.0
+DEFAULT_LABEL_FONT_SIZE = 16.0
 BLACKNESS_MIN = 0.7
 BLACKNESS_MAX = 1.0
 
@@ -36,11 +37,30 @@ def _ink_color(blackness: float) -> tuple[float, float, float]:
 
 
 @dataclass
+class _RoomPixel:
+    slug: str
+    polygon: list[Coord]
+    display: str
+    label_x: float | None = None
+    label_y: float | None = None
+    font_size: float | None = None
+    is_label_disabled: bool = False
+
+
+@dataclass
+class _DoorPixel:
+    start: Coord
+    end: Coord
+    is_arc_disabled: bool = False
+
+
+@dataclass
 class _PixelGeom:
     size: int
-    rooms: list[tuple[str, list[Coord], str]] = field(default_factory=list)
-    doors: list[tuple[Coord, Coord]] = field(default_factory=list)
+    rooms: list[_RoomPixel] = field(default_factory=list)
+    doors: list[_DoorPixel] = field(default_factory=list)
     windows: list[tuple[Coord, Coord]] = field(default_factory=list)
+    symbols: list[dict[str, Any]] = field(default_factory=list)
     plan_id: str = "export"
 
 
@@ -55,12 +75,48 @@ def _slug_name(name: str, index: int) -> str:
     return slug or f"room_{index + 1}"
 
 
+def _label_placement(
+    raw: dict[str, Any] | None,
+) -> tuple[float | None, float | None, float | None, bool]:
+    if not isinstance(raw, dict):
+        return None, None, None, False
+    try:
+        x = float(raw["x"]) if "x" in raw else None
+        y = float(raw["y"]) if "y" in raw else None
+        font_size = float(raw["font_size"]) if "font_size" in raw else None
+    except (TypeError, ValueError):
+        return None, None, None, False
+    return x, y, font_size, bool(raw.get("is_label_disabled"))
+
+
+def _parse_door_item(item: Any) -> _DoorPixel | None:
+    if isinstance(item, _DoorPixel):
+        return item
+    if isinstance(item, dict):
+        start = item.get("start") or {}
+        end = item.get("end") or {}
+        try:
+            return _DoorPixel(
+                start=(float(start["x"]), float(start["y"])),
+                end=(float(end["x"]), float(end["y"])),
+                is_arc_disabled=bool(item.get("is_arc_disabled")),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+    if isinstance(item, (tuple, list)) and len(item) >= 2:
+        start, end = item[0], item[1]
+        is_arc_disabled = bool(item[2]) if len(item) >= 3 else False
+        return _DoorPixel(start=start, end=end, is_arc_disabled=is_arc_disabled)
+    return None
+
+
 def _geom_from_rooms(
     rooms: list[dict[str, Any]],
     size: int,
     *,
-    doors: list[tuple[Coord, Coord]] | None = None,
+    doors: list[Any] | None = None,
     windows: list[tuple[Coord, Coord]] | None = None,
+    symbols: list[dict[str, Any]] | None = None,
 ) -> _PixelGeom:
     geom = _PixelGeom(size=size)
     for i, raw in enumerate(rooms):
@@ -68,9 +124,24 @@ def _geom_from_rooms(
         polygon = [(float(p["x"]), float(p["y"])) for p in raw.get("polygon") or []]
         if len(polygon) < 3:
             continue
-        geom.rooms.append((_slug_name(name, i), polygon, name))
-    geom.doors = list(doors or [])
+        label_x, label_y, font_size, is_label_disabled = _label_placement(raw.get("label"))
+        geom.rooms.append(
+            _RoomPixel(
+                slug=_slug_name(name, i),
+                polygon=polygon,
+                display=name,
+                label_x=label_x,
+                label_y=label_y,
+                font_size=font_size,
+                is_label_disabled=is_label_disabled,
+            )
+        )
+    for item in doors or []:
+        door = _parse_door_item(item)
+        if door is not None:
+            geom.doors.append(door)
     geom.windows = list(windows or [])
+    geom.symbols = list(symbols or [])
     return geom
 
 
@@ -79,9 +150,9 @@ def _geom_from_plan(plan: FloorPlan, size: int) -> _PixelGeom:
     for room in plan.rooms:
         label = room.metadata.get("label")
         display = label.strip() if isinstance(label, str) and label.strip() else room.name.replace("_", " ")
-        geom.rooms.append((room.name, list(room.coords()), display))
+        geom.rooms.append(_RoomPixel(slug=room.name, polygon=list(room.coords()), display=display))
     for door in plan.doors:
-        geom.doors.append(((door.start.x, door.start.y), (door.end.x, door.end.y)))
+        geom.doors.append(_DoorPixel(start=(door.start.x, door.start.y), end=(door.end.x, door.end.y)))
     for window in plan.windows:
         geom.windows.append(((window.start.x, window.start.y), (window.end.x, window.end.y)))
     return geom
@@ -92,11 +163,12 @@ def _resolve_geom(
     rooms: list[dict[str, Any]] | None,
     size: int,
     *,
-    doors: list[tuple[Coord, Coord]] | None = None,
+    doors: list[Any] | None = None,
     windows: list[tuple[Coord, Coord]] | None = None,
+    symbols: list[dict[str, Any]] | None = None,
 ) -> _PixelGeom:
     if rooms:
-        geom = _geom_from_rooms(rooms, size, doors=doors, windows=windows)
+        geom = _geom_from_rooms(rooms, size, doors=doors, windows=windows, symbols=symbols)
         geom.plan_id = "rooms"
         return geom
     if plan is not None:
@@ -118,8 +190,8 @@ def _create_canvas(size: int) -> tuple[Any, Axes]:
 
 def _room_polygons(geom: _PixelGeom) -> list[Polygon]:
     polys: list[Polygon] = []
-    for _, polygon, _ in geom.rooms:
-        ring = _open_ring(polygon)
+    for room in geom.rooms:
+        ring = _open_ring(room.polygon)
         if len(ring) >= 3:
             polys.append(Polygon(ring))
     return polys
@@ -155,10 +227,10 @@ def _draw_room_polygons(
     room_outline_thick: float,
     ink: tuple[float, float, float],
 ) -> None:
-    for _, polygon, _ in geom.rooms:
+    for room in geom.rooms:
         draw_polygon(
             ax,
-            polygon,
+            room.polygon,
             facecolor="none",
             edgecolor=ink,
             linewidth=room_outline_thick,
@@ -198,26 +270,11 @@ def _draw_room_symbols(
     ax: Axes,
     geom: _PixelGeom,
     *,
-    symbol_probability: float,
-    wall_thickness: float,
     blackness: float,
-    rng: random.Random | None = None,
 ) -> int:
-    if symbol_probability <= 0.0:
-        return 0
-    source_rng = rng or random.Random()
     count = 0
-    for _, polygon, label in geom.rooms:
-        if source_rng.random() > symbol_probability:
-            continue
-        if draw_room_symbol(
-            ax,
-            polygon,
-            label,
-            wall_thickness=wall_thickness,
-            blackness=blackness,
-            rng=source_rng,
-        ):
+    for placement in geom.symbols:
+        if draw_planned_symbol(ax, placement, blackness=blackness):
             count += 1
     return count
 
@@ -227,14 +284,17 @@ def _draw_room_labels(
     geom: _PixelGeom,
     *,
     ink: tuple[float, float, float],
-    rng: random.Random | None = None,
 ) -> int:
-    source_rng = rng or random.Random()
     count = 0
-    for _, polygon, label in geom.rooms:
-        font_size = 16 * source_rng.uniform(0.82, 1.18)
-        cx, cy = _polygon_centroid(polygon)
-        ax.text(cx, cy, label, ha="center", va="center", color=ink, fontsize=font_size)
+    for room in geom.rooms:
+        if room.is_label_disabled:
+            continue
+        if room.label_x is not None and room.label_y is not None:
+            cx, cy = room.label_x, room.label_y
+        else:
+            cx, cy = _polygon_centroid(room.polygon)
+        font_size = room.font_size if room.font_size is not None else DEFAULT_LABEL_FONT_SIZE
+        ax.text(cx, cy, room.display, ha="center", va="center", color=ink, fontsize=font_size)
         count += 1
     return count
 
@@ -247,8 +307,16 @@ def _draw_doors(
     ink: tuple[float, float, float],
 ) -> int:
     count = 0
-    for start, end in geom.doors:
-        draw_door(ax, start, end, wall_thickness=opening_thick, to_the_right=count % 2 == 0, color=ink)
+    for door in geom.doors:
+        draw_door(
+            ax,
+            door.start,
+            door.end,
+            wall_thickness=opening_thick,
+            to_the_right=count % 2 == 0,
+            color=ink,
+            draw_arc=not door.is_arc_disabled,
+        )
         count += 1
     return count
 
@@ -267,7 +335,6 @@ def _render_geom(
     room_outline_thick: float,
     boundary_thick: float,
     opening_thick: float,
-    symbol_probability: float = 0.0,
     rng: random.Random | None = None,
 ) -> tuple[bytes, int, int, int, int, int, int, float]:
     if not geom.rooms:
@@ -282,15 +349,8 @@ def _render_geom(
     boundary_count = _draw_union_boundary(ax, geom, boundary_thick=boundary_thick, ink=ink)
     door_count = _draw_doors(ax, geom, opening_thick=opening_thick, ink=ink)
     window_count = _draw_windows(ax, geom, opening_thick=boundary_thick)
-    symbol_count = _draw_room_symbols(
-        ax,
-        geom,
-        symbol_probability=symbol_probability,
-        wall_thickness=room_outline_thick,
-        blackness=blackness,
-        rng=source_rng,
-    )
-    label_count = _draw_room_labels(ax, geom, ink=ink, rng=source_rng)
+    symbol_count = _draw_room_symbols(ax, geom, blackness=blackness)
+    label_count = _draw_room_labels(ax, geom, ink=ink)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=100, pad_inches=0, facecolor="white")
@@ -311,8 +371,9 @@ def export_realistic(
     *,
     plan: FloorPlan | None = None,
     rooms: list[dict[str, Any]] | None = None,
-    doors: list[tuple[Coord, Coord]] | None = None,
+    doors: list[Any] | None = None,
     windows: list[tuple[Coord, Coord]] | None = None,
+    symbols: list[dict[str, Any]] | None = None,
     canvas_size: int = 1024,
     size: int = 1024,
     room_outline_thick: float = DEFAULT_ROOM_OUTLINE_THICK,
@@ -321,11 +382,10 @@ def export_realistic(
     symbol_probability: float = 0.0,
     rng: random.Random | None = None,
 ) -> dict[str, Any]:
-    """Render room outlines, boundary, doors, windows, labels, and optional symbols; return base64 + metadata."""
+    """Render room outlines, boundary, doors, windows, labels, and planned symbols; return base64 + metadata."""
     _ = canvas_size
-    if not 0.0 <= symbol_probability <= 1.0:
-        raise ValueError("symbol_probability must be between 0 and 1")
-    geom = _resolve_geom(plan, rooms, size, doors=doors, windows=windows)
+    _ = symbol_probability
+    geom = _resolve_geom(plan, rooms, size, doors=doors, windows=windows, symbols=symbols)
     (
         png,
         boundary_count,
@@ -340,7 +400,6 @@ def export_realistic(
         room_outline_thick=room_outline_thick,
         boundary_thick=boundary_thick,
         opening_thick=opening_thick,
-        symbol_probability=symbol_probability,
         rng=rng,
     )
     source = "rooms" if rooms else "floor_plan"
@@ -358,7 +417,6 @@ def export_realistic(
             "room_outline_thick": room_outline_thick,
             "boundary_thick": boundary_thick,
             "opening_thick": opening_thick,
-            "symbol_probability": symbol_probability,
             "symbol_count": symbol_count,
             "blackness": round(blackness, 4),
         },

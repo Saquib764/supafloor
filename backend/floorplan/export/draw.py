@@ -68,6 +68,7 @@ def draw_door(
     wall_thickness: float,
     to_the_right: bool = True,
     color: str | tuple[float, float, float] = "black",
+    draw_arc: bool = True,
 ) -> None:
     length, angle = _segment(start, end)
     if length < 1e-6:
@@ -76,6 +77,9 @@ def draw_door(
     cut = _opening_cut_polygon(start, end, wall_thickness)
     if cut:
         draw_polygon(ax, cut, facecolor="white", edgecolor="white", linewidth=0.0)
+
+    if not draw_arc:
+        return
 
     door_width = length
     hinges = start
@@ -118,6 +122,6 @@ def draw_window(
     *,
     wall_thickness: float,
 ) -> None:
-    cut = _opening_cut_polygon(start, end, wall_thickness)
+    cut = _opening_cut_polygon(start, end, wall_thickness - 4.0)
     if cut:
         draw_polygon(ax, cut, facecolor="white", edgecolor="white", linewidth=0.0)
