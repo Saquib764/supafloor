@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from floorplan.schemas.models import Door, Point2D, Room, Window
-from floorplan.schemas.enums import RoomType, ZoneType
+from schemas.models import Door, Point2D, Room, Window
+from schemas.enums import RoomType, ZoneType
 
 
 def make_room(

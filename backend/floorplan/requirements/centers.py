@@ -8,7 +8,7 @@ from typing import Any
 
 from shapely.geometry import Point, Polygon
 
-from floorplan.requirements.program import bedroom_parent, is_bedroom_name, space_role
+from requirements.program import bedroom_parent, is_bedroom_name, space_role
 
 _ANCHOR_ROLES = frozenset(
     {

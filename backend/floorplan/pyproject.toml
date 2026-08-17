@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.scripts]
-floorplan = "floorplan.cli:main"
+floorplan = "cli:main"
 
 [dependency-groups]
 dev = [
@@ -36,15 +36,29 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["app", "floorplan", "extraction", "export", "dev", "dataset"]
+packages = [
+  "app",
+  "config",
+  "dataset",
+  "dev",
+  "evaluator",
+  "export",
+  "extraction",
+  "geometry",
+  "renderer",
+  "requirements",
+  "schemas",
+  "topology",
+]
 
 [tool.hatch.build.targets.wheel.force-include]
-"floorplan/prompts" = "floorplan/prompts"
+"cli.py" = "cli.py"
+"requirements/prompts" = "requirements/prompts"
 "extraction/prompts" = "extraction/prompts"
 
 [tool.uv]
 package = true
 
 [tool.pytest.ini_options]
-testpaths = ["floorplan/tests", "app/tests"]
+testpaths = ["app/tests"]
 pythonpath = ["."]

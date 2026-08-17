@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 
-from floorplan.requirements.areas import name_root
-from floorplan.requirements.program import bedroom_parent, is_bedroom, is_bedroom_name
+from requirements.areas import name_root
+from requirements.program import bedroom_parent, is_bedroom, is_bedroom_name
 
 
 def living_name(names: list[str]) -> str:

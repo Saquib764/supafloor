@@ -7,7 +7,7 @@ from typing import Any
 
 from shapely.geometry import LineString, Point, Polygon
 
-from floorplan.units import MIN_OPENING_EDGE_FT
+from schemas.units import MIN_OPENING_EDGE_FT
 
 
 def _boundary_edges(boundary_poly: Polygon) -> list[tuple[tuple[float, float], tuple[float, float], float]]:

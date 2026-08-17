@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from floorplan.evaluator.rules import evaluate_rules, hard_failures
-from floorplan.geometry import area
-from floorplan.schemas.models import FloorPlan, RuleResult, ScoreBreakdown
+from evaluator.rules import evaluate_rules, hard_failures
+from geometry import area
+from schemas.models import FloorPlan, RuleResult, ScoreBreakdown
 
 DEFAULT_WEIGHTS = {
     "geometry": 0.15,

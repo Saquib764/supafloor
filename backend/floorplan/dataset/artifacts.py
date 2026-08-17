@@ -8,9 +8,9 @@ from typing import Any
 
 from dataset.layout_prompt import build_layout_prompt
 from dataset.store import PLAN_JSON, PLAN_PNG, SCORE_JSON, SCORE_MD
-from floorplan.evaluator import score_label
-from floorplan.renderer import render_png
-from floorplan.schemas.models import FloorPlan, ScoreBreakdown
+from evaluator import score_label
+from renderer import render_png
+from schemas.models import FloorPlan, ScoreBreakdown
 
 _RENDER_LAYERS = ["boundary", "rooms", "labels", "doors", "windows", "topology"]
 

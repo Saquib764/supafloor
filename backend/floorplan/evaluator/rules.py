@@ -7,7 +7,7 @@ from typing import Callable
 
 from shapely.geometry import Point
 
-from floorplan.geometry import (
+from geometry import (
     area,
     aspect_ratio,
     centroid,
@@ -21,10 +21,10 @@ from floorplan.geometry import (
     shared_edge,
     window_length_on_exterior,
 )
-from floorplan.requirements.program import closet_parent
-from floorplan.schemas.enums import RoomType, Severity, ZoneType
-from floorplan.schemas.models import FloorPlan, Room, RuleResult
-from floorplan.topology import (
+from requirements.program import closet_parent
+from schemas.enums import RoomType, Severity, ZoneType
+from schemas.models import FloorPlan, Room, RuleResult
+from topology import (
     adjacency_via_doors,
     build_adjacency,
     circ_dead_end_ids,
@@ -36,7 +36,7 @@ from floorplan.topology import (
     shortest_hop,
     shortest_path,
 )
-from floorplan.units import INTERIOR_DOOR_FT, WINDOW_HEIGHT_FT, window_length_ft
+from schemas.units import INTERIOR_DOOR_FT, WINDOW_HEIGHT_FT, window_length_ft
 
 RuleFn = Callable[[FloorPlan], RuleResult]
 
@@ -577,7 +577,7 @@ def rule_wet_core_compactness(plan: FloorPlan) -> RuleResult:
     wet = [r for r in plan.rooms if r.zone == ZoneType.WET or r.room_type in (RoomType.BATHROOM, RoomType.POWDER, RoomType.KITCHEN, RoomType.UTILITY)]
     if len(wet) < 2:
         return _soft("wet_core", "Wet Core Compactness", 7.0, "Single wet room")
-    from floorplan.geometry import centroid, distance
+    from geometry import centroid, distance
 
     centers = [centroid(r.coords()) for r in wet]
     # average pairwise distance

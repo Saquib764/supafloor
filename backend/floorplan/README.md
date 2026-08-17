@@ -40,12 +40,12 @@ See `dev/README.md`.
 
 ```
 backend/floorplan/          # service root (this directory)
-  app/                      # FastAPI server shell
-  dataset/                  # corpus generator + plan store
-  extraction/               # image ↔ rooms (inference + training transform)
-  export/                   # realistic PNG
+  cli.py                    # uv run floorplan …
+  app/                      # FastAPI + /floorplan routes
+  config/                   # engine settings from config.yaml
+  schemas/ geometry/ topology/
+  requirements/             # plan generation (+ llm, prompts)
+  evaluator/ renderer/
+  dataset/ extraction/ export/
   dev/                      # manual generate / score / export scripts
-  floorplan/                # floor plan purpose module
-    api/                    # /floorplan/* routes
-    geometry/ topology/ …
 ```

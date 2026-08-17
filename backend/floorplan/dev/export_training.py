@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.path.insert(0, str(service_root))
 
     from dataset.layout_prompt import build_training_example
-    from floorplan.requirements.plan_io import document_to_plan, plan_document_id
+    from requirements.plan_io import document_to_plan, plan_document_id
 
     source: Path = args.dir
     if not source.is_dir():

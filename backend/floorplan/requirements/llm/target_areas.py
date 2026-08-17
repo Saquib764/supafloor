@@ -5,13 +5,13 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from floorplan.config.pipeline import get_pipeline_config, prompt_id_for, substep_provider
-from floorplan.llm.client import openai_model, parse_structured
-from floorplan.llm.schemas import TargetAreasResponse
-from floorplan.prompts import render_prompt
-from floorplan.llm._context import format_user_metadata, spaces_table
-from floorplan.requirements.areas import area_options_for
-from floorplan.requirements.program import pick_selected_areas, scale_selected_areas
+from config.pipeline import get_pipeline_config, prompt_id_for, substep_provider
+from requirements.llm.client import openai_model, parse_structured
+from requirements.llm.schemas import TargetAreasResponse
+from requirements.prompts import render_prompt
+from requirements.llm._context import format_user_metadata, spaces_table
+from requirements.areas import area_options_for
+from requirements.program import pick_selected_areas, scale_selected_areas
 
 
 def _area_constraints_table(names: list[str]) -> str:

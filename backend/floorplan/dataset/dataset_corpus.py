@@ -7,7 +7,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-SERVICE_ROOT = Path(__file__).resolve().parents[2]
+SERVICE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SERVICE_ROOT.parents[1]
 CORPUS_ROOT = REPO_ROOT / "image-to-floorplan" / "basic_5000"
 _STEM_RE = re.compile(r"^[0-9a-f]+_\d+$")

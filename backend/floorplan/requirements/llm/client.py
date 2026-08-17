@@ -8,7 +8,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from app.config import settings
-from floorplan.config.pipeline import get_pipeline_config
+from config.pipeline import get_pipeline_config
 
 T = TypeVar("T", bound=BaseModel)
 

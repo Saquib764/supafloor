@@ -9,8 +9,8 @@ from typing import Any
 from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 
-from floorplan.requirements.centers import center_sampling_order
-from floorplan.requirements.program import bedroom_parent, ensuite_kind, is_bedroom, is_bedroom_name, space_role
+from requirements.centers import center_sampling_order
+from requirements.program import bedroom_parent, ensuite_kind, is_bedroom, is_bedroom_name, space_role
 
 # Soft minimums from selected_areas; residual free space is claimed past those mins.
 _MAX_ASPECT = 2.8

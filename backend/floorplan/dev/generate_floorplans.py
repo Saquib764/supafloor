@@ -36,11 +36,11 @@ def main(argv: list[str] | None = None) -> int:
     if str(service_root) not in sys.path:
         sys.path.insert(0, str(service_root))
 
-    from floorplan.constants import pick_target_area
+    from schemas.constants import pick_target_area
     from dataset.artifacts import write_plan_artifacts
-    from floorplan.evaluator import score_plan
-    from floorplan.requirements import generate_plan_document
-    from floorplan.requirements.plan_io import document_to_plan, plan_document_id
+    from evaluator import score_plan
+    from requirements import generate_plan_document
+    from requirements.plan_io import document_to_plan, plan_document_id
 
     out: Path = args.out
     out.mkdir(parents=True, exist_ok=True)

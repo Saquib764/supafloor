@@ -9,10 +9,10 @@ from typing import Any, Optional
 from shapely.geometry import Polygon, box
 from shapely.validation import make_valid
 
-from floorplan.config import load_config
-from floorplan.geometry.ops import to_points
-from floorplan.constants import TARGET_AREAS_SQFT, pick_target_area
-from floorplan.schemas.models import Boundary
+from config import load_config
+from geometry.ops import to_points
+from schemas.constants import TARGET_AREAS_SQFT, pick_target_area
+from schemas.models import Boundary
 
 _CORNERS = ("sw", "se", "ne", "nw")
 

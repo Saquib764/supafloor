@@ -11,7 +11,7 @@ import numpy as np
 from matplotlib.axes import Axes
 from PIL import Image, ImageChops
 
-from floorplan.requirements.program import space_role
+from requirements.program import space_role
 
 Coord = tuple[float, float]
 

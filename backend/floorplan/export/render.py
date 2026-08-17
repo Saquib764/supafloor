@@ -19,7 +19,7 @@ from shapely.ops import unary_union
 
 from export.draw import draw_door, draw_pillar, draw_polygon, draw_window
 from export.symbols import draw_planned_symbol
-from floorplan.schemas.models import FloorPlan
+from schemas.models import FloorPlan
 
 Coord = tuple[float, float]
 

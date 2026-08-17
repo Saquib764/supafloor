@@ -77,66 +77,62 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │   └── floorplan/                # Python service root (uv)
 │       ├── pyproject.toml
 │       ├── README.md
-│       ├── app/                  # FastAPI server shell
-│       │   ├── main.py           # app factory, CORS, router registration
-│       │   ├── config.py
+│       ├── cli.py                # CLI entry (uv run floorplan …)
+│       ├── config.yaml
+│       ├── app/                  # FastAPI server shell + /floorplan routes
+│       │   ├── main.py
+│       │   ├── routes.py
+│       │   ├── config.py         # env / CORS / API keys
 │       │   └── tests/
+│       ├── config/               # engine settings from config.yaml
+│       ├── schemas/              # enums, domain models, units, constants
+│       ├── geometry/             # Shapely ops + authoring helpers
+│       ├── topology/             # adjacency, reachability, hashes
+│       ├── requirements/         # boundary-first plan generation
+│       │   ├── llm/              # generation LLM (centers, graph, areas)
+│       │   └── prompts/          # generation prompt YAMLs
+│       ├── evaluator/            # rules, scoring
+│       ├── renderer/             # schematic SVG / PNG
 │       ├── dataset/              # corpus generator + plan store
 │       ├── extraction/           # image ↔ rooms (inference + training transform)
 │       ├── export/               # realistic PNG
-│       ├── dev/                  # Manual check scripts + outputs
-│       │   ├── README.md
-│       │   ├── generate_floorplans.py
-│       │   ├── score_floorplans.py
-│       │   ├── export_training.py
-│       │   └── output/           # sample plans / scores / extraction
-│       └── floorplan/            # FloorPlan purpose module
-│           ├── api/              # /floorplan/* HTTP routes
-│           ├── assets/           # static engine assets
-│           ├── evaluator/        # rules, scoring
-│           ├── geometry/         # Shapely ops + authoring helpers
-│           ├── renderer/         # SVG / PNG rendering
-│           ├── schemas/          # enums, domain models, API request bodies
-│           ├── services/         # engine facade
-│           ├── requirements/     # boundary-first plan generation
-│           ├── tests/            # pytest suite
-│           ├── topology/         # adjacency, reachability, hashes
-│           ├── cli.py            # CLI entry (uv run floorplan …)
-│           └── __init__.py
+│       └── dev/                  # manual scripts + outputs
+│           ├── README.md
+│           ├── generate_floorplans.py
+│           ├── score_floorplans.py
+│           ├── export_training.py
+│           └── output/
 │
 └── frontend/                     # Viewer / debug UI
     ├── package.json
     ├── public/
-    │   └── floorplan-viewer.html # standalone Vue viewer
+    │   └── floorplan-viewer.html
     └── app/
-        ├── types/
-        │   └── floorplan.ts
-        ├── pages/
-        │   └── floorplan/
-        │       └── index.vue
+        ├── types/floorplan.ts
+        ├── pages/                # index, extract, dataset
         ├── components/
-        │   └── floorplan/        # Canvas, Inspector, Scores
         └── composables/
-            └── floorplan/        # API client
 ```
 
 ## Domain placement rules
 
 | Change type | Put it in |
 |---|---|
-| Models / enums | `backend/floorplan/floorplan/schemas/` |
-| Polygon / line helpers | `backend/floorplan/floorplan/geometry/` |
-| Adjacency / hashes | `backend/floorplan/floorplan/topology/` |
-| Rules / scores | `backend/floorplan/floorplan/evaluator/` |
-| Schematic SVG/PNG | `backend/floorplan/floorplan/renderer/` |
+| Models / enums / units | `backend/floorplan/schemas/` |
+| Polygon / line helpers | `backend/floorplan/geometry/` |
+| Adjacency / hashes | `backend/floorplan/topology/` |
+| Growing a plan from a boundary | `backend/floorplan/requirements/` |
+| Generation LLM / prompts | `backend/floorplan/requirements/llm/` and `requirements/prompts/` |
+| Rules / scores | `backend/floorplan/evaluator/` |
+| Schematic SVG/PNG | `backend/floorplan/renderer/` |
 | Realistic PNG | `backend/floorplan/export/` |
 | Image ↔ rooms / extraction JSON | `backend/floorplan/extraction/` |
-| HTTP API | `backend/floorplan/floorplan/api/` |
-| Server shell | `backend/floorplan/app/` |
-| Orchestration | `backend/floorplan/floorplan/services/` |
 | Dataset corpus | `backend/floorplan/dataset/` |
+| Engine config.yaml | `backend/floorplan/config/` |
+| HTTP API + server shell | `backend/floorplan/app/` |
+| CLI | `backend/floorplan/cli.py` |
 | Manual scripts | `backend/floorplan/dev/` |
-| Viewer UI | `frontend/app/.../floorplan/` |
+| Viewer UI | `frontend/app/` |
 
 ## Tooling
 

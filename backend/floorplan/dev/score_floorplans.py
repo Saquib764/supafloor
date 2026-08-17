@@ -19,7 +19,7 @@ from pathlib import Path
 
 
 def _load_plan(path: Path):
-    from floorplan.requirements.plan_io import document_to_plan
+    from requirements.plan_io import document_to_plan
 
     raw = json.loads(path.read_text())
     return document_to_plan(raw), raw
@@ -42,8 +42,8 @@ def main(argv: list[str] | None = None) -> int:
         sys.path.insert(0, str(service_root))
 
     from dataset.artifacts import score_row, write_plan_artifacts
-    from floorplan.evaluator import score_label, score_plan
-    from floorplan.requirements.plan_io import plan_document_id
+    from evaluator import score_label, score_plan
+    from requirements.plan_io import plan_document_id
 
     target: Path = args.dir
     if not target.is_dir():

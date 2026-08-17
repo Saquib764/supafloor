@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from shapely.geometry import Point
 
-from floorplan.geometry.ops import min_width, points_to_polygon, rectangularity
+from geometry.ops import min_width, points_to_polygon, rectangularity
 
 Coord = tuple[float, float]
 

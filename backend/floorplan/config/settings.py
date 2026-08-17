@@ -7,9 +7,9 @@ from typing import Any
 
 import yaml
 
-from floorplan.config.pipeline import clear_pipeline_config_cache, get_pipeline_config
+from config.pipeline import clear_pipeline_config_cache, get_pipeline_config
 
-_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"
+_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
 _DEFAULTS: dict[str, Any] = {
     "score_level": "basic",

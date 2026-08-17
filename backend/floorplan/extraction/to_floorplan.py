@@ -5,10 +5,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from floorplan.geometry.ops import area, aspect_ratio, bounding_box, to_points
-from floorplan.schemas.enums import RoomType, ZoneType
-from floorplan.schemas.models import Boundary, FloorPlan, Room
-from floorplan.topology import build_adjacency
+from geometry.ops import area, aspect_ratio, bounding_box, to_points
+from schemas.enums import RoomType, ZoneType
+from schemas.models import Boundary, FloorPlan, Room
+from topology import build_adjacency
 
 
 def _room_type_from_name(name: str) -> RoomType:

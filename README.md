@@ -7,21 +7,22 @@ Deterministic residential floor plan engine for generating, validating, renderin
 ## Layout
 
 ```
-backend/floorplan/              # Python service root (uv project, like mission-pluto/thefluxtrain)
+backend/floorplan/              # Python service root (uv)
   pyproject.toml
-  app/                          # FastAPI server shell (main.py, /health)
+  cli.py                        # uv run floorplan …
+  config.yaml
+  app/                          # FastAPI + /floorplan routes
+  config/                       # engine settings from config.yaml
+  schemas/                      # domain models, enums, units
+  geometry/                     # Shapely-backed geometry ops
+  topology/                     # adjacency, reachability, hashes
+  requirements/                 # boundary-first plan generation (+ llm, prompts)
+  evaluator/                    # hard/soft rules + scoring
+  renderer/                     # schematic SVG / PNG
   dataset/                      # corpus generator + plan store
-  extraction/                   # image ↔ rooms (inference + training transform)
+  extraction/                   # image ↔ rooms
   export/                       # realistic PNG
-  floorplan/                    # FloorPlan purpose module
-    api/                        # /floorplan/* routes
-    schemas/                    # domain models + API request bodies
-    geometry/                   # Shapely-backed immutable geometry ops
-    topology/                   # Adjacency, reachability, diversity hashes
-    evaluator/                  # Hard/soft rules + weighted scoring
-    renderer/                   # SVG / PNG / layer overlays
-    services/                   # Engine facade
-    requirements/               # Boundary-first plan generation
+  dev/                          # manual scripts + outputs
 
 frontend/app/
   pages/                     Nuxt viewer, extract, and dataset pages
@@ -95,7 +96,7 @@ See `backend/floorplan/dev/README.md` for details.
 - `GET  /health` — service health
 - `POST /floorplan/render` → `{ svg, png, metadata }`
 - `POST /floorplan/evaluate`
-- `POST /floorplan/import`
+- `POST /floorplan/extract` — image → rooms
 - `POST /floorplan/generate`
 - `GET  /floorplan/plans` — list saved plans
 - `POST /floorplan/plans/{id}/load` — load plan + scores for viewer

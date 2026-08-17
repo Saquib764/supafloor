@@ -6,25 +6,25 @@ from typing import Any
 
 from shapely.geometry import LineString, Point, Polygon, box
 
-from floorplan.geometry.authors import make_door_line
-from floorplan.geometry.ops import polygon_from_boundary, polygon_from_room, shared_edge
-from floorplan.geometry.exterior import (
+from geometry.authors import make_door_line
+from geometry.ops import polygon_from_boundary, polygon_from_room, shared_edge
+from geometry.exterior import (
     EDGE_TOL as _EDGE_TOL,
     MIN_LINE_LEN as _MIN_LINE_LEN,
     room_exterior_edge as _boundary_edge,
 )
-from floorplan.geometry.boundary import boundary_from_params, force_manhattan, is_manhattan
-from floorplan.requirements.areas import name_root
-from floorplan.requirements.program import (
+from geometry.boundary import boundary_from_params, force_manhattan, is_manhattan
+from requirements.areas import name_root
+from requirements.program import (
     bedroom_parent,
     closet_parent,
     is_bedroom,
     is_toilet,
     toilet_parent,
 )
-from floorplan.schemas.enums import RoomType, ZoneType
-from floorplan.schemas.models import Boundary, Door, Room
-from floorplan.units import (
+from schemas.enums import RoomType, ZoneType
+from schemas.models import Boundary, Door, Room
+from schemas.units import (
     EXTERIOR_DOOR_FT,
     INTERIOR_DOOR_FT,
     MIN_OPENING_EDGE_FT,

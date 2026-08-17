@@ -5,9 +5,9 @@ from __future__ import annotations
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
 
-from floorplan.geometry.ops import polygon_from_boundary, polygon_from_room
-from floorplan.schemas.models import FloorPlan, Room, Window
-from floorplan.units import MIN_OPENING_EDGE_FT
+from geometry.ops import polygon_from_boundary, polygon_from_room
+from schemas.models import FloorPlan, Room, Window
+from schemas.units import MIN_OPENING_EDGE_FT
 
 EDGE_TOL = 0.08
 MIN_LINE_LEN = 0.05

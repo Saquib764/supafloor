@@ -6,7 +6,7 @@ import math
 import random
 from typing import Any
 
-from floorplan.requirements.areas import area_options_for, name_root
+from requirements.areas import area_options_for, name_root
 
 _ENSUITE_KINDS = ("Bath", "Toilet", "Closet")
 

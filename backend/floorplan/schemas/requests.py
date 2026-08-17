@@ -6,7 +6,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from floorplan.schemas.models import FloorPlan
+from schemas.models import FloorPlan
 
 
 class RenderRequest(BaseModel):

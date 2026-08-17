@@ -8,25 +8,25 @@ from uuid import uuid4
 
 from shapely.geometry import Polygon
 
-from floorplan.geometry.authors import make_room
-from floorplan.geometry.boundary import boundary_from_params, sample_boundary_params
-from floorplan.geometry.ops import area as polygon_area
-from floorplan.requirements.context import (
+from geometry.authors import make_room
+from geometry.boundary import boundary_from_params, sample_boundary_params
+from geometry.ops import area as polygon_area
+from requirements.context import (
     _place_doors,
     _room_type_for_name,
     _zone_for_name,
     run_generation,
 )
-from floorplan.requirements.entry import sample_entry_point
-from floorplan.requirements.grow import grow_rectangles
-from floorplan.config.pipeline import pipeline_settings_snapshot, substep_provider
-from floorplan.llm.centers import resolve_centers
-from floorplan.llm.connection_graph import resolve_connection_graph
-from floorplan.llm.target_areas import resolve_selected_areas
-from floorplan.requirements.program import space_names_for
-from floorplan.schemas.enums import RoomType, ZoneType
-from floorplan.schemas.models import Boundary, Door, FloorPlan, Point2D, Room, Window
-from floorplan.topology import build_adjacency
+from requirements.entry import sample_entry_point
+from requirements.grow import grow_rectangles
+from config.pipeline import pipeline_settings_snapshot, substep_provider
+from requirements.llm.centers import resolve_centers
+from requirements.llm.connection_graph import resolve_connection_graph
+from requirements.llm.target_areas import resolve_selected_areas
+from requirements.program import space_names_for
+from schemas.enums import RoomType, ZoneType
+from schemas.models import Boundary, Door, FloorPlan, Point2D, Room, Window
+from topology import build_adjacency
 
 SCHEMA_VERSION = "1.1"
 

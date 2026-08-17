@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from floorplan.api import router as floorplan_router
+from app.routes import router as floorplan_router
 
 
 def create_app() -> FastAPI:

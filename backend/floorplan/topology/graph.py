@@ -7,7 +7,7 @@ import json
 from collections import defaultdict, deque
 from typing import Optional
 
-from floorplan.geometry import (
+from geometry import (
     area,
     aspect_ratio,
     perimeter,
@@ -15,7 +15,7 @@ from floorplan.geometry import (
     polygon_from_room,
     touches,
 )
-from floorplan.schemas.models import ConstraintGraph, FloorPlan, Room
+from schemas.models import ConstraintGraph, FloorPlan, Room
 
 
 def build_adjacency(plan: FloorPlan, tol: float = 0.08) -> dict[str, list[str]]:

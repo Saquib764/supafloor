@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 Provider = Literal["deterministic", "llm"]
 
-_SERVICE_ROOT = Path(__file__).resolve().parent.parent.parent
+_SERVICE_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_PATH = _SERVICE_ROOT / "config.yaml"
 
 _SAMPLE_INTO_DOCUMENT_SUBSTEPS = (

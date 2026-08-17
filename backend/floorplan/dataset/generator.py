@@ -7,16 +7,16 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Optional
 
-from floorplan.config import load_config
-from floorplan.constants import pick_target_area
+from config import load_config
+from schemas.constants import pick_target_area
 from dataset.artifacts import write_plan_artifacts
 from dataset.store import delete_document, list_documents, load_document, plan_dir, save_document
-from floorplan.evaluator import hard_failures, score_plan
-from floorplan.renderer import render_plan
-from floorplan.requirements import generate_plan_document
-from floorplan.requirements.plan_io import document_to_plan, plan_document_id
-from floorplan.schemas.models import DatasetSample
-from floorplan.topology import (
+from evaluator import hard_failures, score_plan
+from renderer import render_plan
+from requirements import generate_plan_document
+from requirements.plan_io import document_to_plan, plan_document_id
+from schemas.models import DatasetSample
+from topology import (
     constraint_graph_from_plan,
     geometry_hash,
     room_ratio_signature,

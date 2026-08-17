@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections import deque
 
-from floorplan.geometry import area, min_width
-from floorplan.schemas.models import FloorPlan, Room
+from geometry import area, min_width
+from schemas.models import FloorPlan, Room
 
 
 def shortest_path(adj: dict[str, list[str]], start: str, target: str) -> list[str] | None:

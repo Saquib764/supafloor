@@ -5,17 +5,17 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from floorplan.config.pipeline import get_pipeline_config, prompt_id_for, substep_provider
-from floorplan.llm._context import (
+from config.pipeline import get_pipeline_config, prompt_id_for, substep_provider
+from requirements.llm._context import (
     connection_edges_table,
     format_user_metadata,
     spaces_table,
     target_areas_summary,
 )
-from floorplan.llm.client import openai_model, parse_structured
-from floorplan.llm.schemas import CentersResponse
-from floorplan.prompts import render_prompt
-from floorplan.requirements.centers import (
+from requirements.llm.client import openai_model, parse_structured
+from requirements.llm.schemas import CentersResponse
+from requirements.prompts import render_prompt
+from requirements.centers import (
     center_coverage_score,
     clamp_center_inside,
     improve_center_coverage,

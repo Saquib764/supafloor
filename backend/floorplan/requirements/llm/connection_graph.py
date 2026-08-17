@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from floorplan.config.pipeline import get_pipeline_config, prompt_id_for, substep_provider
-from floorplan.llm._context import (
+from config.pipeline import get_pipeline_config, prompt_id_for, substep_provider
+from requirements.llm._context import (
     ensuite_pairs_table,
     format_user_metadata,
     spaces_table,
     target_areas_summary,
 )
-from floorplan.llm.client import openai_model, parse_structured
-from floorplan.llm.schemas import ConnectionGraphResponse
-from floorplan.prompts import render_prompt
-from floorplan.requirements.graph import (
+from requirements.llm.client import openai_model, parse_structured
+from requirements.llm.schemas import ConnectionGraphResponse
+from requirements.prompts import render_prompt
+from requirements.graph import (
     add_edge,
     build_connection_graph,
     graph_payload,
@@ -23,7 +23,7 @@ from floorplan.requirements.graph import (
     living_name,
     reachable_from,
 )
-from floorplan.requirements.program import bedroom_parent, is_bedroom
+from requirements.program import bedroom_parent, is_bedroom
 
 
 def _normalize_edges(

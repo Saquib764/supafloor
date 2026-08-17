@@ -7,10 +7,9 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from floorplan.requirements.plan_io import plan_document_id
+from requirements.plan_io import plan_document_id
 
-# store.py → ../../.. = backend/floorplan (service root)
-_OUTPUT_ROOT = Path(__file__).resolve().parents[2] / "dev" / "output"
+_OUTPUT_ROOT = Path(__file__).resolve().parents[1] / "dev" / "output"
 _DEFAULT_PLANS_DIR = _OUTPUT_ROOT / "plans"
 _DEFAULT_SCORES_DIR = _OUTPUT_ROOT / "score"
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from floorplan.requirements.context import _room_type_for_name, _zone_for_name
-from floorplan.requirements.program import bedroom_parent, space_role
+from requirements.context import _room_type_for_name, _zone_for_name
+from requirements.program import bedroom_parent, space_role
 
 
 def format_user_metadata(req: dict[str, Any]) -> str:

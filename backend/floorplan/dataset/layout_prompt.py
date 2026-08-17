@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from floorplan.geometry import area, bounding_box, centroid
-from floorplan.schemas.models import FloorPlan
+from geometry import area, bounding_box, centroid
+from schemas.models import FloorPlan
 
 _REGION_BAND = 1 / 3
 

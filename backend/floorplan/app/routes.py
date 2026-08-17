@@ -8,24 +8,24 @@ from typing import Any
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
+from dataset import delete_saved_plan, generate_sample, list_saved_plans, load_sample
+from dataset.dataset_corpus import image_path, list_items, load_json
 from extraction.constants import CANVAS_SIZE
 from extraction.extract import extract_rooms
 from extraction.to_floorplan import rooms_to_floorplan
-from floorplan.config import load_config, save_config
-from dataset import delete_saved_plan, list_saved_plans, load_sample
 from export.render import export_realistic
-from floorplan.schemas.requests import (
+from config import load_config, save_config
+from evaluator import score_plan
+from renderer import render_plan
+from schemas.requests import (
     EvaluateRequest,
     GenerateRequest,
     RealisticExportRequest,
     RenderRequest,
     UpdateConfigRequest,
 )
-from floorplan.services.dataset_corpus import image_path, list_items, load_json
-from floorplan.services.engine import FloorPlanEngine
 
 router = APIRouter(prefix="/floorplan", tags=["floorplan"])
-engine = FloorPlanEngine()
 
 
 @router.get("/health")
@@ -55,14 +55,14 @@ def put_config(body: UpdateConfigRequest) -> dict[str, Any]:
 
 @router.post("/evaluate")
 def evaluate(body: EvaluateRequest) -> dict:
-    scores = engine.score(body.plan, weights=body.weights)
+    scores = score_plan(body.plan, weights=body.weights)
     return scores.model_dump()
 
 
 @router.post("/render")
 def render(body: RenderRequest) -> dict[str, Any]:
     """POST /floorplan/render → svg, png, metadata."""
-    return engine.render(
+    return render_plan(
         body.plan,
         size=body.size,
         layers=body.layers,
@@ -112,7 +112,7 @@ async def extract_image(
 
 @router.post("/generate")
 def generate(body: GenerateRequest) -> dict:
-    sample = engine.generate_sample(
+    sample = generate_sample(
         bedroom_count=body.bedroom_count,
         target_area=body.target_area,
         seed=body.seed,
