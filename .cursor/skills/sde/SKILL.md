@@ -81,19 +81,20 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │       │   ├── main.py           # app factory, CORS, router registration
 │       │   ├── config.py
 │       │   └── tests/
+│       ├── dataset/              # corpus generator + plan store
+│       ├── extraction/           # image ↔ rooms (inference + training transform)
+│       ├── export/               # realistic PNG
 │       ├── dev/                  # Manual check scripts + outputs
 │       │   ├── README.md
 │       │   ├── generate_floorplans.py
 │       │   ├── score_floorplans.py
 │       │   ├── export_training.py
-│       │   └── output/           # sample plans / scores
+│       │   └── output/           # sample plans / scores / extraction
 │       └── floorplan/            # FloorPlan purpose module
 │           ├── api/              # /floorplan/* HTTP routes
 │           ├── assets/           # static engine assets
-│           ├── dataset/          # sample / corpus generator (generator.py)
 │           ├── evaluator/        # rules, scoring
 │           ├── geometry/         # Shapely ops + authoring helpers
-│           ├── importer/         # BW image → FloorPlan
 │           ├── renderer/         # SVG / PNG rendering
 │           ├── schemas/          # enums, domain models, API request bodies
 │           ├── services/         # engine facade
@@ -127,11 +128,13 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 | Polygon / line helpers | `backend/floorplan/floorplan/geometry/` |
 | Adjacency / hashes | `backend/floorplan/floorplan/topology/` |
 | Rules / scores | `backend/floorplan/floorplan/evaluator/` |
-| SVG/PNG | `backend/floorplan/floorplan/renderer/` |
+| Schematic SVG/PNG | `backend/floorplan/floorplan/renderer/` |
+| Realistic PNG | `backend/floorplan/export/` |
+| Image ↔ rooms / extraction JSON | `backend/floorplan/extraction/` |
 | HTTP API | `backend/floorplan/floorplan/api/` |
 | Server shell | `backend/floorplan/app/` |
 | Orchestration | `backend/floorplan/floorplan/services/` |
-| Dataset export | `backend/floorplan/floorplan/dataset/` |
+| Dataset corpus | `backend/floorplan/dataset/` |
 | Manual scripts | `backend/floorplan/dev/` |
 | Viewer UI | `frontend/app/.../floorplan/` |
 

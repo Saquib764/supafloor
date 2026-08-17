@@ -41,9 +41,11 @@ See `dev/README.md`.
 ```
 backend/floorplan/          # service root (this directory)
   app/                      # FastAPI server shell
+  dataset/                  # corpus generator + plan store
+  extraction/               # image ↔ rooms (inference + training transform)
+  export/                   # realistic PNG
   dev/                      # manual generate / score / export scripts
   floorplan/                # floor plan purpose module
     api/                    # /floorplan/* routes
-    dataset/                # sample generator
     geometry/ topology/ …
 ```

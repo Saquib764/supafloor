@@ -193,7 +193,7 @@ def _opening_on_edge(start: Coord, end: Coord, a: Coord, b: Coord) -> bool:
 
 
 def _rebuild_walls(extracted: dict[str, Any]) -> dict[str, Any]:
-    from dataset.extraction.walls import _extract_walls
+    from extraction.walls import _extract_walls
 
     room_polygons = [
         [(float(point["x"]), float(point["y"])) for point in room.get("polygon") or []]

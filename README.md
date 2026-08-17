@@ -10,6 +10,9 @@ Deterministic residential floor plan engine for generating, validating, renderin
 backend/floorplan/              # Python service root (uv project, like mission-pluto/thefluxtrain)
   pyproject.toml
   app/                          # FastAPI server shell (main.py, /health)
+  dataset/                      # corpus generator + plan store
+  extraction/                   # image ↔ rooms (inference + training transform)
+  export/                       # realistic PNG
   floorplan/                    # FloorPlan purpose module
     api/                        # /floorplan/* routes
     schemas/                    # domain models + API request bodies
@@ -17,13 +20,11 @@ backend/floorplan/              # Python service root (uv project, like mission-
     topology/                   # Adjacency, reachability, diversity hashes
     evaluator/                  # Hard/soft rules + weighted scoring
     renderer/                   # SVG / PNG / layer overlays
-    importer/                   # BW image → FloorPlan (OpenCV)
-    dataset/                    # End-to-end sample & corpus generator
     services/                   # Engine facade
     requirements/               # Boundary-first plan generation
 
 frontend/app/
-  pages/                     Nuxt viewer + importer pages
+  pages/                     Nuxt viewer, extract, and dataset pages
   components/                Canvas, list, scores
   composables/               API client
   types/floorplan.ts
@@ -77,7 +78,7 @@ See `backend/floorplan/dev/README.md` for details.
 | Geometry library (Shapely) | Done |
 | SVG / PNG renderer + layers | Done |
 | Interactive viewer | Done |
-| BW image importer | Done |
+| Image extraction (vision LLM) | Done |
 | Hard/soft rule validator | Done |
 | Weighted scoring | Done |
 | Dataset generator + diversity hashes | Done |

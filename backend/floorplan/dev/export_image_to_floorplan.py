@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
 
     import yaml
 
-    from dataset.extraction import format_extraction_florence, pop_transform_stats, prepare_extraction, render_extraction_png
+    from extraction import format_extraction_florence, pop_transform_stats, prepare_extraction, render_extraction_png
 
     json_paths = list(_iter_plan_json_paths(source))
     if args.limit is not None:

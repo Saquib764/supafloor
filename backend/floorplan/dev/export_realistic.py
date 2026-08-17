@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export a realistic floor plan PNG via the dataset extraction pipeline.
+"""Export a realistic floor plan PNG via the extraction pipeline.
 
 Usage (from backend/floorplan):
 
@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     if str(service_root) not in sys.path:
         sys.path.insert(0, str(service_root))
 
-    from dataset.extraction import prepare_extraction, render_extraction_png
+    from extraction import prepare_extraction, render_extraction_png
 
     parser = argparse.ArgumentParser(description="Export realistic floor plan PNG")
     parser.add_argument(

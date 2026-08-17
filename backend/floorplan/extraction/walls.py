@@ -23,15 +23,13 @@ _MIN_WALL_PIECE = 0.01
 
 
 def output_dir() -> Path:
-    path = Path(__file__).resolve().parent / "output"
+    path = Path(__file__).resolve().parents[1] / "dev" / "output" / "extraction"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def input_dir() -> Path:
-    path = Path(__file__).resolve().parent / "input"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return output_dir()
 
 
 def _point(x: float, y: float) -> dict[str, float]:
@@ -287,7 +285,7 @@ def prepare_extraction(
 
 
 def write_extraction(extracted: dict[str, Any], directory: Path | None = None) -> Path:
-    """Write extraction JSON to dataset/extraction/output/{id}.json."""
+    """Write extraction JSON to dev/output/extraction/{id}.json."""
     out_dir = directory or output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     plan_id = str(extracted["id"])
