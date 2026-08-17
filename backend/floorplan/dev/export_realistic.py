@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     if str(service_root) not in sys.path:
         sys.path.insert(0, str(service_root))
 
-    from extraction import prepare_extraction, render_extraction_png
+    from extraction.walls import prepare_extraction, render_extraction_png
 
     parser = argparse.ArgumentParser(description="Export realistic floor plan PNG")
     parser.add_argument(

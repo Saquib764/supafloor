@@ -28,10 +28,6 @@ def output_dir() -> Path:
     return path
 
 
-def input_dir() -> Path:
-    return output_dir()
-
-
 def _point(x: float, y: float) -> dict[str, float]:
     return {"x": round(float(x), 3), "y": round(float(y), 3)}
 
@@ -324,14 +320,11 @@ def extract_and_write(
     path: Path,
     *,
     output_directory: Path | None = None,
-    input_directory: Path | None = None,
 ) -> dict[str, Path]:
     """Load a floorplan JSON path, transform, write JSON, and render PNG."""
     extracted = prepare_extraction(path)
     plan_id = str(extracted["id"])
-    json_path = write_extraction(extracted, output_directory)
-    png_path = render_extraction_png(
-        extracted,
-        (input_directory or input_dir()) / f"{plan_id}.png",
-    )
+    out_dir = output_directory or output_dir()
+    json_path = write_extraction(extracted, out_dir)
+    png_path = render_extraction_png(extracted, out_dir / f"{plan_id}.png")
     return {"json": json_path, "png": png_path}
