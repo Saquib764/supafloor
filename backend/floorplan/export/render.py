@@ -17,7 +17,7 @@ from matplotlib.axes import Axes
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
-from export.draw import draw_door, draw_polygon, draw_window
+from export.draw import draw_door, draw_pillar, draw_polygon, draw_window
 from export.symbols import draw_planned_symbol
 from floorplan.schemas.models import FloorPlan
 
@@ -61,6 +61,7 @@ class _PixelGeom:
     doors: list[_DoorPixel] = field(default_factory=list)
     windows: list[tuple[Coord, Coord]] = field(default_factory=list)
     symbols: list[dict[str, Any]] = field(default_factory=list)
+    pillars: list[dict[str, Any]] = field(default_factory=list)
     plan_id: str = "export"
 
 
@@ -117,6 +118,7 @@ def _geom_from_rooms(
     doors: list[Any] | None = None,
     windows: list[tuple[Coord, Coord]] | None = None,
     symbols: list[dict[str, Any]] | None = None,
+    pillars: list[dict[str, Any]] | None = None,
 ) -> _PixelGeom:
     geom = _PixelGeom(size=size)
     for i, raw in enumerate(rooms):
@@ -142,6 +144,7 @@ def _geom_from_rooms(
             geom.doors.append(door)
     geom.windows = list(windows or [])
     geom.symbols = list(symbols or [])
+    geom.pillars = list(pillars or [])
     return geom
 
 
@@ -166,9 +169,12 @@ def _resolve_geom(
     doors: list[Any] | None = None,
     windows: list[tuple[Coord, Coord]] | None = None,
     symbols: list[dict[str, Any]] | None = None,
+    pillars: list[dict[str, Any]] | None = None,
 ) -> _PixelGeom:
     if rooms:
-        geom = _geom_from_rooms(rooms, size, doors=doors, windows=windows, symbols=symbols)
+        geom = _geom_from_rooms(
+            rooms, size, doors=doors, windows=windows, symbols=symbols, pillars=pillars
+        )
         geom.plan_id = "rooms"
         return geom
     if plan is not None:
@@ -266,6 +272,24 @@ def _polygon_centroid(polygon: list[Coord]) -> Coord:
     return (sum(xs) / len(xs), sum(ys) / len(ys))
 
 
+def _draw_pillars(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    ink: tuple[float, float, float],
+) -> None:
+    for raw in geom.pillars:
+        try:
+            cx = float(raw["x"])
+            cy = float(raw["y"])
+            width = float(raw["width"])
+            height = float(raw["height"])
+            rotation_deg = float(raw.get("rotation_deg") or 0.0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        draw_pillar(ax, cx, cy, width, height, rotation_deg, facecolor=ink, edgecolor=ink)
+
+
 def _draw_room_symbols(
     ax: Axes,
     geom: _PixelGeom,
@@ -349,6 +373,7 @@ def _render_geom(
     boundary_count = _draw_union_boundary(ax, geom, boundary_thick=boundary_thick, ink=ink)
     door_count = _draw_doors(ax, geom, opening_thick=opening_thick, ink=ink)
     window_count = _draw_windows(ax, geom, opening_thick=boundary_thick)
+    _draw_pillars(ax, geom, ink=ink)
     symbol_count = _draw_room_symbols(ax, geom, blackness=blackness)
     label_count = _draw_room_labels(ax, geom, ink=ink)
 
@@ -374,6 +399,7 @@ def export_realistic(
     doors: list[Any] | None = None,
     windows: list[tuple[Coord, Coord]] | None = None,
     symbols: list[dict[str, Any]] | None = None,
+    pillars: list[dict[str, Any]] | None = None,
     canvas_size: int = 1024,
     size: int = 1024,
     room_outline_thick: float = DEFAULT_ROOM_OUTLINE_THICK,
@@ -385,7 +411,9 @@ def export_realistic(
     """Render room outlines, boundary, doors, windows, labels, and planned symbols; return base64 + metadata."""
     _ = canvas_size
     _ = symbol_probability
-    geom = _resolve_geom(plan, rooms, size, doors=doors, windows=windows, symbols=symbols)
+    geom = _resolve_geom(
+        plan, rooms, size, doors=doors, windows=windows, symbols=symbols, pillars=pillars
+    )
     (
         png,
         boundary_count,

@@ -11,7 +11,7 @@ from typing import Any
 
 from export.render import export_realistic
 
-from .transform import _CANVAS_SIZE, transform_extraction
+from .transform import _CANVAS_SIZE, pop_transform_stats, transform_extraction
 
 Coord = tuple[float, float]
 Edge = tuple[Coord, Coord]
@@ -291,8 +291,10 @@ def write_extraction(extracted: dict[str, Any], directory: Path | None = None) -
     out_dir = directory or output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     plan_id = str(extracted["id"])
+    payload = dict(extracted)
+    pop_transform_stats(payload)
     path = out_dir / f"{plan_id}.json"
-    path.write_text(json.dumps(extracted, indent=2))
+    path.write_text(json.dumps(payload, indent=2))
     return path
 
 
@@ -311,6 +313,7 @@ def render_extraction_png(
         doors=doors,
         windows=windows,
         symbols=list(extracted.get("symbols") or []),
+        pillars=list(extracted.get("pillars") or []),
         size=_CANVAS_SIZE,
         rng=rng,
     )

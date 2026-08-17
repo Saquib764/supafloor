@@ -2,8 +2,10 @@
 """Export image-to-floorplan training pairs from a floorplan_dataset corpus.
 
 Reads canonical plan JSON from ``floorplan_dataset/`` and writes ``N`` variants per plan:
-  <out>/input/<id>_<n>.png   — realistic 1024×1024 render (model input)
-  <out>/output/<id>_<n>.json — transformed extraction JSON (model target)
+  <out>/input/<id>_<n>.png     — realistic 1024×1024 render (model input)
+  <out>/output/<id>_<n>.json   — transformed extraction JSON (model target)
+  <out>/florence/<id>_<n>.txt  — Florence loc tokens for rooms (0–999)
+  <out>/stats/<id>_<n>.yml     — transform stats for later dataset analysis
 
 Usage (from backend/floorplan):
 
@@ -60,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         "-o",
         type=Path,
         default=repo_root / "image-to-floorplan" / "basic_5000",
-        help="Output root with input/ and output/ subfolders",
+        help="Output root with input/, output/, florence/, and stats/ subfolders",
     )
     parser.add_argument(
         "--limit",
@@ -81,10 +83,16 @@ def main(argv: list[str] | None = None) -> int:
     out_root = args.out if args.out.is_absolute() else service_root / args.out
     input_dir = out_root / "input"
     output_dir = out_root / "output"
+    florence_dir = out_root / "florence"
+    stats_dir = out_root / "stats"
     input_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
+    florence_dir.mkdir(parents=True, exist_ok=True)
+    stats_dir.mkdir(parents=True, exist_ok=True)
 
-    from dataset.extraction import prepare_extraction, render_extraction_png
+    import yaml
+
+    from dataset.extraction import format_extraction_florence, pop_transform_stats, prepare_extraction, render_extraction_png
 
     json_paths = list(_iter_plan_json_paths(source))
     if args.limit is not None:
@@ -100,15 +108,22 @@ def main(argv: list[str] | None = None) -> int:
             rng = random.Random(f"{json_path}:{variant}")
             extracted = prepare_extraction(json_path, rng=rng, symbol_probability=0.65)
             stem = f"{extracted['id']}_{variant}"
+            stats = pop_transform_stats(extracted)
             (output_dir / f"{stem}.json").write_text(json.dumps(extracted, indent=2))
+            (florence_dir / f"{stem}.txt").write_text(format_extraction_florence(extracted))
+            (stats_dir / f"{stem}.yml").write_text(
+                yaml.safe_dump(stats, sort_keys=False, allow_unicode=True)
+            )
             render_extraction_png(extracted, input_dir / f"{stem}.png", rng=rng)
             written += 1
             if written % 100 == 0 or written == total:
                 print(f"exported {written}/{total}", flush=True)
 
     print(f"Wrote {written} pairs ({len(json_paths)} plans × {N}) → {out_root.resolve()}")
-    print(f"  input:  {input_dir.resolve()}")
-    print(f"  output: {output_dir.resolve()}")
+    print(f"  input:    {input_dir.resolve()}")
+    print(f"  output:   {output_dir.resolve()}")
+    print(f"  florence: {florence_dir.resolve()}")
+    print(f"  stats:    {stats_dir.resolve()}")
     return 0
 
 

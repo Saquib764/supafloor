@@ -10,12 +10,9 @@ from .generator import (
     load_sample,
 )
 from .store import plans_dir, scores_dir
-from .unsloth import build_unsloth_row, export_unsloth_dataset
 
 __all__ = [
-    "build_unsloth_row",
     "delete_saved_plan",
-    "export_unsloth_dataset",
     "generate_dataset",
     "generate_sample",
     "get_saved_plan",

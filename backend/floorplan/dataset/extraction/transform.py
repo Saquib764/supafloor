@@ -29,6 +29,13 @@ _LABEL_FONT_BASE = 16.0
 _LABEL_FONT_SCALE_MIN = 0.82
 _LABEL_FONT_SCALE_MAX = 1.18
 _LABEL_DISABLE_PROBABILITY = 0.2
+_PILLAR_PROBABILITY = 0.01
+_PILLAR_SIDE_MIN_IN = 10.0
+_PILLAR_SIDE_MAX_IN = 36.0
+_PILLAR_ROTATION_MIN_DEG = 1.0
+_PILLAR_ROTATION_MAX_DEG = 10.0
+
+TRANSFORM_STATS_KEY = "transform_stats"
 
 
 def _open_polygon_ring(polygon: list[dict[str, Any]]) -> list[Coord]:
@@ -542,6 +549,15 @@ def _rotate_symbol(raw: dict[str, Any], cos_t: float, sin_t: float, rotation_deg
     return updated
 
 
+def _rotate_pillar(raw: dict[str, Any], cos_t: float, sin_t: float, rotation_deg: float) -> dict[str, Any]:
+    x, y = float(raw["x"]), float(raw["y"])
+    updated = dict(raw)
+    updated["x"] = x * cos_t - y * sin_t
+    updated["y"] = x * sin_t + y * cos_t
+    updated["rotation_deg"] = float(raw.get("rotation_deg") or 0.0) + rotation_deg
+    return updated
+
+
 def _rotate_extraction(extracted: dict[str, Any], theta: float) -> dict[str, Any]:
     """Rotate rooms, walls, openings, and symbols around the origin by theta radians."""
     cos_t, sin_t = math.cos(theta), math.sin(theta)
@@ -576,6 +592,10 @@ def _rotate_extraction(extracted: dict[str, Any], theta: float) -> dict[str, Any
         "symbols": [
             _rotate_symbol(symbol, cos_t, sin_t, rotation_deg)
             for symbol in extracted.get("symbols") or []
+        ],
+        "pillars": [
+            _rotate_pillar(pillar, cos_t, sin_t, rotation_deg)
+            for pillar in extracted.get("pillars") or []
         ],
     }
 
@@ -698,6 +718,39 @@ def _sample_symbols(
     return symbols
 
 
+def _unique_wall_ends(extracted: dict[str, Any]) -> list[Coord]:
+    seen: set[tuple[float, float]] = set()
+    ends: list[Coord] = []
+    for wall in extracted.get("walls") or []:
+        for key in ("start", "end"):
+            point = _coord(wall[key])
+            key_xy = (round(point[0], 3), round(point[1], 3))
+            if key_xy in seen:
+                continue
+            seen.add(key_xy)
+            ends.append(point)
+    return ends
+
+
+def _sample_pillars(extracted: dict[str, Any], rng: random.Random) -> list[dict[str, Any]]:
+    pillars: list[dict[str, Any]] = []
+    for x, y in _unique_wall_ends(extracted):
+        if rng.random() >= _PILLAR_PROBABILITY:
+            continue
+        pillars.append(
+            {
+                "x": x,
+                "y": y,
+                "width": round(rng.uniform(_PILLAR_SIDE_MIN_IN, _PILLAR_SIDE_MAX_IN), 2),
+                "height": round(rng.uniform(_PILLAR_SIDE_MIN_IN, _PILLAR_SIDE_MAX_IN), 2),
+                "rotation_deg": round(
+                    rng.uniform(_PILLAR_ROTATION_MIN_DEG, _PILLAR_ROTATION_MAX_DEG), 2
+                ),
+            }
+        )
+    return pillars
+
+
 def transform_extraction(
     extracted: dict[str, Any],
     *,
@@ -722,19 +775,22 @@ def transform_extraction(
             source_rng,
             symbol_probability=symbol_probability,
         ),
+        "pillars": _sample_pillars(extracted, source_rng),
     }
-    extracted = _rotate_extraction(extracted, source_rng.uniform(0.0, 2.0 * math.pi))
+    theta = source_rng.uniform(0.0, 2.0 * math.pi)
+    is_rotated = abs(theta) > 1e-9
+    extracted = _rotate_extraction(extracted, theta)
     extracted = _normalize_room_polygons(extracted)
     coords = _iter_coords(extracted)
     if not coords:
-        return extracted
+        return _with_transform_stats(extracted, is_rotated=is_rotated)
 
     minx, miny, maxx, maxy = _bbox(coords)
     width = maxx - minx
     height = maxy - miny
     max_dim = max(width, height)
     if max_dim < 1e-9:
-        return extracted
+        return _with_transform_stats(extracted, is_rotated=is_rotated)
 
     scale_target = source_rng.uniform(_SCALE_MIN, _SCALE_MAX)
     scale = scale_target / max_dim
@@ -770,25 +826,99 @@ def transform_extraction(
         )
 
     openings = extracted.get("openings") or {}
-    return {
-        "id": extracted["id"],
-        "rooms": rooms,
-        "walls": [
-            _transform_segment(wall, mapper)
-            for wall in extracted.get("walls") or []
-        ],
-        "openings": {
-            "doors": [
-                _transform_segment(door, mapper)
-                for door in openings.get("doors") or []
+    return _with_transform_stats(
+        {
+            "id": extracted["id"],
+            "rooms": rooms,
+            "walls": [
+                _transform_segment(wall, mapper)
+                for wall in extracted.get("walls") or []
             ],
-            "windows": [
-                _transform_segment(window, mapper)
-                for window in openings.get("windows") or []
+            "openings": {
+                "doors": [
+                    _transform_segment(door, mapper)
+                    for door in openings.get("doors") or []
+                ],
+                "windows": [
+                    _transform_segment(window, mapper)
+                    for window in openings.get("windows") or []
+                ],
+            },
+            "symbols": [
+                _transform_symbol(symbol, mapper, scale)
+                for symbol in extracted.get("symbols") or []
+            ],
+            "pillars": [
+                _transform_symbol(pillar, mapper, scale)
+                for pillar in extracted.get("pillars") or []
             ],
         },
-        "symbols": [
-            _transform_symbol(symbol, mapper, scale)
-            for symbol in extracted.get("symbols") or []
-        ],
+        is_rotated=is_rotated,
+    )
+
+
+def transform_stats(extracted: dict[str, Any], *, is_rotated: bool) -> dict[str, Any]:
+    rooms = extracted.get("rooms") or []
+    openings = extracted.get("openings") or {}
+    doors = openings.get("doors") or []
+    windows = openings.get("windows") or []
+    return {
+        "id": extracted.get("id"),
+        "rooms": len(rooms),
+        "doors": len(doors),
+        "windows": len(windows),
+        "is_rotated": bool(is_rotated),
+        "missing_label_count": sum(
+            1 for room in rooms if (room.get("label") or {}).get("is_label_disabled")
+        ),
+        "missing_door_symbol": sum(
+            1 for door in doors if door.get("is_arc_disabled")
+        ),
+        "pillars": len(extracted.get("pillars") or []),
     }
+
+
+def _with_transform_stats(extracted: dict[str, Any], *, is_rotated: bool) -> dict[str, Any]:
+    return {**extracted, TRANSFORM_STATS_KEY: transform_stats(extracted, is_rotated=is_rotated)}
+
+
+def pop_transform_stats(extracted: dict[str, Any]) -> dict[str, Any]:
+    stats = extracted.pop(TRANSFORM_STATS_KEY, None)
+    if stats is not None:
+        return stats
+    return transform_stats(extracted, is_rotated=False)
+
+
+def _to_florence_loc(value: float) -> int:
+    return max(0, min(999, round(float(value) * 999 / _CANVAS_SIZE)))
+
+
+def _florence_point(x: float, y: float) -> str:
+    return f"<loc_{_to_florence_loc(x)}><loc_{_to_florence_loc(y)}>"
+
+
+def format_extraction_florence(extracted: dict[str, Any]) -> str:
+    """Serialize rooms as Florence loc tokens on a 0–999 grid."""
+    chunks: list[str] = []
+    for room in extracted.get("rooms") or []:
+        polygon = room.get("polygon") or []
+        if not polygon:
+            continue
+        cx, cy = _polygon_centroid(polygon)
+        vertex_lines = [
+            _florence_point(float(point["x"]), float(point["y"]))
+            for point in polygon
+        ]
+        chunks.append(
+            "\n".join(
+                [
+                    str(room.get("name") or ""),
+                    _florence_point(cx, cy),
+                    "<poly>",
+                    *vertex_lines,
+                    "</poly>",
+                    "<sep>",
+                ]
+            )
+        )
+    return "\n".join(chunks) + ("\n" if chunks else "")

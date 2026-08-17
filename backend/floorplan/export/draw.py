@@ -125,3 +125,27 @@ def draw_window(
     cut = _opening_cut_polygon(start, end, wall_thickness - 4.0)
     if cut:
         draw_polygon(ax, cut, facecolor="white", edgecolor="white", linewidth=0.0)
+
+
+def draw_pillar(
+    ax: Axes,
+    cx: float,
+    cy: float,
+    width: float,
+    height: float,
+    rotation_deg: float,
+    *,
+    facecolor: str | tuple[float, float, float] = "black",
+    edgecolor: str | tuple[float, float, float] = "black",
+    linewidth: float = 1.0,
+) -> None:
+    if width <= 0 or height <= 0:
+        return
+    hw, hh = width / 2.0, height / 2.0
+    rad = math.radians(rotation_deg)
+    cos_t, sin_t = math.cos(rad), math.sin(rad)
+    corners = [
+        (cx + x * cos_t - y * sin_t, cy + x * sin_t + y * cos_t)
+        for x, y in ((-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh))
+    ]
+    draw_polygon(ax, corners, facecolor=facecolor, edgecolor=edgecolor, linewidth=linewidth)
