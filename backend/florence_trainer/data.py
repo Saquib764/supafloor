@@ -7,6 +7,7 @@ from pathlib import Path
 
 from datasets import Dataset as HubDataset
 from PIL import Image
+from config import _load_dotenv as _load_florence_dotenv
 from registry import load_dotenv, load_hub_dataset, load_hub_samples
 from torch.utils.data import Dataset
 
@@ -20,6 +21,7 @@ def prepare_image(image: Image.Image, size: int) -> Image.Image:
 
 
 def load_rows(dataset: str, *, revision: str | None = None, cache_dir: Path | None = None) -> HubDataset:
+    _load_florence_dotenv()
     load_dotenv()
     return load_hub_dataset(dataset, revision=revision, cache_dir=cache_dir)
 
@@ -32,6 +34,7 @@ def load_sample_rows(
     revision: str | None = None,
     cache_dir: Path | None = None,
 ) -> tuple[list[dict[str, object]], list[int], int]:
+    _load_florence_dotenv()
     load_dotenv()
     return load_hub_samples(
         dataset,

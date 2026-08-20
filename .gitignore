@@ -19,6 +19,8 @@ node_modules/
 .env
 uv.lock
 image-to-floorplan/
-backend/florence_trainer/checkpoints/
+backend/florence_trainer/training_session/
 backend/florence_trainer/hf_cache/
 backend/florence_trainer/_preview/
+
+checkpoints/

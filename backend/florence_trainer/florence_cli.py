@@ -18,7 +18,7 @@ def main(argv: list[str] | None = None) -> None:
     p_infer = sub.add_parser("infer", help="Image → room polygons")
     p_infer.add_argument("--config", type=Path, default=CONFIG_PATH)
     p_infer.add_argument("--image", type=Path, required=True)
-    p_infer.add_argument("--adapter", type=Path, default=None, help="LoRA adapter dir (default: train.output_dir)")
+    p_infer.add_argument("--adapter", type=Path, default=None, help="LoRA adapter dir (default: train.session_dir)")
     p_infer.add_argument("--out", type=Path, default=None, help="Write JSON instead of stdout")
 
     p_inspect = sub.add_parser("inspect", help="Print model, LoRA, and random Hub samples")

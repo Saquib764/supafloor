@@ -15,7 +15,7 @@ _ROOM_RE = re.compile(
     flags=re.DOTALL,
 )
 _LOC_RE = re.compile(r"<loc_(\d+)>")
-_STRIP_RE = re.compile(r"</?s>|</?pad>|<FLOORPLAN>", flags=re.IGNORECASE)
+_STRIP_RE = re.compile(r"</?s>|</?pad>", flags=re.IGNORECASE)
 
 
 def _loc_to_pixel(loc: int, image_size: int, bins: int) -> int:

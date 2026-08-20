@@ -60,11 +60,13 @@ Edit `config.yaml` for model, Hub dataset, LoRA, and training knobs. Paths in th
 | Key | Meaning |
 |---|---|
 | `model_id` | HuggingFace Florence-2 checkpoint (`microsoft/Florence-2-base-ft` by default) |
-| `task_prompt` | Prefix fed with the image (`<FLOORPLAN>`) |
+| `task_prompt` | Prefix fed with the image (`Locate rooms in the image.`) |
 | `data.dataset` | `dataset_manager` registry name (default `florence-rooms`) |
 | `data.revision` | Optional Hub revision override |
 | `lora.*` | Rank, alpha, dropout; vision encoder is frozen |
-| `train.output_dir` | Adapter checkpoints (`checkpoints/floorplan-rooms/`, gitignored) |
+| `train.session_dir` | LoRA checkpoints and test outputs (`training_session/`, gitignored) |
+| `train.save_steps` | Save LoRA checkpoint every N steps (default 1000) |
+| `train.test_infer_steps` | Run test infer + plot every N steps (default 200) |
 
 ## Execution
 
@@ -83,17 +85,23 @@ uv run florence-train infer --image /path/to/plan.png
 # Write JSON; override adapter dir
 uv run florence-train infer \
   --image /path/to/plan.png \
-  --adapter checkpoints/floorplan-rooms \
+  --adapter training_session \
   --out rooms.json
 ```
 
-Infer loads the adapter from `train.output_dir` unless `--adapter` is set. The JSON is `{ "rooms": [...], "text": "<raw generation>" }`.
+Infer loads the adapter from `train.session_dir` unless `--adapter` is set. The JSON is `{ "rooms": [...], "text": "<raw generation>" }`.
+
+During training, every `test_infer_steps` the trainer saves under `training_session/test/step-NNNNNN/`:
+
+- `input.jpg` — fixed validation sample
+- `rooms.json` — parsed room polygons
+- `overlay.jpg` — input image with polygons drawn
 
 ## Code
 
 | File | Role |
 |---|---|
-| `cli.py` | `train` / `infer` entry (`uv run florence-train …`) |
+| `florence_cli.py` | `train` / `infer` entry (`uv run florence-train …`) |
 | `config.yaml` / `config.py` | Training parameters |
 | `loc.py` | Decode infer output (`parse_rooms`); labels come pre-formatted from the dataset |
 | `data.py` | Hub dataset wrapper, plan-id split, collator |

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import random
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,9 @@ def load_from_hub(repo: str, *, revision: str = "main", cache_dir: Path | None =
     kwargs: dict[str, object] = {"split": "train", "revision": revision}
     if cache_dir is not None:
         kwargs["cache_dir"] = str(cache_dir)
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        kwargs["token"] = token
     dataset = load_dataset(repo, **kwargs)
     missing = [col for col in _COLUMNS if col not in dataset.column_names]
     if missing:

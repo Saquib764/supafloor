@@ -1,7 +1,7 @@
 hf_cache: hf_cache
 
 model_id: microsoft/Florence-2-base-ft
-task_prompt: "<FLOORPLAN>"
+task_prompt: "Locate rooms in the image."
 image_size: 768
 loc_bins: 1000
 
@@ -19,7 +19,7 @@ lora:
   freeze_vision: true
 
 train:
-  output_dir: checkpoints/floorplan-rooms
+  session_dir: training_session
   epochs: 3
   batch_size: 2
   grad_accum: 8
@@ -27,8 +27,8 @@ train:
   warmup_ratio: 0.03
   weight_decay: 0.01
   bf16: true
-  save_steps: 500
-  eval_steps: 500
+  save_steps: 1000
+  test_infer_steps: 200
   max_grad_norm: 1.0
 
 infer:

@@ -9,14 +9,26 @@ from typing import Any
 
 import yaml
 
-CONFIG_PATH = Path(__file__).resolve().parent / "config.yaml"
-_ENV_PATH = CONFIG_PATH.parent / ".env"
+_PACKAGE_DIR = Path(__file__).resolve().parent
 
 
-def _load_dotenv() -> None:
-    if not _ENV_PATH.is_file():
+def _project_dir() -> Path:
+    if (_PACKAGE_DIR / "pyproject.toml").is_file():
+        return _PACKAGE_DIR
+    cwd = Path.cwd()
+    if (cwd / "config.yaml").is_file():
+        return cwd
+    return _PACKAGE_DIR
+
+
+CONFIG_PATH = _project_dir() / "config.yaml"
+
+
+def _load_dotenv_from(env_dir: Path) -> None:
+    env_path = env_dir / ".env"
+    if not env_path.is_file():
         return
-    for raw in _ENV_PATH.read_text(encoding="utf-8").splitlines():
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -25,6 +37,11 @@ def _load_dotenv() -> None:
         value = value.strip().strip("'").strip('"')
         if key and key not in os.environ:
             os.environ[key] = value
+
+
+def _load_dotenv() -> None:
+    _load_dotenv_from(_project_dir())
+    _load_dotenv_from(Path.cwd())
 
 
 @dataclass(frozen=True)
@@ -47,7 +64,7 @@ class LoraSettings:
 
 @dataclass(frozen=True)
 class TrainSettings:
-    output_dir: Path
+    session_dir: Path
     epochs: int
     batch_size: int
     grad_accum: int
@@ -56,7 +73,7 @@ class TrainSettings:
     weight_decay: float
     bf16: bool
     save_steps: int
-    eval_steps: int
+    test_infer_steps: int
     max_grad_norm: float
 
 
@@ -109,6 +126,7 @@ def datasets_cache_dir(cfg: Config) -> Path:
 def load_config(path: Path | None = None) -> Config:
     _load_dotenv()
     config_path = path or CONFIG_PATH
+    _load_dotenv_from(config_path.parent)
     raw: dict[str, Any] = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     base = config_path.parent
     data = raw["data"]
@@ -140,7 +158,7 @@ def load_config(path: Path | None = None) -> Config:
             freeze_vision=bool(lora["freeze_vision"]),
         ),
         train=TrainSettings(
-            output_dir=_resolve(Path(train["output_dir"]), base),
+            session_dir=_resolve(Path(train["session_dir"]), base),
             epochs=int(train["epochs"]),
             batch_size=int(train["batch_size"]),
             grad_accum=int(train["grad_accum"]),
@@ -149,7 +167,7 @@ def load_config(path: Path | None = None) -> Config:
             weight_decay=float(train["weight_decay"]),
             bf16=bool(train["bf16"]),
             save_steps=int(train["save_steps"]),
-            eval_steps=int(train["eval_steps"]),
+            test_infer_steps=int(train["test_infer_steps"]),
             max_grad_norm=float(train["max_grad_norm"]),
         ),
         infer=InferSettings(
