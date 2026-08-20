@@ -1,0 +1,36 @@
+hf_cache: hf_cache
+
+model_id: microsoft/Florence-2-base-ft
+task_prompt: "<FLOORPLAN>"
+image_size: 768
+loc_bins: 1000
+
+data:
+  dataset: florence-rooms
+  train_ratio: 0.95
+  seed: 0
+  max_label_tokens: 1024
+
+lora:
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, out_proj]
+  freeze_vision: true
+
+train:
+  output_dir: checkpoints/floorplan-rooms
+  epochs: 3
+  batch_size: 2
+  grad_accum: 8
+  learning_rate: 1.0e-4
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  bf16: true
+  save_steps: 500
+  eval_steps: 500
+  max_grad_norm: 1.0
+
+infer:
+  max_new_tokens: 1024
+  num_beams: 3

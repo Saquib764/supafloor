@@ -31,6 +31,9 @@ uv run python dev/export_realistic.py \
 uv run python dev/export_image_to_floorplan.py \
   --dir ../../floorplan_dataset/basic_5000 \
   --out ../../image-to-floorplan/basic_5000
+
+# 7) Aggregate transform stats YAML → Markdown summary
+uv run python dev/summarize_dataset_stats.py
 ```
 
 Large deterministic corpus (basic score tier, no LLM) — prefer the CLI:
@@ -49,4 +52,5 @@ uv run floorplan dataset -n 5000 --seed 0 --score-level basic --workers 4 \
 | `extract_floorplan.py` | Floor-plan image → room polygons (vision LLM) |
 | `export_realistic.py` | FloorPlan JSON → realistic 1024 PNG |
 | `export_image_to_floorplan.py` | Corpus JSON → input PNG + extraction JSON training pairs |
+| `summarize_dataset_stats.py` | `stats/*.yml` → Markdown summary (`STATS.md`) |
 | `floorplan dataset` | Threshold-gated unique corpus under `floorplan_dataset/` (gitignored) |

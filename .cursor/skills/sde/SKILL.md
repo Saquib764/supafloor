@@ -73,8 +73,13 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │       └── sde/
 │           └── SKILL.md          # this skill
 │
+├── dataset_manager/              # Dataset registry (schema + metadata + Hub I/O)
+│   ├── datasets/<name>/          # metadata.yaml, schema.py, README.md
+│   ├── registry.py
+│   └── cli.py                    # uv run python cli.py upload|download <name>
+│
 ├── backend/
-│   └── floorplan/                # Python service root (uv)
+│   ├── floorplan/                # Python service root (uv)
 │       ├── pyproject.toml
 │       ├── README.md
 │       ├── cli.py                # CLI entry (uv run floorplan …)
@@ -102,6 +107,16 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │           ├── score_floorplans.py
 │           ├── export_training.py
 │           └── output/
+│   └── florence_trainer/         # Florence-2 LoRA (image → room polygons)
+│       ├── pyproject.toml
+│       ├── README.md
+│       ├── config.yaml
+│       ├── cli.py                # uv run florence-train train|infer
+│       ├── loc.py                # infer: loc-token decode
+│       ├── data.py
+│       ├── model.py
+│       ├── train.py
+│       └── infer.py
 │
 └── frontend/                     # Viewer / debug UI
     ├── package.json
@@ -128,14 +143,17 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 | Realistic PNG | `backend/floorplan/export/` |
 | Image ↔ rooms / extraction JSON | `backend/floorplan/extraction/` |
 | Dataset corpus | `backend/floorplan/dataset/` |
+| Hub dataset registry / upload / download | `dataset_manager/` |
 | Engine config.yaml | `backend/floorplan/config/` |
 | HTTP API + server shell | `backend/floorplan/app/` |
 | CLI | `backend/floorplan/cli.py` |
 | Manual scripts | `backend/floorplan/dev/` |
+| Florence-2 LoRA (image → rooms) | `backend/florence_trainer/` |
 | Viewer UI | `frontend/app/` |
 
 ## Tooling
 
 - Backend: **uv** from `backend/floorplan/` (`uv sync --group dev`, `uv run uvicorn app.main:app --reload`)
+- Florence trainer: **uv** from `backend/florence_trainer/` (`uv sync`, `uv run florence-train train`)
 - Tests: `uv run pytest -q` from `backend/floorplan/`
 - Dev checks: `dev/generate_floorplans.py`, `dev/score_floorplans.py`, `dev/export_training.py` (from `backend/floorplan/`)

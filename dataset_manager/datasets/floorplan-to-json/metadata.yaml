@@ -1,0 +1,5 @@
+name: floorplan-to-json
+hf_repo: saquiboye/floorplan-to-json
+revision: main
+private: true
+local_root: image-to-floorplan/basic_5000
