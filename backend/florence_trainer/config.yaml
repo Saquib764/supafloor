@@ -33,7 +33,7 @@ train:
   resume: false
 
 infer:
-  max_iterations: 15
+  num_points: 16
   max_new_tokens: 1024
   num_beams: 3
   seed: null

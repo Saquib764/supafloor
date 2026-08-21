@@ -94,7 +94,7 @@ uv run florence-train infer \
   --out rooms.json
 ```
 
-Infer loads the adapter from `train.session_dir` unless `--adapter` is set. Inference loops up to `infer.max_iterations` (default 15): sample a point near center, segment that room, then sample outside discovered polygons to find the next room. Output `text` is plot-ready:
+Infer loads the adapter from `train.session_dir` unless `--adapter` is set. Inference samples `infer.num_points` random canvas points (default 16), runs one batched forward pass, and merges unique room polygons into plot-ready output:
 
 ```
 Bath

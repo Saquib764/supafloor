@@ -79,7 +79,7 @@ class TrainSettings:
 
 @dataclass(frozen=True)
 class InferSettings:
-    max_iterations: int
+    num_points: int
     max_new_tokens: int
     num_beams: int
     seed: int | None = None
@@ -175,7 +175,7 @@ def load_config(path: Path | None = None) -> Config:
             max_grad_norm=float(train["max_grad_norm"]),
         ),
         infer=InferSettings(
-            max_iterations=int(infer["max_iterations"]),
+            num_points=int(infer["num_points"]),
             max_new_tokens=int(infer["max_new_tokens"]),
             num_beams=int(infer["num_beams"]),
             seed=int(infer["seed"]) if infer.get("seed") is not None else None,

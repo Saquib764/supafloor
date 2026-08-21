@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import random
 from pathlib import Path
 from typing import Any
@@ -101,58 +100,15 @@ def random_point_in_polygon(
     return _polygon_centroid(ring)
 
 
-def random_point_near_center(
+def sample_random_canvas_points(
     rng: random.Random,
     canvas_size: int,
-    *,
-    spread_ratio: float = 0.08,
-) -> tuple[float, float]:
-    center = canvas_size / 2.0
-    spread = canvas_size * spread_ratio
-    return (
-        rng.uniform(center - spread, center + spread),
-        rng.uniform(center - spread, center + spread),
-    )
-
-
-def random_point_outside_polygon(
-    ring: list[tuple[float, float]],
-    rng: random.Random,
-    canvas_size: int,
-) -> tuple[float, float] | None:
-    if len(ring) < 3:
-        return None
-    cx, cy = _polygon_centroid(ring)
-    max_r = max(math.hypot(x - cx, y - cy) for x, y in ring)
-    for _ in range(80):
-        angle = rng.uniform(0.0, 2.0 * math.pi)
-        dist = max_r + rng.uniform(16.0, 96.0)
-        x = cx + math.cos(angle) * dist
-        y = cy + math.sin(angle) * dist
-        if (
-            0.0 <= x < canvas_size
-            and 0.0 <= y < canvas_size
-            and not _point_in_polygon(x, y, ring)
-        ):
-            return x, y
-    return random_point_outside_polygons([ring], rng, canvas_size)
-
-
-def random_point_outside_polygons(
-    rings: list[list[tuple[float, float]]],
-    rng: random.Random,
-    canvas_size: int,
-) -> tuple[float, float] | None:
-    valid = [ring for ring in rings if len(ring) >= 3]
-    if not valid:
-        return random_point_near_center(rng, canvas_size)
-
-    for _ in range(300):
-        x = rng.uniform(0.0, canvas_size)
-        y = rng.uniform(0.0, canvas_size)
-        if not _point_inside_any(x, y, valid):
-            return x, y
-    return None
+    count: int,
+) -> list[tuple[float, float]]:
+    return [
+        (rng.uniform(0.0, canvas_size), rng.uniform(0.0, canvas_size))
+        for _ in range(count)
+    ]
 
 
 def room_display_name(room: dict[str, Any]) -> str:
@@ -234,19 +190,6 @@ def build_referring_sample(
     )
     label = format_training_label(room, canvas_size=canvas_size, bins=bins)
     return prompt, label
-
-
-def sample_infer_point(
-    iteration: int,
-    canvas_rings: list[list[tuple[float, float]]],
-    rng: random.Random,
-    canvas_size: int,
-) -> tuple[float, float] | None:
-    if iteration == 0:
-        return random_point_near_center(rng, canvas_size)
-    if iteration == 1 and len(canvas_rings) == 1:
-        return random_point_outside_polygon(canvas_rings[0], rng, canvas_size)
-    return random_point_outside_polygons(canvas_rings, rng, canvas_size)
 
 
 def room_overlaps_existing(

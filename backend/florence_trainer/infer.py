@@ -18,28 +18,16 @@ from data import (
     polygon_to_canvas_ring,
     prepare_image,
     room_overlaps_existing,
-    sample_infer_point,
+    sample_random_canvas_points,
 )
 from loc import parse_referring_room
 from model import load_model_and_processor
 
 
-def _generate_room(
-    model: Any,
-    processor: Any,
-    cfg: Config,
-    image: Image.Image,
-    refer_loc: tuple[int, int],
-) -> tuple[dict[str, Any] | None, str, str]:
-    prompt = format_infer_prompt(cfg.task_prompt, refer_loc[0], refer_loc[1])
-    inputs = processor(
-        text=prompt,
-        images=image,
-        return_tensors="pt",
-    )
+def _move_inputs_to_model(inputs: dict[str, Any], model: Any) -> dict[str, Any]:
     param = next(model.parameters())
     device, dtype = param.device, param.dtype
-    inputs = {
+    return {
         key: (
             value.to(device=device, dtype=dtype)
             if torch.is_floating_point(value)
@@ -49,19 +37,6 @@ def _generate_room(
         else value
         for key, value in inputs.items()
     }
-    with torch.inference_mode():
-        generated = model.generate(
-            **inputs,
-            max_new_tokens=cfg.infer.max_new_tokens,
-            num_beams=cfg.infer.num_beams,
-            do_sample=False,
-            use_cache=True,
-        )
-    text = processor.batch_decode(generated, skip_special_tokens=False)[0]
-    if text.startswith(prompt):
-        text = text[len(prompt) :]
-    room = parse_referring_room(text, image_size=cfg.image_size, bins=cfg.loc_bins)
-    return room, prompt, text
 
 
 def infer_image(
@@ -75,31 +50,45 @@ def infer_image(
     try:
         image = prepare_image(image, cfg.image_size)
         rng = random.Random(cfg.infer.seed)
+        points = sample_random_canvas_points(rng, cfg.canvas_size, cfg.infer.num_points)
+        prompts = [
+            format_infer_prompt(
+                cfg.task_prompt,
+                *canvas_point_to_loc(
+                    x,
+                    y,
+                    canvas_size=cfg.canvas_size,
+                    bins=cfg.loc_bins,
+                ),
+            )
+            for x, y in points
+        ]
+
+        inputs = processor(
+            text=prompts,
+            images=[image] * len(prompts),
+            return_tensors="pt",
+            padding=True,
+        )
+        inputs = _move_inputs_to_model(inputs, model)
+        with torch.inference_mode():
+            generated = model.generate(
+                **inputs,
+                max_new_tokens=cfg.infer.max_new_tokens,
+                num_beams=cfg.infer.num_beams,
+                do_sample=False,
+                use_cache=True,
+            )
+        texts = processor.batch_decode(generated, skip_special_tokens=False)
+
         rooms: list[dict[str, Any]] = []
         canvas_rings: list[list[tuple[float, float]]] = []
-        prompts: list[str] = []
         raw_outputs: list[str] = []
-
-        for iteration in range(cfg.infer.max_iterations):
-            point = sample_infer_point(iteration, canvas_rings, rng, cfg.canvas_size)
-            if point is None:
-                break
-
-            refer_loc = canvas_point_to_loc(
-                point[0],
-                point[1],
-                canvas_size=cfg.canvas_size,
-                bins=cfg.loc_bins,
-            )
-            room, prompt, raw_text = _generate_room(
-                model,
-                processor,
-                cfg,
-                image,
-                refer_loc,
-            )
-            prompts.append(prompt)
-            raw_outputs.append(raw_text)
+        for prompt, text in zip(prompts, texts, strict=True):
+            if text.startswith(prompt):
+                text = text[len(prompt) :]
+            raw_outputs.append(text)
+            room = parse_referring_room(text, image_size=cfg.image_size, bins=cfg.loc_bins)
             if room is None or len(room.get("polygon") or []) < 3:
                 continue
             if room_overlaps_existing(
@@ -109,7 +98,6 @@ def infer_image(
                 canvas_size=cfg.canvas_size,
             ):
                 continue
-
             rooms.append(room)
             canvas_rings.append(
                 polygon_to_canvas_ring(
