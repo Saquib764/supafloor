@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -17,19 +18,24 @@ from model import load_model_and_processor, use_bf16
 from plot import draw_rooms
 from preview import _print_model_and_lora
 
-_TEST_DIR = CONFIG_PATH.parent / "test"
 _TEST_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
+def _test_dir() -> Path:
+    # Prefer project tree (next to config.yaml); fall back to packaged test/ beside train.py.
+    for candidate in (CONFIG_PATH.parent / "test", Path(__file__).resolve().parent / "test"):
+        if candidate.is_dir():
+            return candidate
+    raise FileNotFoundError(
+        "Test image dir not found (expected florence_trainer/test or packaged site-packages/test)"
+    )
+
+
 def _load_test_images(image_size: int) -> list[tuple[str, Image.Image]]:
-    if not _TEST_DIR.is_dir():
-        raise FileNotFoundError(
-            f"Test image dir not found: {_TEST_DIR} "
-            "(run from florence_trainer/ or keep test/ next to config.yaml)"
-        )
-    paths = sorted(p for p in _TEST_DIR.iterdir() if p.suffix.lower() in _TEST_EXTENSIONS)
+    test_dir = _test_dir()
+    paths = sorted(p for p in test_dir.iterdir() if p.suffix.lower() in _TEST_EXTENSIONS)
     if not paths:
-        raise ValueError(f"No test images in {_TEST_DIR}")
+        raise ValueError(f"No test images in {test_dir}")
     return [(path.stem, prepare_image(Image.open(path), image_size)) for path in paths]
 
 

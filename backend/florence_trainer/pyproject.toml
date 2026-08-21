@@ -42,6 +42,9 @@ packages = []
 "model.py" = "model.py"
 "plot.py" = "plot.py"
 "train.py" = "train.py"
+"test/fp1.jpg" = "test/fp1.jpg"
+"test/fp2.jpg" = "test/fp2.jpg"
+"test/fp3.jpg" = "test/fp3.jpg"
 
 [tool.uv]
 package = true
