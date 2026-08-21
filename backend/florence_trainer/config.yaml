@@ -1,7 +1,7 @@
 hf_cache: hf_cache
 
 model_id: microsoft/Florence-2-base-ft
-task_prompt: "Locate rooms in the image."
+task_prompt: "Locate rooms in the image and compute the room polygons."
 image_size: 768
 loc_bins: 1000
 
@@ -12,8 +12,8 @@ data:
   max_label_tokens: 1024
 
 lora:
-  r: 8
-  alpha: 16
+  r: 16
+  alpha: 32
   dropout: 0.05
   target_modules: [q_proj, k_proj, v_proj, out_proj]
   freeze_vision: true
@@ -21,14 +21,14 @@ lora:
 train:
   session_dir: training_session
   epochs: 3
-  batch_size: 2
-  grad_accum: 8
+  batch_size: 32
+  grad_accum: 1
   learning_rate: 1.0e-4
   warmup_ratio: 0.03
   weight_decay: 0.01
   bf16: true
-  save_steps: 1000
-  test_infer_steps: 200
+  save_steps: 5000
+  test_infer_steps: 500
   max_grad_norm: 1.0
 
 infer:
