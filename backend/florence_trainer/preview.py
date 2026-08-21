@@ -107,11 +107,10 @@ def _print_model_and_lora(model: Any, processor: Any, cfg: Config) -> None:
     print(f"processor:    {processor.__class__.__name__}")
     print(f"dtype:        {next(model.parameters()).dtype}")
     print("\n=== LoRA ===")
-    print(f"r:              {cfg.lora.r}")
-    print(f"alpha:          {cfg.lora.alpha}")
-    print(f"dropout:        {cfg.lora.dropout}")
-    print(f"target_modules: {', '.join(cfg.lora.target_modules)}")
-    print(f"freeze_vision:  {cfg.lora.freeze_vision}")
+    print(f"dropout:       {cfg.lora.dropout}")
+    print(f"vision_rank:   {cfg.lora.vision_rank} (alpha {2 * cfg.lora.vision_rank})")
+    print(f"encoder_rank:  {cfg.lora.encoder_rank} (alpha {2 * cfg.lora.encoder_rank})")
+    print(f"decoder_rank:  {cfg.lora.decoder_rank} (alpha {2 * cfg.lora.decoder_rank})")
     _print_parameter_counts(model)
 
 

@@ -14,7 +14,7 @@ from transformers import Trainer, TrainerCallback, TrainingArguments
 from config import CONFIG_PATH, Config, datasets_cache_dir
 from data import FlorenceCollator, FloorplanFlorenceDataset, load_rows, prepare_image
 from infer import infer_image
-from model import load_model_and_processor, use_bf16
+from model import load_model_and_processor, save_trainable_projector, use_bf16
 from plot import draw_rooms
 from preview import _print_model_and_lora
 
@@ -206,6 +206,7 @@ def run(cfg: Config) -> None:
     _print_training_setup(cfg, model, processor, rows, train_ds, test_images, args)
     trainer.train(resume_from_checkpoint=True if cfg.train.resume else None)
     trainer.save_model(str(cfg.train.session_dir))
+    save_trainable_projector(model, cfg.train.session_dir)
     processor.save_pretrained(str(cfg.train.session_dir))
     print(f"Saved adapter → {cfg.train.session_dir}")
     print(f"train={len(train_ds)} test={len(test_images)}")

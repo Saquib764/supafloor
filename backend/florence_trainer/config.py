@@ -53,11 +53,10 @@ class DataSettings:
 
 @dataclass(frozen=True)
 class LoraSettings:
-    r: int
-    alpha: int
     dropout: float
-    target_modules: tuple[str, ...]
-    freeze_vision: bool
+    vision_rank: int
+    encoder_rank: int
+    decoder_rank: int
 
 
 @dataclass(frozen=True)
@@ -149,11 +148,10 @@ def load_config(path: Path | None = None) -> Config:
             revision=str(data["revision"]).strip() if data.get("revision") else None,
         ),
         lora=LoraSettings(
-            r=int(lora["r"]),
-            alpha=int(lora["alpha"]),
             dropout=float(lora["dropout"]),
-            target_modules=tuple(str(name) for name in lora["target_modules"]),
-            freeze_vision=bool(lora["freeze_vision"]),
+            vision_rank=int(lora["vision_rank"]),
+            encoder_rank=int(lora["encoder_rank"]),
+            decoder_rank=int(lora["decoder_rank"]),
         ),
         train=TrainSettings(
             session_dir=_resolve(Path(train["session_dir"]), base),
