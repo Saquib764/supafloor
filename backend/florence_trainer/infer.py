@@ -30,9 +30,16 @@ def infer_image(
             images=image,
             return_tensors="pt",
         )
-        device = next(model.parameters()).device
+        param = next(model.parameters())
+        device, dtype = param.device, param.dtype
         inputs = {
-            key: value.to(device) if hasattr(value, "to") else value
+            key: (
+                value.to(device=device, dtype=dtype)
+                if torch.is_floating_point(value)
+                else value.to(device)
+            )
+            if hasattr(value, "to")
+            else value
             for key, value in inputs.items()
         }
         with torch.inference_mode():
