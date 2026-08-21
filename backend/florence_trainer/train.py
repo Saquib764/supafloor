@@ -89,6 +89,17 @@ class TestInferCallback(TrainerCallback):
                 print(f"Test infer step {step} {name} → {out_dir}")
 
 
+def _allow_checkpoint_unpickle() -> None:
+    """HF Trainer checkpoints include numpy RNG state; PyTorch 2.6+ defaults weights_only=True."""
+    _load = torch.load
+
+    def load(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return _load(*args, **kwargs)
+
+    torch.load = load  # type: ignore[method-assign]
+
+
 class FlorenceTrainer(Trainer):
     def training_step(self, model, inputs, num_items_in_batch=None):
         loss = super().training_step(model, inputs)
@@ -166,6 +177,8 @@ def _print_training_setup(
 
 
 def run(cfg: Config) -> None:
+    if cfg.train.resume:
+        _allow_checkpoint_unpickle()
     rows = load_rows(
         cfg.data.dataset,
         revision=cfg.data.revision,
