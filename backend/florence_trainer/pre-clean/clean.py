@@ -90,5 +90,5 @@ def zero_isolated_dark_patches(
 def pre_clean(image: Image.Image | np.ndarray) -> Image.Image:
     """Run both pre-clean steps and return an L-mode PIL image."""
     gray = to_bw_stretched(image)
-    gray = zero_isolated_dark_patches(gray)
+    # gray = zero_isolated_dark_patches(gray)
     return Image.fromarray(gray, mode="L")

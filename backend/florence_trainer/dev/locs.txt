@@ -1,23 +1,8 @@
-Closet
-<poly><loc_194><loc_730><loc_237><loc_731><loc_239><loc_414><loc_198><loc_414></poly>
+unlabeled
+<poly><loc_39><loc_168><loc_39><loc_715><loc_500><loc_715><loc_500><loc_615><loc_684><loc_615><loc_684><loc_164></poly>
 
 unlabeled
-<poly><loc_509><loc_441><loc_513><loc_667><loc_766><loc_666><loc_765><loc_371></poly>
-
-Bathroom
-<poly><loc_241><loc_552><loc_380><loc_552><loc_380><loc_518><loc_427><loc_518><loc_427><loc_519><loc_427><loc_518></poly>
+<poly><loc_500><loc_617><loc_501><loc_839><loc_809><loc_839><loc_808><loc_617></poly>
 
 unlabeled
-<poly><loc_509><loc_440><loc_563><loc_441><loc_565><loc_371><loc_509><loc_371></poly>
-
-Kitchen
-<poly><loc_510><loc_371><loc_765><loc_371><loc_766><loc_138><loc_509><loc_138></poly>
-
-Living
-<poly><loc_238><loc_414><loc_510><loc_414><loc_510><loc_138><loc_241><loc_138></poly>
-
-unlabeled
-<poly><loc_514><loc_667><loc_516><loc_782><loc_769><loc_780><loc_767><loc_667></poly>
-
-Room 1 Toilet
-<poly><loc_766><loc_371><loc_766><loc_667><loc_767><loc_667></poly>
+<poly><loc_686><loc_286><loc_955><loc_287><loc_953><loc_286></poly>
