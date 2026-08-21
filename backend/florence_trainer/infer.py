@@ -22,6 +22,7 @@ from data import (
 )
 from loc import parse_referring_room
 from model import load_model_and_processor
+from pre_clean import pre_clean
 
 
 def _move_inputs_to_model(inputs: dict[str, Any], model: Any) -> dict[str, Any]:
@@ -48,7 +49,7 @@ def infer_image(
     was_training = model.training
     model.eval()
     try:
-        image = prepare_image(image, cfg.image_size)
+        image = prepare_image(pre_clean(image), cfg.image_size)
         rng = random.Random(cfg.infer.seed)
         points = sample_random_canvas_points(rng, cfg.canvas_size, cfg.infer.num_points)
         prompts = [

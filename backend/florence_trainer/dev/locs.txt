@@ -1,26 +1,23 @@
+Closet
+<poly><loc_194><loc_730><loc_237><loc_731><loc_239><loc_414><loc_198><loc_414></poly>
+
+unlabeled
+<poly><loc_509><loc_441><loc_513><loc_667><loc_766><loc_666><loc_765><loc_371></poly>
+
+Bathroom
+<poly><loc_241><loc_552><loc_380><loc_552><loc_380><loc_518><loc_427><loc_518><loc_427><loc_519><loc_427><loc_518></poly>
+
+unlabeled
+<poly><loc_509><loc_440><loc_563><loc_441><loc_565><loc_371><loc_509><loc_371></poly>
+
 Kitchen
-<poly><loc_604><loc_401><loc_864><loc_401><loc_864><loc_411></poly>
-
-Bedroom
-<poly><loc_95><loc_414><loc_388><loc_414><loc_389><loc_425></poly>
-
-Bedroom
-<poly><loc_95><loc_103><loc_488><loc_103><loc_488><loc_95><loc_95><loc_95><loc_500><loc_103><loc_840><loc_276><loc_840><loc_103></poly>
+<poly><loc_510><loc_371><loc_765><loc_371><loc_766><loc_138><loc_509><loc_138></poly>
 
 Living
-<poly><loc_94><loc_857><loc_431><loc_857><loc_431><loc_883></poly>
+<poly><loc_238><loc_414><loc_510><loc_414><loc_510><loc_138><loc_241><loc_138></poly>
 
-Living
-<poly><loc_606><loc_401><loc_864><loc_401><loc_864><loc_411><loc_745><loc_411><loc_745><loc_280><loc_839><loc_280><loc_839><loc_103><loc_498><loc_103></poly>
+unlabeled
+<poly><loc_514><loc_667><loc_516><loc_782><loc_769><loc_780><loc_767><loc_667></poly>
 
-Living
-<poly><loc_95><loc_857><loc_431><loc_857><loc_453><loc_806><loc_494><loc_783><loc_531><loc_779><loc_531><loc_883><loc_796><loc_883><loc_796><loc_494><loc_619><loc_496><loc_619><loc_408></poly>
-
-Room name: Bedroom
-<poly><loc_500><loc_101><loc_840><loc_274><loc_840><loc_101><loc_500><loc_101><loc_840><loc_101><loc_864><loc_101><loc_864><loc_274><loc_840><loc_274><loc_864><loc_410><loc_864><loc_408><loc_887><loc_408><loc_887><loc_490><loc_864><loc_490><loc_796><loc_496><loc_864><loc_496><loc_864><loc_493><loc_864><loc_493></poly>
-
-Living
-<poly><loc_95><loc_159><loc_351><loc_159><loc_351><loc_330></poly>
-
-Living
-<poly><loc_95><loc_423><loc_388><loc_423><loc_486><loc_423><loc_486><loc_99></poly>
+Room 1 Toilet
+<poly><loc_766><loc_371><loc_766><loc_667><loc_767><loc_667></poly>

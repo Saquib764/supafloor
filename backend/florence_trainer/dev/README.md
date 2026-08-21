@@ -12,12 +12,16 @@ uv run python dev/fit_test_canvas.py
 
 # Plot hardcoded <loc_*> pairs onto a 1000×1000 image
 uv run python dev/plot_locs.py
+
+# Pre-clean every image in test/ → dev/output/pre-clean/
+uv run python dev/pre_clean_test.py
 ```
 
 | Script | Purpose |
 |---|---|
 | `fit_test_canvas.py` | Scale + center each `test/` image onto a 1024×1024 white square; overwrites sources |
 | `plot_locs.py` | Draw hardcoded Florence loc pairs to `dev/output/locs.png` (points, or polylines when `AS_LINE` is true) |
+| `pre_clean_test.py` | Run pre-clean on each `test/` image; writes PNGs to `dev/output/pre-clean/` |
 
 ### `plot_locs.py` knobs
 
