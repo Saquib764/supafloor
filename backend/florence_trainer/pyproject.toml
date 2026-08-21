@@ -12,6 +12,7 @@ dependencies = [
   "dataset-manager",
   "datasets>=3.0.0",
   "einops>=0.8.0",
+  "hf-transfer>=0.1.9",
   "huggingface_hub>=0.26.0",
   "peft>=0.13.0",
   "pillow>=10.4.0",
