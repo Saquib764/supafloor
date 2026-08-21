@@ -4,26 +4,29 @@ from __future__ import annotations
 
 import json
 import math
-from pathlib import Path
 from typing import Any
 
 import torch
 from PIL import Image
 from transformers import Trainer, TrainerCallback, TrainingArguments
 
-from config import Config, datasets_cache_dir
+from config import CONFIG_PATH, Config, datasets_cache_dir
 from data import FlorenceCollator, FloorplanFlorenceDataset, load_rows, prepare_image
 from infer import infer_image
 from model import load_model_and_processor, use_bf16
 from plot import draw_rooms
 from preview import _print_model_and_lora
 
-_PACKAGE_DIR = Path(__file__).resolve().parent
-_TEST_DIR = _PACKAGE_DIR / "test"
+_TEST_DIR = CONFIG_PATH.parent / "test"
 _TEST_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def _load_test_images(image_size: int) -> list[tuple[str, Image.Image]]:
+    if not _TEST_DIR.is_dir():
+        raise FileNotFoundError(
+            f"Test image dir not found: {_TEST_DIR} "
+            "(run from florence_trainer/ or keep test/ next to config.yaml)"
+        )
     paths = sorted(p for p in _TEST_DIR.iterdir() if p.suffix.lower() in _TEST_EXTENSIONS)
     if not paths:
         raise ValueError(f"No test images in {_TEST_DIR}")
