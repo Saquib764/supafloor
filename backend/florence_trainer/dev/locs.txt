@@ -1,0 +1,72 @@
+</s><s>Room 1
+<loc_234><loc_779>
+<loc_235><loc_780>
+<loc_516><loc_781>
+<loc_769><loc_780>
+<loc_768><loc_668>
+<loc_514><loc_667>
+<loc_510><loc_666>
+<loc_766><loc_371>
+<loc_510><loc_369>
+<loc_510><loc_414>
+<loc_427><loc_414>
+<loc_240><loc_413>
+<loc_241><loc_412>
+</poly>
+<sep>
+Bathroom
+<loc_363><loc_472>
+<poly>
+<loc_240><loc_550>
+<loc_380><loc_550>
+<loc_427><loc_519>
+<loc_427><loc_472>
+</poly> Bathroom
+<loc_337><loc_635>
+<poly>
+
+<loc_240><loc_723>
+<loc_403><loc_724>
+<loc_427><loc_652>
+<loc_426><loc_651>
+</poly> Closet
+<loc_366><loc_732>
+<poly> <loc_235><loc_780> Bath
+<loc_403><loc_652>
+<loc_427><loc_735>
+<loc_516><loc_734>
+<loc_426><loc_652>
+<loc_403><loc_723>
+<loc_241><loc_723>
+<loc_242><loc_722>
+</poly>
+
+<sep>
+Room 1 Bath
+<loc_659><loc_717>
+<poly> Toilet
+<loc_563><loc_373>
+<loc_563><loc_438>
+<loc_510><loc_441>
+<loc_766><loc_667>
+<loc_768><loc_667>
+<loc_766><loc_454>
+</poly> Toilet Bath
+<loc_373><loc_553>
+<poly> Bathroom Bath
+<loc_326><loc_513>
+<poly>/<loc_240><loc_550> Bath
+<loc_380><loc_521>
+<loc_427><loc_555>
+<loc_427><loc_418>
+<loc_240><loc_414>
+</poly> <sep>
+Kitchen
+<loc_632><loc_225>
+<poly> Closest
+<loc_510><loc_370>
+<loc_510><loc_368>
+<loc_766><loc_370>
+<loc_766><loc_181>
+<loc_509><loc_137>
+</poly></s>

@@ -1,4 +1,4 @@
-"""Florence training view over floorplan-to-json (no extraction column)."""
+"""Florence referring-segmentation view over floorplan-to-json."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ FEATURES = Features(
         "plan_id": Value("string"),
         "variant": Value("int32"),
         "image": Image(),
-        "florence": Value("string"),
+        "extraction": Value("string"),
     }
 )
 

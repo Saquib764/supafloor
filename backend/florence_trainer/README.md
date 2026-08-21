@@ -1,8 +1,8 @@
 # Florence trainer
 
-LoRA fine-tune of Microsoft Florence-2 so a floor-plan image maps to named room polygons.
+LoRA fine-tune of Microsoft Florence-2 so a floor-plan image maps to the room polygon containing a referring point.
 
-Input is a realistic 1024×1024 PNG. Output is a list of `{ name, center, polygon }` decoded from Florence `<loc_*>` tokens.
+Input is a realistic 1024×1024 PNG plus a loc-token point. Output is one room polygon and its name (or `unlabeled`).
 
 This package is separate from `backend/floorplan/` so PyTorch / PEFT stay out of the geometry engine.
 
@@ -14,7 +14,7 @@ This package is separate from `backend/floorplan/` so PyTorch / PEFT stay out of
 
 ## Dataset
 
-Training loads Hub rows through `dataset_manager` (`data.dataset` in `config.yaml`, default `florence-rooms`). That view keeps only `stem`, `plan_id`, `variant`, `image`, and `florence` from `saquiboye/floorplan-to-json`. Train/val split is by **plan id** so variants of the same plan do not leak into validation.
+Training loads Hub rows through `dataset_manager` (`data.dataset` in `config.yaml`, default `florence-rooms`). That view keeps `stem`, `plan_id`, `variant`, `image`, and `extraction` from `saquiboye/floorplan-to-json`. Each training step randomly picks one room, samples an interior point, and builds a dynamic prompt + label.
 
 Auth with `huggingface-cli login`, `HF_TOKEN`, or a `.env` in this folder. Do not put a token in `config.yaml`. Hub datasets are cached under `hf_cache/` in this folder.
 
@@ -32,19 +32,22 @@ uv run python cli.py upload floorplan-to-json
 
 ### Label format
 
-Each room in the `.txt` target:
+Each training sample:
 
+**Prompt (input):**
 ```
-Living
-<loc_158><loc_570>
-<poly>
-<loc_157><loc_569>
-<loc_463><loc_569>
-</poly>
-<sep>
+<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_602><loc_955>
 ```
 
-Name, center loc pair, then polygon vertices. Loc bins are 0–999. Decode uses `(loc + 0.5) / loc_bins * image_size`.
+**Label (target):**
+```
+<poly><loc_120><loc_180><loc_420><loc_180><loc_420><loc_460><loc_120><loc_460></poly>
+Room name: Bath
+```
+
+When the render omitted the room text label, the name line is `Room name: unlabeled`.
+
+Loc bins are 0–999 on a 1024 canvas. Decode uses `(loc + 0.5) / loc_bins * image_size`.
 
 ## Setup
 
@@ -60,7 +63,9 @@ Edit `config.yaml` for model, Hub dataset, LoRA, and training knobs. Paths in th
 | Key | Meaning |
 |---|---|
 | `model_id` | HuggingFace Florence-2 checkpoint (`microsoft/Florence-2-base-ft` by default) |
-| `task_prompt` | Prefix fed with the image (`Locate rooms in the image.`) |
+| `task_prompt` | Prefix for referring prompts (`<REFERRING_EXPRESSION_SEGMENTATION>`) |
+| `canvas_size` | Coordinate space for loc tokens (1024, matches extraction JSON) |
+| `data.seed` | RNG seed for room/point selection per row |
 | `data.dataset` | `dataset_manager` registry name (default `florence-rooms`) |
 | `data.revision` | Optional Hub revision override |
 | `lora.*` | Rank, alpha, dropout; vision encoder is frozen |
@@ -79,7 +84,7 @@ uv run florence-train train
 # Optional: another config
 uv run florence-train train --config config.yaml
 
-# Image → rooms JSON on stdout
+# Image → all room polygons (iterative referring segmentation)
 uv run florence-train infer --image /path/to/plan.png
 
 # Write JSON; override adapter dir
@@ -89,7 +94,17 @@ uv run florence-train infer \
   --out rooms.json
 ```
 
-Infer loads the adapter from `train.session_dir` unless `--adapter` is set. The JSON is `{ "rooms": [...], "text": "<raw generation>" }`.
+Infer loads the adapter from `train.session_dir` unless `--adapter` is set. Inference loops up to `infer.max_iterations` (default 15): sample a point near center, segment that room, then sample outside discovered polygons to find the next room. Output `text` is plot-ready:
+
+```
+Bath
+<poly><loc_120><loc_180>...</poly>
+
+Kitchen
+<poly><loc_520><loc_520>...</poly>
+```
+
+The JSON is `{ "rooms": [...], "text": "<plot format>", "prompts": [...] }`.
 
 During training, every `test_infer_steps` the trainer saves under `training_session/test/step-NNNNNN/`:
 
@@ -103,8 +118,8 @@ During training, every `test_infer_steps` the trainer saves under `training_sess
 |---|---|
 | `florence_cli.py` | `train` / `infer` entry (`uv run florence-train …`) |
 | `config.yaml` / `config.py` | Training parameters |
-| `loc.py` | Decode infer output (`parse_rooms`); labels come pre-formatted from the dataset |
-| `data.py` | Hub dataset wrapper, plan-id split, collator |
+| `loc.py` | Encode/decode loc tokens; parse infer/plot text |
+| `data.py` | Hub loading, training/infer sample builders, collator |
 | `model.py` | Load Florence-2, LoRA, custom tokens |
 | `train.py` | HuggingFace `Trainer` loop (loads data via `dataset_manager.registry`) |
 | `infer.py` | Generate text, parse rooms onto the input image size |

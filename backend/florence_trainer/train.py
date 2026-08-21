@@ -72,6 +72,7 @@ class TestInferCallback(TrainerCallback):
             out_dir.mkdir(parents=True, exist_ok=True)
 
             payload["image"].save(out_dir / "input.jpg", format="JPEG", quality=95)
+            (out_dir / "prompts.txt").write_text("\n\n".join(payload["prompts"]), encoding="utf-8")
             (out_dir / "output.txt").write_text(payload["text"], encoding="utf-8")
             if self._cfg.train.test_infer_render:
                 overlay = draw_rooms(payload["image"], payload["rooms"])
@@ -137,8 +138,10 @@ def _print_training_setup(
     print(f"test images:      {', '.join(name for name, _ in test_images)}")
     print(f"task_prompt:      {cfg.task_prompt!r}")
     print(f"image_size:       {cfg.image_size}")
+    print(f"canvas_size:      {cfg.canvas_size}")
     print(f"max_label_tokens: {cfg.data.max_label_tokens}")
     print(f"loc_bins:         {cfg.loc_bins}")
+    print(f"data seed:        {cfg.data.seed}")
 
     _print_model_and_lora(model, processor, cfg)
 
@@ -170,7 +173,14 @@ def run(cfg: Config) -> None:
     )
     model, processor = load_model_and_processor(cfg, for_training=True)
     collator = FlorenceCollator(processor, cfg.data.max_label_tokens)
-    train_ds = FloorplanFlorenceDataset(rows, cfg.task_prompt, cfg.image_size)
+    train_ds = FloorplanFlorenceDataset(
+        rows,
+        cfg.task_prompt,
+        cfg.image_size,
+        loc_bins=cfg.loc_bins,
+        canvas_size=cfg.canvas_size,
+        seed=cfg.data.seed,
+    )
     test_images = _load_test_images(cfg.image_size)
 
     cfg.train.session_dir.mkdir(parents=True, exist_ok=True)

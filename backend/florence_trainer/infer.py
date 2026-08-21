@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 from typing import Any
 
@@ -10,9 +11,57 @@ import torch
 from PIL import Image
 
 from config import Config
-from data import prepare_image
-from loc import parse_rooms
+from data import (
+    canvas_point_to_loc,
+    format_infer_prompt,
+    format_plot_text,
+    polygon_to_canvas_ring,
+    prepare_image,
+    room_overlaps_existing,
+    sample_infer_point,
+)
+from loc import parse_referring_room
 from model import load_model_and_processor
+
+
+def _generate_room(
+    model: Any,
+    processor: Any,
+    cfg: Config,
+    image: Image.Image,
+    refer_loc: tuple[int, int],
+) -> tuple[dict[str, Any] | None, str, str]:
+    prompt = format_infer_prompt(cfg.task_prompt, refer_loc[0], refer_loc[1])
+    inputs = processor(
+        text=prompt,
+        images=image,
+        return_tensors="pt",
+    )
+    param = next(model.parameters())
+    device, dtype = param.device, param.dtype
+    inputs = {
+        key: (
+            value.to(device=device, dtype=dtype)
+            if torch.is_floating_point(value)
+            else value.to(device)
+        )
+        if hasattr(value, "to")
+        else value
+        for key, value in inputs.items()
+    }
+    with torch.inference_mode():
+        generated = model.generate(
+            **inputs,
+            max_new_tokens=cfg.infer.max_new_tokens,
+            num_beams=cfg.infer.num_beams,
+            do_sample=False,
+            use_cache=True,
+        )
+    text = processor.batch_decode(generated, skip_special_tokens=False)[0]
+    if text.startswith(prompt):
+        text = text[len(prompt) :]
+    room = parse_referring_room(text, image_size=cfg.image_size, bins=cfg.loc_bins)
+    return room, prompt, text
 
 
 def infer_image(
@@ -25,36 +74,64 @@ def infer_image(
     model.eval()
     try:
         image = prepare_image(image, cfg.image_size)
-        inputs = processor(
-            text=cfg.task_prompt,
-            images=image,
-            return_tensors="pt",
+        rng = random.Random(cfg.infer.seed)
+        rooms: list[dict[str, Any]] = []
+        canvas_rings: list[list[tuple[float, float]]] = []
+        prompts: list[str] = []
+        raw_outputs: list[str] = []
+
+        for iteration in range(cfg.infer.max_iterations):
+            point = sample_infer_point(iteration, canvas_rings, rng, cfg.canvas_size)
+            if point is None:
+                break
+
+            refer_loc = canvas_point_to_loc(
+                point[0],
+                point[1],
+                canvas_size=cfg.canvas_size,
+                bins=cfg.loc_bins,
+            )
+            room, prompt, raw_text = _generate_room(
+                model,
+                processor,
+                cfg,
+                image,
+                refer_loc,
+            )
+            prompts.append(prompt)
+            raw_outputs.append(raw_text)
+            if room is None or len(room.get("polygon") or []) < 3:
+                continue
+            if room_overlaps_existing(
+                room,
+                canvas_rings,
+                image_size=cfg.image_size,
+                canvas_size=cfg.canvas_size,
+            ):
+                continue
+
+            rooms.append(room)
+            canvas_rings.append(
+                polygon_to_canvas_ring(
+                    room["polygon"],
+                    image_size=cfg.image_size,
+                    canvas_size=cfg.canvas_size,
+                )
+            )
+
+        plot_text = format_plot_text(
+            rooms,
+            image_size=cfg.image_size,
+            canvas_size=cfg.canvas_size,
+            bins=cfg.loc_bins,
         )
-        param = next(model.parameters())
-        device, dtype = param.device, param.dtype
-        inputs = {
-            key: (
-                value.to(device=device, dtype=dtype)
-                if torch.is_floating_point(value)
-                else value.to(device)
-            )
-            if hasattr(value, "to")
-            else value
-            for key, value in inputs.items()
+        return {
+            "rooms": rooms,
+            "text": plot_text,
+            "image": image,
+            "prompts": prompts,
+            "raw_outputs": raw_outputs,
         }
-        with torch.inference_mode():
-            generated = model.generate(
-                **inputs,
-                max_new_tokens=cfg.infer.max_new_tokens,
-                num_beams=cfg.infer.num_beams,
-                do_sample=False,
-                use_cache=True,
-            )
-        text = processor.batch_decode(generated, skip_special_tokens=False)[0]
-        if text.startswith(cfg.task_prompt):
-            text = text[len(cfg.task_prompt) :]
-        rooms = parse_rooms(text, image_size=cfg.image_size, bins=cfg.loc_bins)
-        return {"rooms": rooms, "text": text, "image": image}
     finally:
         if was_training:
             model.train()
@@ -74,9 +151,20 @@ def run(
     elif torch.backends.mps.is_available():
         model.to("mps")
     payload = infer_image(model, processor, cfg, Image.open(image_path))
-    encoded = json.dumps({"rooms": payload["rooms"], "text": payload["text"]}, indent=2)
+    encoded = json.dumps(
+        {
+            "rooms": payload["rooms"],
+            "text": payload["text"],
+            "prompts": payload["prompts"],
+        },
+        indent=2,
+    )
     if out is not None:
         out.write_text(encoded, encoding="utf-8")
     else:
         print(encoded)
-    return {"rooms": payload["rooms"], "text": payload["text"]}
+    return {
+        "rooms": payload["rooms"],
+        "text": payload["text"],
+        "prompts": payload["prompts"],
+    }

@@ -115,7 +115,9 @@ def _print_model_and_lora(model: Any, processor: Any, cfg: Config) -> None:
 
 
 def _print_samples(cfg: Config, *, count: int, seed: int | None) -> None:
-    from data import load_sample_rows, prepare_image
+    import json
+
+    from data import build_referring_sample, load_sample_rows, prepare_image
 
     cache_dir = datasets_cache_dir(cfg)
     print(f"Loading dataset into {cache_dir} …")
@@ -137,14 +139,22 @@ def _print_samples(cfg: Config, *, count: int, seed: int | None) -> None:
     print(f"rows:         {num_rows:,}")
     print(f"cache_dir:    {cache_dir}")
     print(f"preview_dir:  {_PREVIEW_DIR}")
-    print(f"task_prompt:  {cfg.task_prompt!r}")
+    print(f"task_prefix:  {cfg.task_prompt!r}")
 
     for n, (index, row) in enumerate(zip(indices, samples, strict=True), start=1):
         stem = str(row["stem"])
         image = prepare_image(row["image"], cfg.image_size)
         saved_path = _PREVIEW_DIR / f"{stem}.png"
         image.save(saved_path)
-        label = str(row["florence"])
+        extraction = json.loads(str(row["extraction"]))
+        prompt, label = build_referring_sample(
+            extraction,
+            index,
+            task_prefix=cfg.task_prompt,
+            canvas_size=cfg.canvas_size,
+            bins=cfg.loc_bins,
+            seed=cfg.data.seed,
+        )
 
         print(f"\n--- sample {n} (index {index}) ---")
         print(f"stem:         {stem}")
@@ -152,7 +162,7 @@ def _print_samples(cfg: Config, *, count: int, seed: int | None) -> None:
         print(f"variant:      {row['variant']}")
         print(f"image_saved:  {saved_path}")
         print(f"image_size:   {image.size[0]}x{image.size[1]}")
-        print(f"task_prompt:  {cfg.task_prompt!r}")
+        print(f"prompt:       {prompt!r}")
         print("label:")
         print(label if label.endswith("\n") else f"{label}\n")
 

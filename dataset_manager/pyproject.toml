@@ -26,5 +26,8 @@ packages = []
 "README.md" = "README.md"
 "datasets" = "datasets"
 
+[tool.hatch.build.targets.editable]
+dev-mode-dirs = ["."]
+
 [tool.uv]
 package = true

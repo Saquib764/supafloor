@@ -1,13 +1,15 @@
 hf_cache: hf_cache
 
 model_id: microsoft/Florence-2-base-ft
-task_prompt: "<REFERRING_EXPRESSION_SEGMENTATION> Segment every enclosed room separately."
+task_prompt: "<REFERRING_EXPRESSION_SEGMENTATION>"
 image_size: 768
+canvas_size: 1024
 loc_bins: 1000
 
 data:
   dataset: florence-rooms
-  max_label_tokens: 1024
+  max_label_tokens: 256
+  seed: 42
 
 lora:
   dropout: 0.05
@@ -31,5 +33,7 @@ train:
   resume: false
 
 infer:
+  max_iterations: 15
   max_new_tokens: 1024
   num_beams: 3
+  seed: null

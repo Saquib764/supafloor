@@ -33,3 +33,18 @@ def draw_rooms(image: Image.Image, rooms: list[dict[str, Any]]) -> Image.Image:
         if center and name:
             draw.text((int(center[0]), int(center[1])), name, fill=(26, 26, 26))
     return overlay
+
+
+def draw_points(
+    image: Image.Image,
+    points: list[list[int]],
+    *,
+    radius: int = 3,
+    color: tuple[int, int, int] = (220, 50, 50),
+) -> Image.Image:
+    overlay = image.convert("RGB").copy()
+    draw = ImageDraw.Draw(overlay)
+    r = max(1, radius)
+    for x, y in points:
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=color, outline=(44, 44, 44))
+    return overlay

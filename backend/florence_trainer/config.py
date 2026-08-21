@@ -49,6 +49,7 @@ class DataSettings:
     dataset: str
     max_label_tokens: int
     revision: str | None = None
+    seed: int | None = None
 
 
 @dataclass(frozen=True)
@@ -78,8 +79,10 @@ class TrainSettings:
 
 @dataclass(frozen=True)
 class InferSettings:
+    max_iterations: int
     max_new_tokens: int
     num_beams: int
+    seed: int | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +91,7 @@ class Config:
     model_id: str
     task_prompt: str
     image_size: int
+    canvas_size: int
     loc_bins: int
     data: DataSettings
     lora: LoraSettings
@@ -141,11 +145,13 @@ def load_config(path: Path | None = None) -> Config:
         model_id=str(raw["model_id"]),
         task_prompt=str(raw["task_prompt"]),
         image_size=int(raw["image_size"]),
+        canvas_size=int(raw.get("canvas_size") or 1024),
         loc_bins=int(raw["loc_bins"]),
         data=DataSettings(
             dataset=dataset,
             max_label_tokens=int(data["max_label_tokens"]),
             revision=str(data["revision"]).strip() if data.get("revision") else None,
+            seed=int(data["seed"]) if data.get("seed") is not None else None,
         ),
         lora=LoraSettings(
             dropout=float(lora["dropout"]),
@@ -169,7 +175,9 @@ def load_config(path: Path | None = None) -> Config:
             max_grad_norm=float(train["max_grad_norm"]),
         ),
         infer=InferSettings(
+            max_iterations=int(infer["max_iterations"]),
             max_new_tokens=int(infer["max_new_tokens"]),
             num_beams=int(infer["num_beams"]),
+            seed=int(infer["seed"]) if infer.get("seed") is not None else None,
         ),
     )
