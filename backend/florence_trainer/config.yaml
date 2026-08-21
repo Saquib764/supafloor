@@ -1,14 +1,12 @@
 hf_cache: hf_cache
 
-model_id: microsoft/Florence-2-base-ft
-task_prompt: "Locate rooms in the image and compute the room polygons."
+model_id: microsoft/Florence-2-base
+task_prompt: "<REFERRING_EXPRESSION_SEGMENTATION> black closed polygon shapes"
 image_size: 768
 loc_bins: 1000
 
 data:
   dataset: florence-rooms
-  train_ratio: 0.95
-  seed: 0
   max_label_tokens: 1024
 
 lora:
@@ -30,6 +28,8 @@ train:
   save_steps: 5000
   test_infer_steps: 500
   max_grad_norm: 1.0
+  test_infer_render: true
+  resume: false
 
 infer:
   max_new_tokens: 1024

@@ -12,11 +12,22 @@ from PIL import Image
 from transformers import Trainer, TrainerCallback, TrainingArguments
 
 from config import Config, datasets_cache_dir
-from data import FlorenceCollator, FloorplanFlorenceDataset, load_rows, prepare_image, split_by_plan_id
+from data import FlorenceCollator, FloorplanFlorenceDataset, load_rows, prepare_image
 from infer import infer_image
 from model import load_model_and_processor, use_bf16
 from plot import draw_rooms
 from preview import _print_model_and_lora
+
+_PACKAGE_DIR = Path(__file__).resolve().parent
+_TEST_DIR = _PACKAGE_DIR / "test"
+_TEST_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _load_test_images(image_size: int) -> list[tuple[str, Image.Image]]:
+    paths = sorted(p for p in _TEST_DIR.iterdir() if p.suffix.lower() in _TEST_EXTENSIONS)
+    if not paths:
+        raise ValueError(f"No test images in {_TEST_DIR}")
+    return [(path.stem, prepare_image(Image.open(path), image_size)) for path in paths]
 
 
 class TestInferCallback(TrainerCallback):
@@ -24,11 +35,11 @@ class TestInferCallback(TrainerCallback):
         self,
         cfg: Config,
         processor: Any,
-        test_image: Image.Image,
+        test_images: list[tuple[str, Image.Image]],
     ) -> None:
         self._cfg = cfg
         self._processor = processor
-        self._test_image = test_image
+        self._test_images = test_images
         self._test_dir = cfg.train.session_dir / "test"
 
     def on_step_end(
@@ -45,18 +56,27 @@ class TestInferCallback(TrainerCallback):
         if model is None:
             return
 
-        payload = infer_image(model, self._processor, self._cfg, self._test_image.copy())
-        out_dir = self._test_dir / f"step-{step:06d}"
-        out_dir.mkdir(parents=True, exist_ok=True)
+        step_dir = self._test_dir / f"step-{step:06d}"
+        for name, image in self._test_images:
+            payload = infer_image(model, self._processor, self._cfg, image.copy())
+            out_dir = step_dir / name
+            out_dir.mkdir(parents=True, exist_ok=True)
 
-        payload["image"].save(out_dir / "input.jpg", format="JPEG", quality=95)
-        overlay = draw_rooms(payload["image"], payload["rooms"])
-        overlay.save(out_dir / "overlay.jpg", format="JPEG", quality=95)
-        (out_dir / "rooms.json").write_text(
-            json.dumps({"rooms": payload["rooms"], "text": payload["text"]}, indent=2),
-            encoding="utf-8",
-        )
-        print(f"Test infer step {step} → {out_dir} ({len(payload['rooms'])} rooms)")
+            payload["image"].save(out_dir / "input.jpg", format="JPEG", quality=95)
+            (out_dir / "output.txt").write_text(payload["text"], encoding="utf-8")
+            if self._cfg.train.test_infer_render:
+                overlay = draw_rooms(payload["image"], payload["rooms"])
+                overlay.save(out_dir / "overlay.jpg", format="JPEG", quality=95)
+                (out_dir / "rooms.json").write_text(
+                    json.dumps({"rooms": payload["rooms"], "text": payload["text"]}, indent=2),
+                    encoding="utf-8",
+                )
+                print(
+                    f"Test infer step {step} {name} → {out_dir} "
+                    f"({len(payload['rooms'])} rooms)"
+                )
+            else:
+                print(f"Test infer step {step} {name} → {out_dir}")
 
 
 class FlorenceTrainer(Trainer):
@@ -82,14 +102,12 @@ def _print_training_setup(
     cfg: Config,
     model: Any,
     processor: Any,
-    train_rows: Any,
-    val_rows: Any,
+    rows: Any,
     train_ds: FloorplanFlorenceDataset,
-    eval_ds: FloorplanFlorenceDataset | None,
+    test_images: list[tuple[str, Image.Image]],
     args: TrainingArguments,
 ) -> None:
-    train_plans = len(set(train_rows["plan_id"]))
-    val_plans = len(set(val_rows["plan_id"]))
+    plan_ids = len(set(rows["plan_id"]))
     effective_batch = cfg.train.batch_size * cfg.train.grad_accum
     steps_per_epoch = math.ceil(len(train_ds) / effective_batch)
     total_steps = steps_per_epoch * cfg.train.epochs
@@ -106,11 +124,8 @@ def _print_training_setup(
     print(f"dataset:          {cfg.data.dataset}")
     print(f"revision:         {cfg.data.revision or '(default)'}")
     print(f"cache_dir:        {datasets_cache_dir(cfg)}")
-    print(f"rows:             {len(train_rows) + len(val_rows):,} total")
-    print(f"train rows:       {len(train_rows):,} ({train_plans:,} plan_ids)")
-    print(f"val rows:         {len(val_rows):,} ({val_plans:,} plan_ids)")
-    print(f"train_ratio:      {cfg.data.train_ratio}")
-    print(f"split seed:       {cfg.data.seed}")
+    print(f"train rows:       {len(rows):,} ({plan_ids:,} plan_ids)")
+    print(f"test images:      {', '.join(name for name, _ in test_images)}")
     print(f"task_prompt:      {cfg.task_prompt!r}")
     print(f"image_size:       {cfg.image_size}")
     print(f"max_label_tokens: {cfg.data.max_label_tokens}")
@@ -130,9 +145,10 @@ def _print_training_setup(
     print(f"warmup_ratio:     {cfg.train.warmup_ratio}")
     print(f"weight_decay:     {cfg.train.weight_decay}")
     print(f"max_grad_norm:    {cfg.train.max_grad_norm}")
+    print(f"resume:           {cfg.train.resume}")
     print(f"save_steps:       {cfg.train.save_steps}")
     print(f"test_infer_steps: {cfg.train.test_infer_steps}")
-    print(f"eval dataset:     {len(eval_ds) if eval_ds is not None else 0} rows")
+    print(f"test_infer_render: {cfg.train.test_infer_render}")
     print(f"logging_steps:    {args.logging_steps}")
     print()
 
@@ -143,22 +159,10 @@ def run(cfg: Config) -> None:
         revision=cfg.data.revision,
         cache_dir=datasets_cache_dir(cfg),
     )
-    train_rows, val_rows = split_by_plan_id(
-        rows,
-        train_ratio=cfg.data.train_ratio,
-        seed=cfg.data.seed,
-    )
     model, processor = load_model_and_processor(cfg, for_training=True)
     collator = FlorenceCollator(processor, cfg.data.max_label_tokens)
-    train_ds = FloorplanFlorenceDataset(train_rows, cfg.task_prompt, cfg.image_size)
-    eval_ds = (
-        FloorplanFlorenceDataset(val_rows, cfg.task_prompt, cfg.image_size)
-        if len(val_rows)
-        else None
-    )
-
-    test_row = val_rows[0] if len(val_rows) else train_rows[0]
-    test_image = prepare_image(test_row["image"], cfg.image_size)
+    train_ds = FloorplanFlorenceDataset(rows, cfg.task_prompt, cfg.image_size)
+    test_images = _load_test_images(cfg.image_size)
 
     cfg.train.session_dir.mkdir(parents=True, exist_ok=True)
     args = TrainingArguments(
@@ -181,19 +185,18 @@ def run(cfg: Config) -> None:
         dataloader_num_workers=0,
     )
     callbacks = [
-        TestInferCallback(cfg, processor, test_image),
+        TestInferCallback(cfg, processor, test_images),
     ]
     trainer = FlorenceTrainer(
         model=model,
         args=args,
         train_dataset=train_ds,
-        eval_dataset=eval_ds,
         data_collator=collator,
         callbacks=callbacks,
     )
-    _print_training_setup(cfg, model, processor, train_rows, val_rows, train_ds, eval_ds, args)
-    trainer.train()
+    _print_training_setup(cfg, model, processor, rows, train_ds, test_images, args)
+    trainer.train(resume_from_checkpoint=True if cfg.train.resume else None)
     trainer.save_model(str(cfg.train.session_dir))
     processor.save_pretrained(str(cfg.train.session_dir))
     print(f"Saved adapter → {cfg.train.session_dir}")
-    print(f"train={len(train_ds)} val={len(eval_ds) if eval_ds is not None else 0}")
+    print(f"train={len(train_ds)} test={len(test_images)}")

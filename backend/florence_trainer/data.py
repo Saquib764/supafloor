@@ -1,8 +1,7 @@
-"""Hub rows via dataset_manager, plan-id split, and Florence collator."""
+"""Hub rows via dataset_manager and Florence collator."""
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 
 from datasets import Dataset as HubDataset
@@ -43,25 +42,6 @@ def load_sample_rows(
         revision=revision,
         cache_dir=cache_dir,
     )
-
-
-def split_by_plan_id(
-    rows: HubDataset,
-    *,
-    train_ratio: float,
-    seed: int,
-) -> tuple[HubDataset, HubDataset]:
-    plan_ids_col = list(rows["plan_id"])
-    plan_ids = sorted(set(plan_ids_col))
-    rng = random.Random(seed)
-    rng.shuffle(plan_ids)
-    n_train = int(len(plan_ids) * train_ratio)
-    if len(plan_ids) > 1:
-        n_train = min(max(n_train, 1), len(plan_ids) - 1)
-    train_ids = set(plan_ids[:n_train])
-    train_idx = [i for i, plan_id in enumerate(plan_ids_col) if plan_id in train_ids]
-    val_idx = [i for i, plan_id in enumerate(plan_ids_col) if plan_id not in train_ids]
-    return rows.select(train_idx), rows.select(val_idx)
 
 
 class FloorplanFlorenceDataset(Dataset):

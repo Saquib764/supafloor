@@ -47,8 +47,6 @@ def _load_dotenv() -> None:
 @dataclass(frozen=True)
 class DataSettings:
     dataset: str
-    train_ratio: float
-    seed: int
     max_label_tokens: int
     revision: str | None = None
 
@@ -72,8 +70,10 @@ class TrainSettings:
     warmup_ratio: float
     weight_decay: float
     bf16: bool
+    resume: bool
     save_steps: int
     test_infer_steps: int
+    test_infer_render: bool
     max_grad_norm: float
 
 
@@ -145,8 +145,6 @@ def load_config(path: Path | None = None) -> Config:
         loc_bins=int(raw["loc_bins"]),
         data=DataSettings(
             dataset=dataset,
-            train_ratio=float(data["train_ratio"]),
-            seed=int(data["seed"]),
             max_label_tokens=int(data["max_label_tokens"]),
             revision=str(data["revision"]).strip() if data.get("revision") else None,
         ),
@@ -166,8 +164,10 @@ def load_config(path: Path | None = None) -> Config:
             warmup_ratio=float(train["warmup_ratio"]),
             weight_decay=float(train["weight_decay"]),
             bf16=bool(train["bf16"]),
+            resume=bool(train.get("resume", False)),
             save_steps=int(train["save_steps"]),
             test_infer_steps=int(train["test_infer_steps"]),
+            test_infer_render=bool(train.get("test_infer_render", True)),
             max_grad_norm=float(train["max_grad_norm"]),
         ),
         infer=InferSettings(
