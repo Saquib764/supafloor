@@ -96,10 +96,14 @@ def _resolve_lora_modules(model: Any, targets: list[str]) -> None:
 
 
 def _enable_projector(model: Any) -> None:
-    base = _unwrap(model)
-    base.image_projection.requires_grad = True
-    for param in base.image_proj_norm.parameters():
-        param.requires_grad = True
+    _unwrap(model).image_projection.requires_grad = True
+
+
+def _projector_norm_params(model: Any) -> list[torch.nn.Parameter]:
+    norm = _unwrap(model).image_proj_norm
+    if hasattr(norm, "modules_to_save"):
+        return list(norm.modules_to_save["default"].parameters())
+    return list(norm.parameters())
 
 
 def _validate_training_setup(model: Any, targets: list[str]) -> None:
@@ -107,12 +111,13 @@ def _validate_training_setup(model: Any, targets: list[str]) -> None:
     forbidden = (
         "fc1",
         "fc2",
-        "embed",
-        "shared",
         "lm_head",
+        "embed_positions",
+        "embed_tokens",
+        "shared",
     )
     for name in trainable:
-        if "lora_" in name or "image_proj" in name:
+        if "lora_" in name or "image_proj" in name or "modules_to_save" in name:
             continue
         if any(token in name for token in forbidden):
             raise ValueError(f"Unexpected trainable parameter: {name}")
@@ -132,7 +137,14 @@ def _validate_training_setup(model: Any, targets: list[str]) -> None:
     base = _unwrap(model)
     if not base.image_projection.requires_grad:
         raise ValueError("image_projection is not trainable")
-    if not all(param.requires_grad for param in base.image_proj_norm.parameters()):
+
+    norm = base.image_proj_norm
+    if hasattr(norm, "original_module"):
+        if any(param.requires_grad for param in norm.original_module.parameters()):
+            raise ValueError("image_proj_norm.original_module must stay frozen")
+
+    norm_params = _projector_norm_params(model)
+    if not norm_params or not all(param.requires_grad for param in norm_params):
         raise ValueError("image_proj_norm is not fully trainable")
 
 

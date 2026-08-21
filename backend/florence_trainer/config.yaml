@@ -1,7 +1,7 @@
 hf_cache: hf_cache
 
 model_id: microsoft/Florence-2-base-ft
-task_prompt: "floor plan rooms"
+task_prompt: "<REFERRING_EXPRESSION_SEGMENTATION> Segment every enclosed room separately."
 image_size: 768
 loc_bins: 1000
 
