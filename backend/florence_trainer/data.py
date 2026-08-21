@@ -134,14 +134,16 @@ def format_training_label(
 
 def format_training_prompt(
     task_prefix: str,
-    x: float,
-    y: float,
+    points: list[tuple[float, float]],
     *,
     canvas_size: int,
     bins: int,
 ) -> str:
-    point = format_loc_point(x, y, canvas_size=canvas_size, bins=bins)
-    return f"{task_prefix}room containing {point}"
+    locs = "".join(
+        format_loc_point(x, y, canvas_size=canvas_size, bins=bins)
+        for x, y in points
+    )
+    return f"{task_prefix}room containing {locs}"
 
 
 def format_infer_prompt(task_prefix: str, loc_x: int, loc_y: int) -> str:
@@ -180,11 +182,11 @@ def build_referring_sample(
 
     rng = random.Random((seed or 0) * 1_000_003 + index)
     room = rng.choice(rooms)
-    px, py = random_point_in_polygon(room["polygon"], rng)
+    num_points = rng.randint(1, 6)
+    points = [random_point_in_polygon(room["polygon"], rng) for _ in range(num_points)]
     prompt = format_training_prompt(
         task_prefix,
-        px,
-        py,
+        points,
         canvas_size=canvas_size,
         bins=bins,
     )
