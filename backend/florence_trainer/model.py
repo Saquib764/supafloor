@@ -1,4 +1,4 @@
-"""Load Florence-2, freeze vision, attach language-model LoRA."""
+"""Load Florence-2, add task tokens, freeze vision, attach language-model LoRA."""
 
 from __future__ import annotations
 
@@ -11,9 +11,22 @@ from transformers import AutoModelForCausalLM, AutoProcessor
 
 from config import Config, hub_cache_dir
 
+EXTRA_TOKENS = ("<FLOORPLAN_ROOMS>",)
+
 
 def use_bf16(cfg: Config) -> bool:
     return bool(cfg.train.bf16 and torch.cuda.is_available())
+
+
+def ensure_special_tokens(processor: Any) -> int:
+    existing = set(processor.tokenizer.additional_special_tokens or [])
+    vocab = processor.tokenizer.get_vocab()
+    new_tokens = [token for token in EXTRA_TOKENS if token not in existing and token not in vocab]
+    if not new_tokens:
+        return 0
+    return int(
+        processor.tokenizer.add_special_tokens({"additional_special_tokens": new_tokens})
+    )
 
 
 def _freeze_vision(model: Any) -> None:
@@ -44,6 +57,7 @@ def load_model_and_processor(
         trust_remote_code=True,
         cache_dir=cache_dir,
     )
+    added = ensure_special_tokens(processor)
     dtype = torch.bfloat16 if use_bf16(cfg) else torch.float32
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model_id,
@@ -51,6 +65,8 @@ def load_model_and_processor(
         torch_dtype=dtype,
         cache_dir=cache_dir,
     )
+    if added:
+        model.resize_token_embeddings(len(processor.tokenizer))
 
     if adapter is not None:
         model = PeftModel.from_pretrained(model, str(adapter))
@@ -72,6 +88,8 @@ def load_model_and_processor(
                 target_modules=targets,
                 bias="none",
                 task_type=TaskType.CAUSAL_LM,
+                modules_to_save=["embed_tokens"],
+                ensure_weight_tying=True,
             ),
         )
         model.config.use_cache = False
