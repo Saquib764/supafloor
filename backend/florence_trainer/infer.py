@@ -1,10 +1,9 @@
-"""Run a LoRA Florence-2 adapter and parse room polygons from the generated text."""
+"""Training-time test inference: sample random canvas points and decode room polygons."""
 
 from __future__ import annotations
 
-import json
 import random
-from pathlib import Path
+import time
 from typing import Any
 
 import torch
@@ -12,17 +11,51 @@ from PIL import Image
 
 from config import Config
 from data import (
-    canvas_point_to_loc,
-    format_infer_prompt,
     format_plot_text,
+    format_training_prompt,
     polygon_to_canvas_ring,
     prepare_image,
     room_overlaps_existing,
     sample_random_canvas_points,
 )
-from loc import parse_referring_room
-from model import load_model_and_processor
-from pre_clean import pre_clean
+from loc import parse_rooms
+
+MAX_POINTS_PER_PROMPT = 6
+
+
+def _generate_for_prompts(
+    model: Any,
+    processor: Any,
+    cfg: Config,
+    image: Image.Image,
+    prompts: list[str],
+) -> list[str]:
+    gen_kwargs = {
+        "max_new_tokens": cfg.infer.max_new_tokens,
+        "num_beams": cfg.infer.num_beams,
+        "do_sample": False,
+        "use_cache": True,
+    }
+    if torch.cuda.is_available():
+        inputs = processor(
+            text=prompts,
+            images=[image] * len(prompts),
+            return_tensors="pt",
+            padding=True,
+        )
+        inputs = _move_inputs_to_model(inputs, model)
+        with torch.inference_mode():
+            generated = model.generate(**inputs, **gen_kwargs)
+        return processor.batch_decode(generated, skip_special_tokens=False)
+
+    texts: list[str] = []
+    for prompt in prompts:
+        inputs = processor(text=[prompt], images=[image], return_tensors="pt")
+        inputs = _move_inputs_to_model(inputs, model)
+        with torch.inference_mode():
+            generated = model.generate(**inputs, **gen_kwargs)
+        texts.extend(processor.batch_decode(generated, skip_special_tokens=False))
+    return texts
 
 
 def _move_inputs_to_model(inputs: dict[str, Any], model: Any) -> dict[str, Any]:
@@ -48,65 +81,56 @@ def infer_image(
 ) -> dict[str, Any]:
     was_training = model.training
     model.eval()
+    started = time.perf_counter()
     try:
-        image = prepare_image(pre_clean(image), cfg.image_size)
+        image = prepare_image(image, cfg.image_size)
         rng = random.Random(cfg.infer.seed)
         points = sample_random_canvas_points(rng, cfg.canvas_size, cfg.infer.num_points)
+        batches = [
+            points[i : i + MAX_POINTS_PER_PROMPT]
+            for i in range(0, len(points), MAX_POINTS_PER_PROMPT)
+        ]
         prompts = [
-            format_infer_prompt(
+            format_training_prompt(
                 cfg.task_prompt,
-                *canvas_point_to_loc(
-                    x,
-                    y,
-                    canvas_size=cfg.canvas_size,
-                    bins=cfg.loc_bins,
-                ),
+                batch,
+                canvas_size=cfg.canvas_size,
+                bins=cfg.loc_bins,
             )
-            for x, y in points
+            for batch in batches
         ]
 
-        inputs = processor(
-            text=prompts,
-            images=[image] * len(prompts),
-            return_tensors="pt",
-            padding=True,
-        )
-        inputs = _move_inputs_to_model(inputs, model)
-        with torch.inference_mode():
-            generated = model.generate(
-                **inputs,
-                max_new_tokens=cfg.infer.max_new_tokens,
-                num_beams=cfg.infer.num_beams,
-                do_sample=False,
-                use_cache=True,
-            )
-        texts = processor.batch_decode(generated, skip_special_tokens=False)
+        texts = _generate_for_prompts(model, processor, cfg, image, prompts)
 
         rooms: list[dict[str, Any]] = []
         canvas_rings: list[list[tuple[float, float]]] = []
         raw_outputs: list[str] = []
-        for prompt, text in zip(prompts, texts, strict=True):
+        point_scale = cfg.image_size / cfg.canvas_size
+        for batch, prompt, text in zip(batches, prompts, texts, strict=True):
             if text.startswith(prompt):
                 text = text[len(prompt) :]
             raw_outputs.append(text)
-            room = parse_referring_room(text, image_size=cfg.image_size, bins=cfg.loc_bins)
-            if room is None or len(room.get("polygon") or []) < 3:
-                continue
-            if room_overlaps_existing(
-                room,
-                canvas_rings,
-                image_size=cfg.image_size,
-                canvas_size=cfg.canvas_size,
-            ):
-                continue
-            rooms.append(room)
-            canvas_rings.append(
-                polygon_to_canvas_ring(
-                    room["polygon"],
+            parsed = parse_rooms(text, image_size=cfg.image_size, bins=cfg.loc_bins)
+            for index, (x, y) in enumerate(batch):
+                room = parsed[index] if index < len(parsed) else None
+                if room is None or len(room.get("polygon") or []) < 3:
+                    continue
+                if room_overlaps_existing(
+                    room,
+                    canvas_rings,
                     image_size=cfg.image_size,
                     canvas_size=cfg.canvas_size,
+                ):
+                    continue
+                room["sample_point"] = [x * point_scale, y * point_scale]
+                rooms.append(room)
+                canvas_rings.append(
+                    polygon_to_canvas_ring(
+                        room["polygon"],
+                        image_size=cfg.image_size,
+                        canvas_size=cfg.canvas_size,
+                    )
                 )
-            )
 
         plot_text = format_plot_text(
             rooms,
@@ -114,6 +138,8 @@ def infer_image(
             canvas_size=cfg.canvas_size,
             bins=cfg.loc_bins,
         )
+        elapsed = time.perf_counter() - started
+        print(f"Test infer: {len(points)} points in {elapsed:.2f}s ({len(rooms)} rooms)")
         return {
             "rooms": rooms,
             "text": plot_text,
@@ -124,36 +150,3 @@ def infer_image(
     finally:
         if was_training:
             model.train()
-
-
-def run(
-    cfg: Config,
-    image_path: Path,
-    *,
-    adapter: Path | None = None,
-    out: Path | None = None,
-) -> dict[str, Any]:
-    adapter_path = adapter or cfg.train.session_dir
-    model, processor = load_model_and_processor(cfg, adapter=adapter_path)
-    if torch.cuda.is_available():
-        model.to("cuda")
-    elif torch.backends.mps.is_available():
-        model.to("mps")
-    payload = infer_image(model, processor, cfg, Image.open(image_path))
-    encoded = json.dumps(
-        {
-            "rooms": payload["rooms"],
-            "text": payload["text"],
-            "prompts": payload["prompts"],
-        },
-        indent=2,
-    )
-    if out is not None:
-        out.write_text(encoded, encoding="utf-8")
-    else:
-        print(encoded)
-    return {
-        "rooms": payload["rooms"],
-        "text": payload["text"],
-        "prompts": payload["prompts"],
-    }

@@ -23,6 +23,11 @@ dependencies = [
   "transformers>=4.45.0,<4.46.0",
 ]
 
+[dependency-groups]
+dev = [
+  "pygame>=2.6.0",
+]
+
 [tool.uv.sources]
 dataset-manager = { path = "../../dataset_manager", editable = true }
 
@@ -45,8 +50,8 @@ dev-mode-dirs = ["."]
 "loc.py" = "loc.py"
 "model.py" = "model.py"
 "plot.py" = "plot.py"
-"pre-clean/clean.py" = "pre-clean/clean.py"
-"pre_clean.py" = "pre_clean.py"
+"pre_clean/__init__.py" = "pre_clean/__init__.py"
+"pre_clean/clean.py" = "pre_clean/clean.py"
 "train.py" = "train.py"
 "test/fp1.jpg" = "test/fp1.jpg"
 "test/fp2.jpg" = "test/fp2.jpg"

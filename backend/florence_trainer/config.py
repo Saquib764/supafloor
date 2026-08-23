@@ -40,6 +40,7 @@ def _load_dotenv_from(env_dir: Path) -> None:
 
 
 def _load_dotenv() -> None:
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     _load_dotenv_from(_project_dir())
     _load_dotenv_from(Path.cwd())
 

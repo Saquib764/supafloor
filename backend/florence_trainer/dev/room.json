@@ -1,0 +1,101 @@
+{
+  "rooms": [
+    {
+      "name": "unlabeled",
+      "center": [
+        636,
+        468
+      ],
+      "polygon": [
+        [
+          472,
+          468
+        ],
+        [
+          718,
+          469
+        ],
+        [
+          718,
+          468
+        ]
+      ]
+    },
+    {
+      "name": "unlabeled",
+      "center": [
+        396,
+        418
+      ],
+      "polygon": [
+        [
+          46,
+          22
+        ],
+        [
+          47,
+          715
+        ],
+        [
+          278,
+          714
+        ],
+        [
+          278,
+          703
+        ],
+        [
+          387,
+          703
+        ],
+        [
+          387,
+          568
+        ],
+        [
+          472,
+          568
+        ],
+        [
+          472,
+          468
+        ],
+        [
+          718,
+          468
+        ],
+        [
+          718,
+          34
+        ],
+        [
+          477,
+          34
+        ],
+        [
+          477,
+          22
+        ]
+      ]
+    }
+  ],
+  "text": "unlabeled\n<poly><loc_614><loc_609><loc_934><loc_610><loc_934><loc_609></poly>\n\nunlabeled\n<poly><loc_60><loc_29><loc_61><loc_930><loc_362><loc_929><loc_362><loc_914><loc_503><loc_914><loc_503><loc_739><loc_614><loc_739><loc_614><loc_609><loc_934><loc_609><loc_934><loc_44><loc_620><loc_44><loc_620><loc_29></poly>\n",
+  "prompts": [
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_944><loc_935>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_506><loc_537>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_210><loc_509>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_958><loc_599>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_630><loc_525>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_1><loc_164>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_525><loc_368>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_232><loc_130>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_361><loc_724>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_449><loc_749>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_46><loc_284>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_972><loc_723>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_99><loc_493>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_29><loc_715>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_312><loc_362>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_217><loc_453>"
+  ]
+}

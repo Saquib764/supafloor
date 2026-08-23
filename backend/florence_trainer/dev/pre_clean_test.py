@@ -8,16 +8,13 @@ Usage (from backend/florence_trainer):
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from PIL import Image
 
-_ROOT = Path(__file__).resolve().parents[1]
-if str(_ROOT / "pre-clean") not in sys.path:
-    sys.path.insert(0, str(_ROOT / "pre-clean"))
+from pre_clean import pre_clean
 
-from clean import pre_clean
+_ROOT = Path(__file__).resolve().parents[1]
 
 _TEST_DIR = _ROOT / "test"
 _OUT_DIR = Path(__file__).resolve().parent / "output" / "pre-clean"

@@ -1,8 +1,274 @@
-unlabeled
-<poly><loc_39><loc_168><loc_39><loc_715><loc_500><loc_715><loc_500><loc_615><loc_684><loc_615><loc_684><loc_164></poly>
-
-unlabeled
-<poly><loc_500><loc_617><loc_501><loc_839><loc_809><loc_839><loc_808><loc_617></poly>
-
-unlabeled
-<poly><loc_686><loc_286><loc_955><loc_287><loc_953><loc_286></poly>
+{
+  "rooms": [
+    {
+      "name": "unlabeled",
+      "center": [
+        531,
+        201
+      ],
+      "polygon": [
+        [
+          380,
+          76
+        ],
+        [
+          379,
+          322
+        ],
+        [
+          572,
+          311
+        ],
+        [
+          571,
+          213
+        ],
+        [
+          642,
+          213
+        ],
+        [
+          642,
+          76
+        ]
+      ]
+    },
+    {
+      "name": "unlabeled",
+      "center": [
+        472,
+        429
+      ],
+      "polygon": [
+        [
+          59,
+          674
+        ],
+        [
+          666,
+          661
+        ],
+        [
+          667,
+          311
+        ],
+        [
+          480,
+          311
+        ],
+        [
+          480,
+          311
+        ],
+        [
+          480,
+          311
+        ]
+      ]
+    },
+    {
+      "name": "unlabeled",
+      "center": [
+        466,
+        319
+      ],
+      "polygon": [
+        [
+          59,
+          674
+        ],
+        [
+          679,
+          675
+        ],
+        [
+          680,
+          311
+        ],
+        [
+          571,
+          311
+        ],
+        [
+          571,
+          213
+        ],
+        [
+          642,
+          213
+        ],
+        [
+          642,
+          76
+        ],
+        [
+          378,
+          76
+        ],
+        [
+          378,
+          321
+        ],
+        [
+          69,
+          321
+        ]
+      ]
+    },
+    {
+      "name": "Living",
+      "center": [
+        595,
+        273
+      ],
+      "polygon": [
+        [
+          59,
+          674
+        ],
+        [
+          679,
+          675
+        ],
+        [
+          680,
+          311
+        ],
+        [
+          571,
+          311
+        ],
+        [
+          571,
+          213
+        ],
+        [
+          642,
+          213
+        ],
+        [
+          642,
+          76
+        ],
+        [
+          635,
+          76
+        ],
+        [
+          642,
+          213
+        ],
+        [
+          642,
+          212
+        ],
+        [
+          642,
+          212
+        ],
+        [
+          642,
+          213
+        ],
+        [
+          642,
+          214
+        ],
+        [
+          642,
+          213
+        ]
+      ]
+    },
+    {
+      "name": "unlabeled",
+      "center": [
+        642,
+        168
+      ],
+      "polygon": [
+        [
+          642,
+          76
+        ],
+        [
+          642,
+          214
+        ],
+        [
+          642,
+          214
+        ]
+      ]
+    },
+    {
+      "name": "unlabeled",
+      "center": [
+        224,
+        198
+      ],
+      "polygon": [
+        [
+          70,
+          76
+        ],
+        [
+          70,
+          321
+        ],
+        [
+          378,
+          321
+        ],
+        [
+          378,
+          76
+        ]
+      ]
+    },
+    {
+      "name": "unlabeled",
+      "center": [
+        619,
+        262
+      ],
+      "polygon": [
+        [
+          571,
+          310
+        ],
+        [
+          667,
+          311
+        ],
+        [
+          667,
+          214
+        ],
+        [
+          572,
+          213
+        ]
+      ]
+    }
+  ],
+  "text": "unlabeled\n<poly><loc_494><loc_99><loc_493><loc_419><loc_744><loc_405><loc_743><loc_277><loc_835><loc_277><loc_835><loc_99></poly>\n\nunlabeled\n<poly><loc_77><loc_877><loc_866><loc_860><loc_868><loc_405><loc_624><loc_405><loc_624><loc_405><loc_624><loc_405></poly>\n\nunlabeled\n<poly><loc_77><loc_877><loc_883><loc_878><loc_885><loc_405><loc_743><loc_405><loc_743><loc_277><loc_835><loc_277><loc_835><loc_99><loc_492><loc_99><loc_492><loc_418><loc_90><loc_418></poly>\n\nLiving\n<poly><loc_77><loc_877><loc_883><loc_878><loc_885><loc_405><loc_743><loc_405><loc_743><loc_277><loc_835><loc_277><loc_835><loc_99><loc_826><loc_99><loc_835><loc_277><loc_835><loc_276><loc_835><loc_276><loc_835><loc_277><loc_835><loc_278><loc_835><loc_277></poly>\n\nunlabeled\n<poly><loc_835><loc_99><loc_835><loc_278><loc_835><loc_278></poly>\n\nunlabeled\n<poly><loc_91><loc_99><loc_91><loc_418><loc_492><loc_418><loc_492><loc_99></poly>\n\nunlabeled\n<poly><loc_743><loc_403><loc_868><loc_405><loc_868><loc_278><loc_744><loc_277></poly>\n",
+  "prompts": [
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_743><loc_224>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_580><loc_596>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_331><loc_858>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_266><loc_835>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_722><loc_867>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_264><loc_883>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_940><loc_265>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_46><loc_293>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_596><loc_760>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_725><loc_806>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_301><loc_934>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_583><loc_185>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_597><loc_159>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_866><loc_888>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_110><loc_854>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_760><loc_377>"
+  ]
+}

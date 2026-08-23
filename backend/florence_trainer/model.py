@@ -27,6 +27,16 @@ def use_bf16(cfg: Config) -> bool:
     return bool(cfg.train.bf16 and torch.cuda.is_available())
 
 
+def load_dtype(cfg: Config, *, for_training: bool, adapter: Path | None) -> torch.dtype:
+    if for_training:
+        return torch.bfloat16 if use_bf16(cfg) else torch.float32
+    if adapter is not None and torch.backends.mps.is_available():
+        return torch.float16
+    if use_bf16(cfg):
+        return torch.bfloat16
+    return torch.float32
+
+
 def _unwrap(model: Any) -> Any:
     if hasattr(model, "get_base_model"):
         base = model.get_base_model()
@@ -177,7 +187,7 @@ def load_model_and_processor(
         trust_remote_code=True,
         cache_dir=cache_dir,
     )
-    dtype = torch.bfloat16 if use_bf16(cfg) else torch.float32
+    dtype = load_dtype(cfg, for_training=for_training, adapter=adapter)
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model_id,
         trust_remote_code=True,

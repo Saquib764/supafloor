@@ -1,4 +1,4 @@
-"""CLI: uv run florence-train train|infer."""
+"""CLI: uv run florence-train train|inspect."""
 
 from __future__ import annotations
 
@@ -15,12 +15,6 @@ def main(argv: list[str] | None = None) -> None:
     p_train = sub.add_parser("train", help="Fine-tune LoRA on image-to-floorplan pairs")
     p_train.add_argument("--config", type=Path, default=CONFIG_PATH)
 
-    p_infer = sub.add_parser("infer", help="Image → room polygons")
-    p_infer.add_argument("--config", type=Path, default=CONFIG_PATH)
-    p_infer.add_argument("--image", type=Path, required=True)
-    p_infer.add_argument("--adapter", type=Path, default=None, help="LoRA adapter dir (default: train.session_dir)")
-    p_infer.add_argument("--out", type=Path, default=None, help="Write JSON instead of stdout")
-
     p_inspect = sub.add_parser("inspect", help="Print model, LoRA, and random Hub samples")
     p_inspect.add_argument("--config", type=Path, default=CONFIG_PATH)
     p_inspect.add_argument("--count", type=int, default=3, help="Random samples to print")
@@ -35,15 +29,9 @@ def main(argv: list[str] | None = None) -> None:
         run_preview(cfg, count=args.count, seed=args.seed)
         return
 
-    if args.cmd == "train":
-        from train import run
+    from train import run
 
-        run(cfg)
-        return
-
-    from infer import run as run_infer
-
-    run_infer(cfg, args.image, adapter=args.adapter, out=args.out)
+    run(cfg)
 
 
 if __name__ == "__main__":

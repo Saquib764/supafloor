@@ -36,6 +36,15 @@ def _loc_to_pixel(loc: int, image_size: int, bins: int) -> int:
     return int(round(max(0, min(image_size - 1, value))))
 
 
+def _name_after_poly(text: str, close_end: int) -> str | None:
+    next_poly = text.find(_POLY_OPEN, close_end)
+    suffix_end = next_poly if next_poly != -1 else len(text)
+    name_match = _ROOM_NAME_RE.search(text[close_end:suffix_end])
+    if name_match:
+        return name_match.group(1).strip()
+    return None
+
+
 def parse_referring_room(
     text: str,
     *,
@@ -60,8 +69,7 @@ def parse_referring_room(
         ]
         for i in range(0, len(locs), 2)
     ]
-    name_match = _ROOM_NAME_RE.search(text[close_pos + len(_POLY_CLOSE) :])
-    name = name_match.group(1).strip() if name_match else "Room"
+    name = _name_after_poly(text, close_pos + len(_POLY_CLOSE)) or "Room"
     cx = sum(point[0] for point in polygon) // len(polygon)
     cy = sum(point[1] for point in polygon) // len(polygon)
     return {"name": name, "center": [cx, cy], "polygon": polygon}
@@ -76,13 +84,15 @@ def _parse_name_poly_blocks(
     rooms: list[dict[str, Any]] = []
     cursor = 0
     for open_pos, close_end, content in _iter_closed_polys(text):
-        prefix = text[cursor:open_pos].strip()
-        name_lines = [
-            line.strip()
-            for line in prefix.split("\n")
-            if line.strip() and not _LOC_RE.search(line)
-        ]
-        name = name_lines[-1] if name_lines else "Room"
+        name = _name_after_poly(text, close_end)
+        if not name:
+            prefix = text[cursor:open_pos].strip()
+            name_lines = [
+                line.strip()
+                for line in prefix.split("\n")
+                if line.strip() and not _LOC_RE.search(line)
+            ]
+            name = name_lines[-1] if name_lines else "Room"
         locs = [int(value) for value in _LOC_RE.findall(content)]
         if len(locs) < 6 or len(locs) % 2 != 0:
             cursor = close_end

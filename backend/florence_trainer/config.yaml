@@ -34,6 +34,6 @@ train:
 
 infer:
   num_points: 16
-  max_new_tokens: 1024
+  max_new_tokens: 256
   num_beams: 3
   seed: null
