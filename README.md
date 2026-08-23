@@ -79,7 +79,7 @@ See `backend/floorplan/dev/README.md` for details.
 | Geometry library (Shapely) | Done |
 | SVG / PNG renderer + layers | Done |
 | Interactive viewer | Done |
-| Image extraction (vision LLM) | Done |
+| Image extraction (Florence) | Done |
 | Hard/soft rule validator | Done |
 | Weighted scoring | Done |
 | Dataset generator + diversity hashes | Done |
@@ -96,7 +96,8 @@ See `backend/floorplan/dev/README.md` for details.
 - `GET  /health` — service health
 - `POST /floorplan/render` → `{ svg, png, metadata }`
 - `POST /floorplan/evaluate`
-- `POST /floorplan/extract` — image → rooms
+- `POST /floorplan/florence/automatic` — Florence progressive inference (full image)
+- `POST /floorplan/florence/points` — Florence point inference (single or multiple)
 - `POST /floorplan/generate`
 - `GET  /floorplan/plans` — list saved plans
 - `POST /floorplan/plans/{id}/load` — load plan + scores for viewer

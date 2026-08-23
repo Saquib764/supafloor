@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "florence-trainer"
-version = "0.1.1"
+version = "0.1.3"
 description = "LoRA fine-tune Florence-2 to emit room polygons from floor-plan images"
 requires-python = ">=3.11"
 dependencies = [
@@ -46,16 +46,22 @@ dev-mode-dirs = ["."]
 "config.yaml" = "config.yaml"
 "data.py" = "data.py"
 "infer.py" = "infer.py"
+"infer_progressive.py" = "infer_progressive.py"
 "preview.py" = "preview.py"
 "loc.py" = "loc.py"
 "model.py" = "model.py"
 "plot.py" = "plot.py"
+"train.py" = "train.py"
 "pre_clean/__init__.py" = "pre_clean/__init__.py"
 "pre_clean/clean.py" = "pre_clean/clean.py"
-"train.py" = "train.py"
-"test/fp1.jpg" = "test/fp1.jpg"
-"test/fp2.jpg" = "test/fp2.jpg"
-"test/fp3.jpg" = "test/fp3.jpg"
+"post_process/__init__.py" = "post_process/__init__.py"
+"post_process/snap.py" = "post_process/snap.py"
+"post_process/t_joints.py" = "post_process/t_joints.py"
+"inference/__init__.py" = "inference/__init__.py"
+"inference/params.py" = "inference/params.py"
+"inference/grid.py" = "inference/grid.py"
+"inference/generate.py" = "inference/generate.py"
+"inference/progressive.py" = "inference/progressive.py"
 
 [tool.uv]
 package = true

@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
-import base64
+import json
+
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from dataset import delete_saved_plan, generate_sample, list_saved_plans, load_sample
 from dataset.dataset_corpus import image_path, list_items, load_json
-from extraction.constants import CANVAS_SIZE
-from extraction.extract import extract_rooms
-from extraction.to_floorplan import rooms_to_floorplan
 from export.render import export_realistic
 from config import load_config, save_config
 from evaluator import score_plan
+from extraction.florence import (
+    FlorenceUnavailableError,
+    infer_automatic_image,
+    infer_points_image,
+    list_samples,
+    sample_image_path,
+)
 from renderer import render_plan
 from schemas.requests import (
     EvaluateRequest,
@@ -90,26 +95,6 @@ def export_realistic_route(body: RealisticExportRequest) -> dict[str, Any]:
         raise HTTPException(400, str(exc)) from exc
 
 
-@router.post("/extract")
-async def extract_image(
-    file: UploadFile = File(...),
-    canvas_size: int = CANVAS_SIZE,
-) -> dict[str, Any]:
-    data = await file.read()
-    try:
-        rooms, meta, plot_png, debug_png = extract_rooms(data, canvas_size=canvas_size)
-        floor_plan = rooms_to_floorplan(rooms, canvas_size=canvas_size, meta=meta)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return {
-        "rooms": rooms,
-        "meta": meta,
-        "floor_plan": floor_plan.model_dump(),
-        "plot_png_b64": base64.b64encode(plot_png).decode("ascii"),
-        "debug_png_b64": base64.b64encode(debug_png).decode("ascii"),
-    }
-
-
 @router.post("/generate")
 def generate(body: GenerateRequest) -> dict:
     sample = generate_sample(
@@ -172,3 +157,80 @@ def dataset_basic5000_image(stem: str) -> FileResponse:
     except FileNotFoundError as exc:
         raise HTTPException(404, f"Dataset image not found: {stem}") from exc
     return FileResponse(path, media_type="image/png")
+
+
+async def _read_image_source(
+    file: UploadFile | None,
+    sample: str | None,
+) -> bytes:
+    if file is not None:
+        data = await file.read()
+        if not data:
+            raise HTTPException(400, "Uploaded file is empty")
+        return data
+    if sample:
+        try:
+            return sample_image_path(sample).read_bytes()
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(404, f"Sample not found: {sample}") from exc
+    raise HTTPException(400, "Provide either file upload or sample name")
+
+
+@router.get("/florence/samples")
+def florence_samples() -> dict[str, Any]:
+    return {"samples": list_samples()}
+
+
+@router.get("/florence/samples/{name}")
+def florence_sample_image(name: str) -> FileResponse:
+    try:
+        path = sample_image_path(name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"Sample not found: {name}") from exc
+    media = "image/jpeg" if path.suffix.lower() in {".jpg", ".jpeg"} else "image/png"
+    return FileResponse(path, media_type=media)
+
+
+@router.post("/florence/automatic")
+async def florence_automatic(
+    file: UploadFile | None = File(None),
+    sample: str | None = Form(None),
+) -> dict[str, Any]:
+    data = await _read_image_source(file, sample)
+    try:
+        return infer_automatic_image(data)
+    except FlorenceUnavailableError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/florence/points")
+async def florence_points(
+    file: UploadFile | None = File(None),
+    sample: str | None = Form(None),
+    points: str = Form(...),
+    rooms: str = Form("[]"),
+) -> dict[str, Any]:
+    try:
+        point_list = json.loads(points)
+        room_list = json.loads(rooms)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, f"Invalid JSON: {exc}") from exc
+
+    if not isinstance(point_list, list) or not point_list:
+        raise HTTPException(400, "points must be a non-empty JSON array")
+    if not isinstance(room_list, list):
+        raise HTTPException(400, "rooms must be a JSON array")
+
+    data = await _read_image_source(file, sample)
+    try:
+        return infer_points_image(data, point_list, room_list)
+    except FlorenceUnavailableError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc

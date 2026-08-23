@@ -1,4 +1,4 @@
-"""Load florence_trainer/config.yaml into typed settings."""
+"""Load florence_trainer/config.yaml into typed settings for training CLI."""
 
 from __future__ import annotations
 

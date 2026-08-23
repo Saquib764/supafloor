@@ -4,7 +4,7 @@ FastAPI backend for the Supafloor floor plan viewer and dataset engine.
 
 ## Quick start
 
-Requires [uv](https://docs.astral.sh/uv/).
+Requires [uv](https://docs.astral.sh/uv/). Florence inference is configured in `extraction/florence_config.yaml` (not the trainer training config).
 
 ```bash
 cd backend/floorplan

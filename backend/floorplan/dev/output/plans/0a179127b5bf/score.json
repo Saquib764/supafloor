@@ -1,0 +1,22 @@
+{
+  "id": "0a179127b5bf",
+  "plan_name": "3-room",
+  "overall": 5.57,
+  "summary": "This floor plan scores **5.57/10 (Weak)** for \u201c3-room\u201d with 12 rooms, 1108.0 ft\u00b2 total room area. It fails 1 hard rule(s): Window Lines. Strong areas include bedroom ratio, room proportions, storage adequacy. Weaker areas include natural light, privacy, wet core compactness. Highest category is geometry (10.0); lowest is daylight (1.9).",
+  "layout_prompt": "Room 1 Bath is in the north-center, next to Hallway and Room 1.\nRoom 1 is in the north-west, next to Room 1 Bath, Room 1 Closet, and Room 1 Toilet.\nHallway is in the north-east, next to Living and Room 1 Bath.\nRoom 1 Closet is in the north-center, next to Room 1.\nRoom 1 Toilet is in the west-center, next to Room 1.\nDining is in the west-center, next to Kitchen and Room 2.\nLiving is in the west-center, next to Balcony, Hallway, and Kitchen.\nRoom 2 Toilet is in the west-center, next to Room 2.\nKitchen is in the north-center, next to Dining and Living.\nRoom 2 is in the south-west, next to Closet, Dining, and Room 2 Toilet.\nBalcony is in the south-east, next to Living.\nCloset is in the north-center, next to Room 2.",
+  "categories": {
+    "geometry": 10.0,
+    "topology": 10.0,
+    "construction": 6.25,
+    "privacy": 5.0,
+    "circulation": 6.7,
+    "daylight": 1.9,
+    "architecture": 9.0,
+    "aesthetics": 7.26
+  },
+  "hard_failures": [
+    "windows_on_exterior"
+  ],
+  "report_file": "score.md",
+  "image": "plan.png"
+}

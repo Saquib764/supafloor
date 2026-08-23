@@ -1,0 +1,14 @@
+model_id: microsoft/Florence-2-base-ft
+task_prompt: "<REFERRING_EXPRESSION_SEGMENTATION>"
+image_size: 768
+canvas_size: 1024
+loc_bins: 1000
+
+adapter_dir: ../florence_trainer/training_session
+hf_cache: ../florence_trainer/hf_cache
+samples_dir: ../florence_trainer/test
+
+bf16: true
+max_new_tokens: 64
+num_beams: 3
+infer_seed: null

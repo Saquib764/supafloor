@@ -78,15 +78,61 @@ export function useFloorplanApi(baseUrl?: string) {
     return res.json() as Promise<{ deleted: string }>
   }
 
-  async function extractImage(file: File, canvasSize = 1024) {
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(
-      `${apiBase}/floorplan/extract?canvas_size=${encodeURIComponent(String(canvasSize))}`,
-      { method: 'POST', body: form },
-    )
+  async function listFlorenceSamples() {
+    const res = await fetch(`${apiBase}/floorplan/florence/samples`)
     if (!res.ok) throw new Error(await res.text())
-    return res.json()
+    return res.json() as Promise<{ samples: Array<{ name: string }> }>
+  }
+
+  function florenceSampleUrl(name: string) {
+    return `${apiBase}/floorplan/florence/samples/${encodeURIComponent(name)}`
+  }
+
+  async function florenceAutomatic(payload: { file?: File, sample?: string }) {
+    const form = new FormData()
+    if (payload.file) {
+      form.append('file', payload.file)
+    } else if (payload.sample) {
+      form.append('sample', payload.sample)
+    }
+    const res = await fetch(`${apiBase}/floorplan/florence/automatic`, {
+      method: 'POST',
+      body: form,
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json() as Promise<{
+      rooms: Array<{ name: string, polygon: number[][], count?: number }>
+      image_size: number
+      canvas_size: number
+      floor_plan: FloorPlan
+    }>
+  }
+
+  async function florencePoints(payload: {
+    file?: File
+    sample?: string
+    points: Array<{ x: number, y: number }>
+    rooms: Array<{ name: string, polygon: number[][], count?: number }>
+  }) {
+    const form = new FormData()
+    if (payload.file) {
+      form.append('file', payload.file)
+    } else if (payload.sample) {
+      form.append('sample', payload.sample)
+    }
+    form.append('points', JSON.stringify(payload.points))
+    form.append('rooms', JSON.stringify(payload.rooms))
+    const res = await fetch(`${apiBase}/floorplan/florence/points`, {
+      method: 'POST',
+      body: form,
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json() as Promise<{
+      rooms: Array<{ name: string, polygon: number[][], count?: number }>
+      image_size: number
+      canvas_size: number
+      floor_plan: FloorPlan
+    }>
   }
 
   async function getConfig() {
@@ -141,7 +187,10 @@ export function useFloorplanApi(baseUrl?: string) {
     listPlans,
     loadPlan,
     deletePlan,
-    extractImage,
+    listFlorenceSamples,
+    florenceSampleUrl,
+    florenceAutomatic,
+    florencePoints,
     getConfig,
     updateConfig,
     listDatasetItems,
