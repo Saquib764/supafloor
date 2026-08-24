@@ -70,32 +70,22 @@ def _signed_area(ring: list[Coord]) -> float:
     return area / 2.0
 
 
-def rotate_room_polygon_clockwise_from_min(polygon: list[dict[str, Any]]) -> list[dict[str, float]]:
-    """Rotate a room ring to start at min (x, y) and enforce clockwise winding."""
-    ring = _open_polygon_ring(polygon)
-    if len(ring) < 3:
-        return [{"x": float(point["x"]), "y": float(point["y"])} for point in polygon]
+def canonicalize_room_polygon(polygon: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rotate a room ring to start at the vertex closest to the origin; enforce clockwise winding."""
+    n = len(polygon)
+    if n < 3:
+        return list(polygon)
 
-    start = min(range(len(ring)), key=lambda index: (ring[index][0], ring[index][1]))
-    rotated = ring[start:] + ring[:start]
-    if _signed_area(rotated) > 0:
-        rotated = [rotated[0], *reversed(rotated[1:])]
-
-    return [{"x": x, "y": y} for x, y in rotated]
-
-
-def _room_first_point_origin_distance(room: dict[str, Any]) -> float:
-    polygon = room.get("polygon") or []
-    if not polygon:
-        return float("inf")
-    x = float(polygon[0]["x"])
-    y = float(polygon[0]["y"])
-    return x * x + y * y
-
-
-def sort_rooms_by_first_point_to_origin(rooms: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Sort rooms by squared distance of each polygon's first vertex to the origin."""
-    return sorted(rooms, key=_room_first_point_origin_distance)
+    ring = [_coord(point) for point in polygon]
+    start = min(
+        range(n),
+        key=lambda index: (ring[index][0] ** 2 + ring[index][1] ** 2, ring[index][0], ring[index][1]),
+    )
+    order = list(range(start, n)) + list(range(0, start))
+    ordered = [polygon[index] for index in order]
+    if _signed_area([_coord(point) for point in ordered]) > 0:
+        ordered = [ordered[0], *reversed(ordered[1:])]
+    return ordered
 
 
 def _scale_point(point: dict[str, Any], factor: float) -> dict[str, float]:
@@ -661,20 +651,6 @@ def _rotate_extraction(extracted: dict[str, Any], theta: float) -> dict[str, Any
     }
 
 
-def _normalize_room_polygons(extracted: dict[str, Any]) -> dict[str, Any]:
-    rooms = [
-        {
-            **room,
-            "polygon": rotate_room_polygon_clockwise_from_min(room.get("polygon") or []),
-        }
-        for room in extracted.get("rooms") or []
-    ]
-    return {
-        **extracted,
-        "rooms": sort_rooms_by_first_point_to_origin(rooms),
-    }
-
-
 def _bbox(coords: list[Coord]) -> tuple[float, float, float, float]:
     xs = [c[0] for c in coords]
     ys = [c[1] for c in coords]
@@ -943,7 +919,6 @@ def transform_extraction(
     theta = source_rng.uniform(0.0, 2.0 * math.pi)
     is_rotated = abs(theta) > 1e-9
     extracted = _rotate_extraction(extracted, theta)
-    extracted = _normalize_room_polygons(extracted)
     coords = _iter_coords(extracted)
     if not coords:
         return _with_transform_stats(
@@ -982,10 +957,12 @@ def transform_extraction(
 
     rooms: list[dict[str, Any]] = []
     for room in extracted.get("rooms") or []:
-        polygon = [
-            _round_point(*mapper(float(point["x"]), float(point["y"])))
-            for point in room.get("polygon") or []
-        ]
+        polygon = canonicalize_room_polygon(
+            [
+                _round_point(*mapper(float(point["x"]), float(point["y"])))
+                for point in room.get("polygon") or []
+            ]
+        )
         rooms.append(
             {
                 "name": room["name"],
