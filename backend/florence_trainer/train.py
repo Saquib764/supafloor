@@ -15,6 +15,7 @@ from config import CONFIG_PATH, Config, datasets_cache_dir
 from data import (
     FlorenceCollator,
     FloorplanFlorenceDataset,
+    SampleRegionSize,
     _VARIATIONS_PER_ROOM,
     load_rows,
     prepare_image,
@@ -95,6 +96,25 @@ class TestInferCallback(TrainerCallback):
                 print(f"Test infer step {step} {name} → {out_dir}")
 
 
+class SampleRegionCallback(TrainerCallback):
+    def __init__(self, sample_region: SampleRegionSize, refresh_steps: int) -> None:
+        self._sample_region = sample_region
+        self._refresh_steps = refresh_steps
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: Any,
+        control: Any,
+        **kwargs: Any,
+    ) -> None:
+        step = int(state.global_step)
+        if step <= 0 or step % self._refresh_steps != 0:
+            return
+        fraction = self._sample_region.reload()
+        print(f"sample_region_size: {fraction} (step {step})")
+
+
 def _allow_checkpoint_unpickle() -> None:
     """HF Trainer checkpoints include numpy RNG state; PyTorch 2.6+ defaults weights_only=True."""
     _load = torch.load
@@ -133,6 +153,7 @@ def _print_training_setup(
     train_ds: FloorplanFlorenceDataset,
     test_images: list[tuple[str, Image.Image]],
     args: TrainingArguments,
+    sample_region: SampleRegionSize | None = None,
 ) -> None:
     plan_ids = len(set(rows["plan_id"]))
     floorplans_per_batch = cfg.train.batch_size // cfg.data.variations_per_floorplan
@@ -159,6 +180,12 @@ def _print_training_setup(
     print(f"max_label_tokens: {cfg.data.max_label_tokens}")
     print(f"loc_bins:         {cfg.loc_bins}")
     print(f"data seed:        {cfg.data.seed}")
+    if sample_region is not None:
+        side = sample_region.fraction * cfg.canvas_size
+        print(
+            f"sample_region:    {sample_region.fraction} "
+            f"({side:.1f}px side, refresh every {cfg.train.sample_region_refresh_steps} steps)"
+        )
 
     _print_model_and_lora(model, processor, cfg)
 
@@ -192,6 +219,8 @@ def run(cfg: Config) -> None:
     )
     model, processor = load_model_and_processor(cfg, for_training=True)
     collator = FlorenceCollator(processor, cfg.data.max_label_tokens)
+    sample_region = SampleRegionSize(cfg.train.sample_region_size_path)
+    sample_region.reload()
     train_ds = FloorplanFlorenceDataset(
         rows,
         cfg.image_size,
@@ -201,6 +230,7 @@ def run(cfg: Config) -> None:
         excluded_point_prob=cfg.data.excluded_point_prob,
         variations_per_floorplan=cfg.data.variations_per_floorplan,
         seed=cfg.data.seed,
+        sample_region=sample_region,
     )
     if cfg.data.variations_per_floorplan % _VARIATIONS_PER_ROOM != 0:
         raise ValueError(
@@ -237,6 +267,7 @@ def run(cfg: Config) -> None:
     )
     callbacks = [
         TestInferCallback(cfg, processor, test_images),
+        SampleRegionCallback(sample_region, cfg.train.sample_region_refresh_steps),
     ]
     trainer = FlorenceTrainer(
         model=model,
@@ -245,7 +276,7 @@ def run(cfg: Config) -> None:
         data_collator=collator,
         callbacks=callbacks,
     )
-    _print_training_setup(cfg, model, processor, rows, train_ds, test_images, args)
+    _print_training_setup(cfg, model, processor, rows, train_ds, test_images, args, sample_region)
     trainer.train(resume_from_checkpoint=True if cfg.train.resume else None)
     trainer.save_model(str(cfg.train.session_dir))
     save_trainable_projector(model, cfg.train.session_dir)

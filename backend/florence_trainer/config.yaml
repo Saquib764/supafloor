@@ -33,6 +33,8 @@ train:
   max_grad_norm: 1.0
   test_infer_render: false
   resume: false
+  sample_region_size_path: sample_region_size.txt
+  sample_region_refresh_steps: 100
 
 infer:
   num_points: 16

@@ -304,6 +304,6 @@ def run(
 
 
 if __name__ == "__main__":
-    _IMAGE = _ROOT / "test" / "fp02.jpg"
-    AUTOMATIC = True
+    _IMAGE = _ROOT / "test" / "fp01.jpg"
+    AUTOMATIC = False
     run(load_config(CONFIG_PATH), _IMAGE)

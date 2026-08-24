@@ -64,6 +64,8 @@ class TrainSettings:
     test_infer_steps: int
     test_infer_render: bool
     max_grad_norm: float
+    sample_region_size_path: Path
+    sample_region_refresh_steps: int
 
 
 @dataclass(frozen=True)
@@ -163,6 +165,11 @@ def load_config(path: Path | None = None) -> Config:
             test_infer_steps=int(train["test_infer_steps"]),
             test_infer_render=bool(train.get("test_infer_render", True)),
             max_grad_norm=float(train["max_grad_norm"]),
+            sample_region_size_path=_resolve(
+                Path(train.get("sample_region_size_path") or "sample_region_size.txt"),
+                base,
+            ),
+            sample_region_refresh_steps=int(train.get("sample_region_refresh_steps", 100)),
         ),
         infer=InferSettings(
             num_points=int(infer["num_points"]),

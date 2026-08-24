@@ -10,7 +10,7 @@ from typing import Any
 
 from datasets import Dataset as HubDataset
 from PIL import Image
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point, Polygon, box
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from loc import format_loc_point
@@ -72,6 +72,35 @@ def polygon_to_canvas_ring(
     return [(float(x) * scale, float(y) * scale) for x, y in polygon]
 
 
+class SampleRegionSize:
+    """Fraction of canvas_size for curriculum inside-point square side; reloaded from disk."""
+
+    def __init__(self, path: Path, *, default: float = 1.0) -> None:
+        self._path = path
+        self.fraction = default
+
+    def reload(self) -> float:
+        try:
+            text = self._path.read_text(encoding="utf-8").strip()
+            if text:
+                value = float(text.split()[0])
+                if value > 0:
+                    self.fraction = value
+        except (OSError, ValueError):
+            pass
+        return self.fraction
+
+
+def _inside_sample_region(polygon: BaseGeometry, side: float) -> BaseGeometry:
+    cx, cy = polygon.centroid.x, polygon.centroid.y
+    half = side / 2.0
+    square = box(cx - half, cy - half, cx + half, cy + half)
+    region = polygon.intersection(square)
+    if region.is_empty:
+        return polygon
+    return region
+
+
 def sample_points(
     polygon: BaseGeometry,
     rng: random.Random,
@@ -79,6 +108,7 @@ def sample_points(
     canvas_size: int,
     inside_count: int,
     outside_count: int,
+    inside_sample_side: float | None = None,
 ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
     limit = float(canvas_size)
     inside_points: list[tuple[float, float]] = []
@@ -87,11 +117,16 @@ def sample_points(
     if inside_count:
         if polygon.is_empty:
             raise ValueError("cannot sample inside points from empty polygon")
-        minx, miny, maxx, maxy = polygon.bounds
+        inside_geom = (
+            _inside_sample_region(polygon, inside_sample_side)
+            if inside_sample_side is not None
+            else polygon
+        )
+        minx, miny, maxx, maxy = inside_geom.bounds
         while len(inside_points) < inside_count:
             x = rng.uniform(minx, maxx)
             y = rng.uniform(miny, maxy)
-            if polygon.contains(Point(x, y)):
+            if inside_geom.contains(Point(x, y)):
                 inside_points.append((x, y))
 
     if outside_count:
@@ -158,6 +193,7 @@ def build_referring_variations(
     empty_polygon_prob: float,
     excluded_point_prob: float,
     variations_per_floorplan: int,
+    inside_sample_side: float | None = None,
 ) -> list[ReferringDatum]:
     if variations_per_floorplan % _VARIATIONS_PER_ROOM != 0:
         raise ValueError(
@@ -197,6 +233,7 @@ def build_referring_variations(
                 canvas_size=canvas_size,
                 inside_count=inside_count,
                 outside_count=outside_count,
+                inside_sample_side=inside_sample_side,
             )
             if empty_polygon:
                 positive_points = outside
@@ -297,6 +334,7 @@ class FloorplanFlorenceDataset(Dataset):
         excluded_point_prob: float,
         variations_per_floorplan: int,
         seed: int | None = None,
+        sample_region: SampleRegionSize | None = None,
     ) -> None:
         self._rows = rows
         self._image_size = image_size
@@ -306,6 +344,7 @@ class FloorplanFlorenceDataset(Dataset):
         self._excluded_point_prob = excluded_point_prob
         self._variations_per_floorplan = variations_per_floorplan
         self._seed = seed
+        self._sample_region = sample_region
 
     def __len__(self) -> int:
         return len(self._rows)
@@ -314,6 +353,9 @@ class FloorplanFlorenceDataset(Dataset):
         row = self._rows[index]
         extraction = json.loads(str(row["extraction"]))
         image = prepare_image(row["image"], self._image_size)
+        inside_sample_side = None
+        if self._sample_region is not None:
+            inside_sample_side = self._sample_region.fraction * self._canvas_size
         variations = build_referring_variations(
             extraction,
             index,
@@ -323,6 +365,7 @@ class FloorplanFlorenceDataset(Dataset):
             empty_polygon_prob=self._empty_polygon_prob,
             excluded_point_prob=self._excluded_point_prob,
             variations_per_floorplan=self._variations_per_floorplan,
+            inside_sample_side=inside_sample_side,
         )
         return [
             {
