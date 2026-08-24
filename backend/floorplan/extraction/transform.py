@@ -1067,38 +1067,3 @@ def pop_transform_stats(extracted: dict[str, Any]) -> dict[str, Any]:
     if stats is not None:
         return stats
     return transform_stats(extracted, is_rotated=False)
-
-
-def _to_florence_loc(value: float) -> int:
-    return max(0, min(999, round(float(value) * 999 / _CANVAS_SIZE)))
-
-
-def _florence_point(x: float, y: float) -> str:
-    return f"<loc_{_to_florence_loc(x)}><loc_{_to_florence_loc(y)}>"
-
-
-def format_extraction_florence(extracted: dict[str, Any]) -> str:
-    """Serialize rooms as Florence loc tokens on a 0–999 grid."""
-    chunks: list[str] = []
-    for room in extracted.get("rooms") or []:
-        polygon = room.get("polygon") or []
-        if not polygon:
-            continue
-        cx, cy = _polygon_centroid(polygon)
-        vertex_lines = [
-            _florence_point(float(point["x"]), float(point["y"]))
-            for point in polygon
-        ]
-        chunks.append(
-            "\n".join(
-                [
-                    str(room.get("name") or ""),
-                    _florence_point(cx, cy),
-                    "<poly>",
-                    *vertex_lines,
-                    "</poly>",
-                    "<sep>",
-                ]
-            )
-        )
-    return "\n".join(chunks) + ("\n" if chunks else "")
