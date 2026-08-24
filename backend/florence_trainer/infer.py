@@ -8,13 +8,15 @@ from typing import Any
 
 from PIL import Image
 
+from shapely.geometry import Polygon
+
 from data import (
     format_plot_text,
-    format_training_prompt,
+    format_prompt,
     polygon_to_canvas_ring,
     prepare_image,
     room_overlaps_existing,
-    sample_random_canvas_points,
+    sample_points,
 )
 from config import Config
 from inference.generate import generate_for_prompts
@@ -36,14 +38,19 @@ def infer_image(
         params = infer_params_from_config(cfg)
         image = prepare_image(image, params.image_size)
         rng = random.Random(params.seed)
-        points = sample_random_canvas_points(rng, params.canvas_size, cfg.infer.num_points)
+        _, points = sample_points(
+            Polygon(),
+            rng,
+            canvas_size=params.canvas_size,
+            inside_count=0,
+            outside_count=cfg.infer.num_points,
+        )
         batches = [
             points[i : i + MAX_POINTS_PER_PROMPT]
             for i in range(0, len(points), MAX_POINTS_PER_PROMPT)
         ]
         prompts = [
-            format_training_prompt(
-                params.task_prompt,
+            format_prompt(
                 batch,
                 canvas_size=params.canvas_size,
                 bins=params.loc_bins,

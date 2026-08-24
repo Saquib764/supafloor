@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from data import format_training_prompt, prepare_image
+from data import format_prompt, prepare_image
 from config import CONFIG_PATH, Config, load_config
 from inference.generate import generate_for_prompts
 from inference.grid import sample_bright_grid_canvas_points
@@ -178,8 +178,7 @@ def run(
                 f"sample mode: {sample_mode} ({len(canvas_points)} point(s)), "
                 f"{len(grid_points)} left in pool"
             )
-            prompt = format_training_prompt(
-                params.task_prompt,
+            prompt = format_prompt(
                 canvas_points,
                 canvas_size=params.canvas_size,
                 bins=params.loc_bins,

@@ -9,6 +9,9 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
+from PIL import Image
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -29,11 +32,25 @@ DEFAULT_OPENING_THICK = 12.0
 DEFAULT_LABEL_FONT_SIZE = 16.0
 BLACKNESS_MIN = 0.7
 BLACKNESS_MAX = 1.0
+GRAY_BLACKNESS_MIN = 0.55
+GRAY_BLACKNESS_MAX = 0.78
+GRAIN_NOISE_STD = 16.0
 
 
 def _ink_color(blackness: float) -> tuple[float, float, float]:
     gray = 1.0 - blackness
     return (gray, gray, gray)
+
+
+def _apply_image_grain(png_bytes: bytes, rng: random.Random) -> bytes:
+    img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    arr = np.asarray(img, dtype=np.float32)
+    np_rng = np.random.default_rng(rng.randint(0, 2**32 - 1))
+    arr = np.clip(arr + np_rng.normal(0.0, GRAIN_NOISE_STD, arr.shape), 0.0, 255.0)
+    out = Image.fromarray(arr.astype(np.uint8), mode="RGB")
+    buf = io.BytesIO()
+    out.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 @dataclass
@@ -52,6 +69,9 @@ class _DoorPixel:
     start: Coord
     end: Coord
     is_arc_disabled: bool = False
+    door_type: str = "single"
+    arc_angle_deg: float = 90.0
+    to_the_right: bool = True
 
 
 @dataclass
@@ -62,6 +82,7 @@ class _PixelGeom:
     windows: list[tuple[Coord, Coord]] = field(default_factory=list)
     symbols: list[dict[str, Any]] = field(default_factory=list)
     pillars: list[dict[str, Any]] = field(default_factory=list)
+    wall_rects: list[dict[str, Any]] = field(default_factory=list)
     plan_id: str = "export"
 
 
@@ -101,6 +122,9 @@ def _parse_door_item(item: Any) -> _DoorPixel | None:
                 start=(float(start["x"]), float(start["y"])),
                 end=(float(end["x"]), float(end["y"])),
                 is_arc_disabled=bool(item.get("is_arc_disabled")),
+                door_type=str(item.get("door_type") or "single"),
+                arc_angle_deg=float(item.get("arc_angle_deg") or 90.0),
+                to_the_right=bool(item.get("to_the_right", True)),
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -119,6 +143,7 @@ def _geom_from_rooms(
     windows: list[tuple[Coord, Coord]] | None = None,
     symbols: list[dict[str, Any]] | None = None,
     pillars: list[dict[str, Any]] | None = None,
+    wall_rects: list[dict[str, Any]] | None = None,
 ) -> _PixelGeom:
     geom = _PixelGeom(size=size)
     for i, raw in enumerate(rooms):
@@ -145,6 +170,7 @@ def _geom_from_rooms(
     geom.windows = list(windows or [])
     geom.symbols = list(symbols or [])
     geom.pillars = list(pillars or [])
+    geom.wall_rects = list(wall_rects or [])
     return geom
 
 
@@ -170,10 +196,17 @@ def _resolve_geom(
     windows: list[tuple[Coord, Coord]] | None = None,
     symbols: list[dict[str, Any]] | None = None,
     pillars: list[dict[str, Any]] | None = None,
+    wall_rects: list[dict[str, Any]] | None = None,
 ) -> _PixelGeom:
     if rooms:
         geom = _geom_from_rooms(
-            rooms, size, doors=doors, windows=windows, symbols=symbols, pillars=pillars
+            rooms,
+            size,
+            doors=doors,
+            windows=windows,
+            symbols=symbols,
+            pillars=pillars,
+            wall_rects=wall_rects,
         )
         geom.plan_id = "rooms"
         return geom
@@ -290,6 +323,23 @@ def _draw_pillars(
         draw_pillar(ax, cx, cy, width, height, rotation_deg, facecolor=ink, edgecolor=ink)
 
 
+def _draw_wall_rects(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    ink: tuple[float, float, float],
+) -> None:
+    for raw in geom.wall_rects:
+        polygon = raw.get("polygon") or []
+        if len(polygon) < 3:
+            continue
+        try:
+            ring = [(float(point["x"]), float(point["y"])) for point in polygon]
+        except (KeyError, TypeError, ValueError):
+            continue
+        draw_polygon(ax, ring, facecolor="none", edgecolor=ink, linewidth=1.0)
+
+
 def _draw_room_symbols(
     ax: Axes,
     geom: _PixelGeom,
@@ -337,9 +387,11 @@ def _draw_doors(
             door.start,
             door.end,
             wall_thickness=opening_thick,
-            to_the_right=count % 2 == 0,
+            to_the_right=door.to_the_right,
             color=ink,
             draw_arc=not door.is_arc_disabled,
+            door_type=door.door_type,
+            arc_angle_deg=door.arc_angle_deg,
         )
         count += 1
     return count
@@ -360,12 +412,17 @@ def _render_geom(
     boundary_thick: float,
     opening_thick: float,
     rng: random.Random | None = None,
+    image_gray: bool = False,
+    image_grain: bool = False,
 ) -> tuple[bytes, int, int, int, int, int, int, float]:
     if not geom.rooms:
         raise ValueError("Floor plan has no rooms")
 
     source_rng = rng or random.Random()
-    blackness = source_rng.uniform(BLACKNESS_MIN, BLACKNESS_MAX)
+    if image_gray:
+        blackness = source_rng.uniform(GRAY_BLACKNESS_MIN, GRAY_BLACKNESS_MAX)
+    else:
+        blackness = source_rng.uniform(BLACKNESS_MIN, BLACKNESS_MAX)
     ink = _ink_color(blackness)
 
     fig, ax = _create_canvas(geom.size)
@@ -374,14 +431,18 @@ def _render_geom(
     door_count = _draw_doors(ax, geom, opening_thick=opening_thick, ink=ink)
     window_count = _draw_windows(ax, geom, opening_thick=boundary_thick)
     _draw_pillars(ax, geom, ink=ink)
+    _draw_wall_rects(ax, geom, ink=ink)
     symbol_count = _draw_room_symbols(ax, geom, blackness=blackness)
     label_count = _draw_room_labels(ax, geom, ink=ink)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=100, pad_inches=0, facecolor="white")
     plt.close(fig)
+    png = buf.getvalue()
+    if image_grain:
+        png = _apply_image_grain(png, source_rng)
     return (
-        buf.getvalue(),
+        png,
         boundary_count,
         len(geom.rooms),
         label_count,
@@ -400,6 +461,7 @@ def export_realistic(
     windows: list[tuple[Coord, Coord]] | None = None,
     symbols: list[dict[str, Any]] | None = None,
     pillars: list[dict[str, Any]] | None = None,
+    wall_rects: list[dict[str, Any]] | None = None,
     canvas_size: int = 1024,
     size: int = 1024,
     room_outline_thick: float = DEFAULT_ROOM_OUTLINE_THICK,
@@ -407,12 +469,21 @@ def export_realistic(
     opening_thick: float = DEFAULT_OPENING_THICK,
     symbol_probability: float = 0.0,
     rng: random.Random | None = None,
+    image_gray: bool = False,
+    image_grain: bool = False,
 ) -> dict[str, Any]:
     """Render room outlines, boundary, doors, windows, labels, and planned symbols; return base64 + metadata."""
     _ = canvas_size
     _ = symbol_probability
     geom = _resolve_geom(
-        plan, rooms, size, doors=doors, windows=windows, symbols=symbols, pillars=pillars
+        plan,
+        rooms,
+        size,
+        doors=doors,
+        windows=windows,
+        symbols=symbols,
+        pillars=pillars,
+        wall_rects=wall_rects,
     )
     (
         png,
@@ -429,6 +500,8 @@ def export_realistic(
         boundary_thick=boundary_thick,
         opening_thick=opening_thick,
         rng=rng,
+        image_gray=image_gray,
+        image_grain=image_grain,
     )
     source = "rooms" if rooms else "floor_plan"
     return {
@@ -447,5 +520,7 @@ def export_realistic(
             "opening_thick": opening_thick,
             "symbol_count": symbol_count,
             "blackness": round(blackness, 4),
+            "image_gray": image_gray,
+            "image_grain": image_grain,
         },
     }

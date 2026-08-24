@@ -308,6 +308,9 @@ def render_extraction_png(
         windows=windows,
         symbols=list(extracted.get("symbols") or []),
         pillars=list(extracted.get("pillars") or []),
+        wall_rects=list(extracted.get("wall_rects") or []),
+        image_gray=bool(extracted.get("image_gray")),
+        image_grain=bool(extracted.get("image_grain")),
         size=_CANVAS_SIZE,
         rng=rng,
     )

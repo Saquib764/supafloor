@@ -6,6 +6,8 @@ import math
 import random
 from typing import Any
 
+from shapely.geometry import Point, Polygon as ShapelyPolygon
+
 Coord = tuple[float, float]
 
 _CANVAS_SIZE = 1024
@@ -21,6 +23,10 @@ _WIDE_WINDOW_PROBABILITY = 0.2
 _WIDE_WINDOW_MARGIN_MIN_IN = 3.0
 _WIDE_WINDOW_MARGIN_MAX_IN = 10.0
 _DOOR_ARC_DISABLE_PROBABILITY = 0.1
+_DOUBLE_DOOR_PROBABILITY = 0.25
+_SINGLE_DOOR_ARC_ANGLES = (90.0, 45.0, 30.0, 20.0)
+_DOUBLE_DOOR_ARC_MIN_DEG = 10.0
+_DOUBLE_DOOR_ARC_MAX_DEG = 30.0
 _CORNER_MOVE_PROBABILITY = 0.05
 _CORNER_MOVE_RANGE = 50.0
 _CORNER_MATCH_TOL = 0.5
@@ -30,10 +36,21 @@ _LABEL_FONT_SCALE_MIN = 0.82
 _LABEL_FONT_SCALE_MAX = 1.18
 _LABEL_DISABLE_PROBABILITY = 0.2
 _PILLAR_PROBABILITY = 0.01
-_PILLAR_SIDE_MIN_IN = 10.0
-_PILLAR_SIDE_MAX_IN = 36.0
+_PILLAR_SIDE_MIN_IN = 24.0
+_PILLAR_SIDE_MAX_IN = 60.0
 _PILLAR_ROTATION_MIN_DEG = 1.0
 _PILLAR_ROTATION_MAX_DEG = 10.0
+_WALL_RECT_ROOM_PROBABILITY = 0.35
+_WALL_RECT_MAX_PER_ROOM = 2
+_WALL_RECT_MIN_WALL_LEN_IN = 36.0
+_WALL_RECT_EDGE_MARGIN_IN = 6.0
+_WALL_RECT_MIN_LENGTH_IN = 12.0
+_WALL_RECT_LENGTH_FRAC_MIN = 0.35
+_WALL_RECT_LENGTH_FRAC_MAX = 0.75
+_WALL_RECT_WIDTH_FRAC_MIN = 0.1
+_WALL_RECT_WIDTH_FRAC_MAX = 0.7
+_IMAGE_GRAY_PROBABILITY = 0.1
+_IMAGE_GRAIN_PROBABILITY = 0.1
 
 TRANSFORM_STATS_KEY = "transform_stats"
 
@@ -444,6 +461,38 @@ def _widen_random_windows(extracted: dict[str, Any], rng: random.Random) -> dict
     )
 
 
+def _assign_door_type_and_angle(extracted: dict[str, Any], rng: random.Random) -> dict[str, Any]:
+    """Assign door_type (single/double), swing side, and arc angle per door."""
+    openings = extracted.get("openings") or {}
+    doors = list(openings.get("doors") or [])
+    if not doors:
+        return extracted
+
+    updated_doors: list[dict[str, Any]] = []
+    for door in doors:
+        updated = dict(door)
+        is_double = rng.random() < _DOUBLE_DOOR_PROBABILITY
+        if is_double:
+            updated["door_type"] = "double"
+            updated["arc_angle_deg"] = round(
+                rng.uniform(_DOUBLE_DOOR_ARC_MIN_DEG, _DOUBLE_DOOR_ARC_MAX_DEG), 1
+            )
+        else:
+            updated["door_type"] = "single"
+            updated["arc_angle_deg"] = rng.choice(_SINGLE_DOOR_ARC_ANGLES)
+        updated["to_the_right"] = rng.choice((True, False))
+        updated_doors.append(updated)
+
+    return {
+        **extracted,
+        "openings": {
+            **openings,
+            "doors": updated_doors,
+            "windows": list(openings.get("windows") or []),
+        },
+    }
+
+
 def _disable_random_door_arcs(extracted: dict[str, Any], rng: random.Random) -> dict[str, Any]:
     """With p=0.1 per door, set is_arc_disabled so the renderer skips the swing arc."""
     openings = extracted.get("openings") or {}
@@ -558,6 +607,14 @@ def _rotate_pillar(raw: dict[str, Any], cos_t: float, sin_t: float, rotation_deg
     return updated
 
 
+def _rotate_wall_rect(raw: dict[str, Any], cos_t: float, sin_t: float) -> dict[str, Any]:
+    updated = dict(raw)
+    updated["polygon"] = [
+        _rotate_point(point, cos_t, sin_t) for point in raw.get("polygon") or []
+    ]
+    return updated
+
+
 def _rotate_extraction(extracted: dict[str, Any], theta: float) -> dict[str, Any]:
     """Rotate rooms, walls, openings, and symbols around the origin by theta radians."""
     cos_t, sin_t = math.cos(theta), math.sin(theta)
@@ -596,6 +653,10 @@ def _rotate_extraction(extracted: dict[str, Any], theta: float) -> dict[str, Any
         "pillars": [
             _rotate_pillar(pillar, cos_t, sin_t, rotation_deg)
             for pillar in extracted.get("pillars") or []
+        ],
+        "wall_rects": [
+            _rotate_wall_rect(wall_rect, cos_t, sin_t)
+            for wall_rect in extracted.get("wall_rects") or []
         ],
     }
 
@@ -690,6 +751,15 @@ def _transform_symbol(raw: dict[str, Any], mapper, scale: float) -> dict[str, An
     return updated
 
 
+def _transform_wall_rect(raw: dict[str, Any], mapper) -> dict[str, Any]:
+    updated = dict(raw)
+    updated["polygon"] = [
+        _round_point(*mapper(float(point["x"]), float(point["y"])))
+        for point in raw.get("polygon") or []
+    ]
+    return updated
+
+
 def _sample_symbols(
     rooms: list[dict[str, Any]],
     rng: random.Random,
@@ -751,6 +821,95 @@ def _sample_pillars(extracted: dict[str, Any], rng: random.Random) -> list[dict[
     return pillars
 
 
+def _inward_normal(a: Coord, b: Coord, room_poly: ShapelyPolygon) -> Coord | None:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = math.hypot(dx, dy)
+    if length < 1e-9:
+        return None
+    mid = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+    for nx, ny in ((-dy / length, dx / length), (dy / length, -dx / length)):
+        if room_poly.contains(Point(mid[0] + nx, mid[1] + ny)):
+            return (nx, ny)
+    return None
+
+
+def _wall_rect_polygon(
+    a: Coord,
+    b: Coord,
+    room_poly: ShapelyPolygon,
+    rng: random.Random,
+) -> list[dict[str, float]] | None:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    wall_len = math.hypot(dx, dy)
+    if wall_len < _WALL_RECT_MIN_WALL_LEN_IN:
+        return None
+
+    inward = _inward_normal(a, b, room_poly)
+    if inward is None:
+        return None
+
+    ux, uy = dx / wall_len, dy / wall_len
+    nx, ny = inward
+    usable = wall_len - 2.0 * _WALL_RECT_EDGE_MARGIN_IN
+    if usable < _WALL_RECT_MIN_LENGTH_IN:
+        return None
+
+    rect_len = min(
+        rng.uniform(
+            usable * _WALL_RECT_LENGTH_FRAC_MIN,
+            usable * _WALL_RECT_LENGTH_FRAC_MAX,
+        ),
+        usable,
+    )
+    start_t = rng.uniform(
+        _WALL_RECT_EDGE_MARGIN_IN,
+        wall_len - _WALL_RECT_EDGE_MARGIN_IN - rect_len,
+    )
+    depth = rect_len * rng.uniform(_WALL_RECT_WIDTH_FRAC_MIN, _WALL_RECT_WIDTH_FRAC_MAX)
+
+    p0 = (a[0] + ux * start_t, a[1] + uy * start_t)
+    p1 = (a[0] + ux * (start_t + rect_len), a[1] + uy * (start_t + rect_len))
+    p2 = (p1[0] + nx * depth, p1[1] + ny * depth)
+    p3 = (p0[0] + nx * depth, p0[1] + ny * depth)
+
+    rect_poly = ShapelyPolygon([p0, p1, p2, p3])
+    if rect_poly.is_empty or not rect_poly.is_valid:
+        return None
+    diff = rect_poly.difference(room_poly)
+    if not diff.is_empty and diff.area > 1e-6:
+        return None
+
+    return [{"x": x, "y": y} for x, y in (p0, p1, p2, p3)]
+
+
+def _sample_wall_rects(extracted: dict[str, Any], rng: random.Random) -> list[dict[str, Any]]:
+    wall_rects: list[dict[str, Any]] = []
+    for room in extracted.get("rooms") or []:
+        if rng.random() >= _WALL_RECT_ROOM_PROBABILITY:
+            continue
+        ring = _open_polygon_ring(room.get("polygon") or [])
+        if len(ring) < 3:
+            continue
+        room_poly = ShapelyPolygon(ring)
+        if room_poly.is_empty or not room_poly.is_valid:
+            continue
+
+        edge_indices = list(range(len(ring)))
+        rng.shuffle(edge_indices)
+        added = 0
+        for index in edge_indices:
+            if added >= _WALL_RECT_MAX_PER_ROOM:
+                break
+            a = ring[index]
+            b = ring[(index + 1) % len(ring)]
+            polygon = _wall_rect_polygon(a, b, room_poly, rng)
+            if polygon is None:
+                continue
+            wall_rects.append({"polygon": polygon})
+            added += 1
+    return wall_rects
+
+
 def transform_extraction(
     extracted: dict[str, Any],
     *,
@@ -762,10 +921,13 @@ def transform_extraction(
         raise ValueError("symbol_probability must be between 0 and 1")
 
     source_rng = rng or random.Random(str(extracted.get("id") or ""))
+    image_gray = source_rng.random() < _IMAGE_GRAY_PROBABILITY
+    image_grain = source_rng.random() < _IMAGE_GRAIN_PROBABILITY
     extracted = _convert_extraction_to_inches(extracted)
     # extracted = _enlarge_random_door(extracted, source_rng)
     extracted = _add_random_windows(extracted, source_rng)
     extracted = _widen_random_windows(extracted, source_rng)
+    extracted = _assign_door_type_and_angle(extracted, source_rng)
     extracted = _disable_random_door_arcs(extracted, source_rng)
     # extracted = _jitter_room_corners(extracted, source_rng)
     extracted = {
@@ -776,6 +938,7 @@ def transform_extraction(
             symbol_probability=symbol_probability,
         ),
         "pillars": _sample_pillars(extracted, source_rng),
+        "wall_rects": _sample_wall_rects(extracted, source_rng),
     }
     theta = source_rng.uniform(0.0, 2.0 * math.pi)
     is_rotated = abs(theta) > 1e-9
@@ -783,14 +946,20 @@ def transform_extraction(
     extracted = _normalize_room_polygons(extracted)
     coords = _iter_coords(extracted)
     if not coords:
-        return _with_transform_stats(extracted, is_rotated=is_rotated)
+        return _with_transform_stats(
+            {**extracted, "image_gray": image_gray, "image_grain": image_grain},
+            is_rotated=is_rotated,
+        )
 
     minx, miny, maxx, maxy = _bbox(coords)
     width = maxx - minx
     height = maxy - miny
     max_dim = max(width, height)
     if max_dim < 1e-9:
-        return _with_transform_stats(extracted, is_rotated=is_rotated)
+        return _with_transform_stats(
+            {**extracted, "image_gray": image_gray, "image_grain": image_grain},
+            is_rotated=is_rotated,
+        )
 
     scale_target = source_rng.uniform(_SCALE_MIN, _SCALE_MAX)
     scale = scale_target / max_dim
@@ -852,6 +1021,12 @@ def transform_extraction(
                 _transform_symbol(pillar, mapper, scale)
                 for pillar in extracted.get("pillars") or []
             ],
+            "wall_rects": [
+                _transform_wall_rect(wall_rect, mapper)
+                for wall_rect in extracted.get("wall_rects") or []
+            ],
+            "image_gray": image_gray,
+            "image_grain": image_grain,
         },
         is_rotated=is_rotated,
     )
@@ -874,7 +1049,12 @@ def transform_stats(extracted: dict[str, Any], *, is_rotated: bool) -> dict[str,
         "missing_door_symbol": sum(
             1 for door in doors if door.get("is_arc_disabled")
         ),
+        "single_doors": sum(1 for door in doors if door.get("door_type", "single") == "single"),
+        "double_doors": sum(1 for door in doors if door.get("door_type") == "double"),
         "pillars": len(extracted.get("pillars") or []),
+        "wall_rects": len(extracted.get("wall_rects") or []),
+        "image_gray": bool(extracted.get("image_gray")),
+        "image_grain": bool(extracted.get("image_grain")),
     }
 
 

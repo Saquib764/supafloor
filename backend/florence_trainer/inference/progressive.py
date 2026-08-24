@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from data import format_training_prompt, prepare_image
+from data import format_prompt, prepare_image
 from inference.generate import generate_for_prompts
 from inference.grid import sample_bright_grid_canvas_points
 from inference.params import InferParams
@@ -420,8 +420,7 @@ def detect_rooms_at_points(
     verbose: bool = False,
 ) -> tuple[bool, list[dict[str, Any]]]:
     scale = point_scale if point_scale is not None else params.point_scale
-    prompt = format_training_prompt(
-        params.task_prompt,
+    prompt = format_prompt(
         canvas_points,
         canvas_size=params.canvas_size,
         bins=params.loc_bins,

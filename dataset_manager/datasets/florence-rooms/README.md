@@ -14,7 +14,7 @@ Loads only the columns the trainer needs:
 
 At training time the Florence trainer picks a random room from `extraction`, samples a random interior point, and builds:
 
-- **Prompt:** `<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_x><loc_y>`
+- **Prompt:** `Locate room polygon containing point <loc_x><loc_y>[, and not containing <loc_x><loc_y>]`
 - **Label:** `<poly>…</poly>` + `Room name: {name|unlabeled}`
 
 Precomputed `florence` labels from the full Hub dataset are not used.

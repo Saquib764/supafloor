@@ -25,9 +25,7 @@ from PIL import Image
 
 from config import CONFIG_PATH, load_config
 from data import (
-    canvas_point_to_loc,
-    format_infer_prompt,
-    format_training_prompt,
+    format_prompt,
     prepare_image,
 )
 from loc import parse_referring_room, parse_rooms
@@ -90,9 +88,10 @@ def _generate_for_prompts(model, processor, cfg, image, prompts: list[str]) -> l
 
 
 def infer_point(model, processor, cfg, image, x: float, y: float) -> dict:
-    prompt = format_infer_prompt(
-        cfg.task_prompt,
-        *canvas_point_to_loc(x, y, canvas_size=cfg.canvas_size, bins=cfg.loc_bins),
+    prompt = format_prompt(
+        [(x, y)],
+        canvas_size=cfg.canvas_size,
+        bins=cfg.loc_bins,
     )
     text = _generate_for_prompts(model, processor, cfg, image, [prompt])[0]
     if text.startswith(prompt):
@@ -113,8 +112,7 @@ def infer_points(model, processor, cfg, image, points: list[tuple[float, float]]
         for i in range(0, len(points), MAX_POINTS_PER_PROMPT)
     ]
     prompts = [
-        format_training_prompt(
-            cfg.task_prompt,
+        format_prompt(
             batch,
             canvas_size=cfg.canvas_size,
             bins=cfg.loc_bins,

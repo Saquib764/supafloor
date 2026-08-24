@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from registry import ROOT as _DATASET_MANAGER_DIR, load_dotenv
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
@@ -24,31 +25,18 @@ def _project_dir() -> Path:
 CONFIG_PATH = _project_dir() / "config.yaml"
 
 
-def _load_dotenv_from(env_dir: Path) -> None:
-    env_path = env_dir / ".env"
-    if not env_path.is_file():
-        return
-    for raw in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip().strip("'").strip('"')
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
 def _load_dotenv() -> None:
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
-    _load_dotenv_from(_project_dir())
-    _load_dotenv_from(Path.cwd())
+    load_dotenv(_project_dir(), _DATASET_MANAGER_DIR, Path.cwd())
 
 
 @dataclass(frozen=True)
 class DataSettings:
     dataset: str
     max_label_tokens: int
+    empty_polygon_prob: float
+    excluded_point_prob: float
+    variations_per_floorplan: int
     revision: str | None = None
     seed: int | None = None
 
@@ -90,7 +78,6 @@ class InferSettings:
 class Config:
     hf_cache: Path
     model_id: str
-    task_prompt: str
     image_size: int
     canvas_size: int
     loc_bins: int
@@ -130,7 +117,7 @@ def datasets_cache_dir(cfg: Config) -> Path:
 def load_config(path: Path | None = None) -> Config:
     _load_dotenv()
     config_path = path or CONFIG_PATH
-    _load_dotenv_from(config_path.parent)
+    load_dotenv(config_path.parent)
     raw: dict[str, Any] = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     base = config_path.parent
     data = raw["data"]
@@ -144,13 +131,15 @@ def load_config(path: Path | None = None) -> Config:
     return Config(
         hf_cache=hf_cache,
         model_id=str(raw["model_id"]),
-        task_prompt=str(raw["task_prompt"]),
         image_size=int(raw["image_size"]),
         canvas_size=int(raw.get("canvas_size") or 1024),
         loc_bins=int(raw["loc_bins"]),
         data=DataSettings(
             dataset=dataset,
             max_label_tokens=int(data["max_label_tokens"]),
+            empty_polygon_prob=float(data.get("empty_polygon_prob", 0.05)),
+            excluded_point_prob=float(data.get("excluded_point_prob", 0.1)),
+            variations_per_floorplan=int(data.get("variations_per_floorplan", 4)),
             revision=str(data["revision"]).strip() if data.get("revision") else None,
             seed=int(data["seed"]) if data.get("seed") is not None else None,
         ),

@@ -27,6 +27,16 @@ N = 5
 _SKIP_NAMES = frozenset({"index.json", "manifest.json", "scores_index.json"})
 
 
+def _bootstrap_service_root() -> Path:
+    """Put backend/floorplan first on sys.path (before dev/ and site-packages)."""
+    service_root = Path(__file__).resolve().parents[1]
+    root = str(service_root)
+    while root in sys.path:
+        sys.path.remove(root)
+    sys.path.insert(0, root)
+    return service_root
+
+
 def _iter_plan_json_paths(directory: Path):
     from dataset.store import PLAN_JSON
 
@@ -44,7 +54,7 @@ def _iter_plan_json_paths(directory: Path):
 
 
 def main(argv: list[str] | None = None) -> int:
-    service_root = Path(__file__).resolve().parents[1]
+    service_root = _bootstrap_service_root()
     repo_root = service_root.parents[1]
 
     parser = argparse.ArgumentParser(
@@ -71,9 +81,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Process at most N plans (default: all)",
     )
     args = parser.parse_args(argv)
-
-    if str(service_root) not in sys.path:
-        sys.path.insert(0, str(service_root))
 
     source = args.dir if args.dir.is_absolute() else service_root / args.dir
     if not source.is_dir():

@@ -60,6 +60,53 @@ def _opening_cut_polygon(start: Coord, end: Coord, thickness: float) -> list[Coo
     ]
 
 
+def _draw_door_swing(
+    ax: Axes,
+    hinge: Coord,
+    wall_angle: float,
+    leaf_length: float,
+    *,
+    arc_angle_deg: float,
+    to_the_right: bool,
+    color: str | tuple[float, float, float],
+) -> None:
+    if leaf_length < 1e-6 or arc_angle_deg < 1e-6:
+        return
+
+    if to_the_right:
+        open_angle = wall_angle - arc_angle_deg
+        theta1, theta2 = -(arc_angle_deg + 2), 0
+    else:
+        open_angle = wall_angle + arc_angle_deg
+        theta1, theta2 = 0, arc_angle_deg + 2
+
+    leaf_end = _shift(hinge, leaf_length, open_angle)
+    ax.plot(
+        [hinge[0], leaf_end[0]],
+        [hinge[1], leaf_end[1]],
+        color=color,
+        linewidth=1.5,
+        solid_capstyle="butt",
+    )
+
+    arc_center = _shift(hinge, 1.5, wall_angle)
+    swing = max(leaf_length - 1.5, leaf_length * 0.5)
+    if swing <= 0:
+        return
+    ax.add_patch(
+        Arc(
+            arc_center,
+            2 * swing,
+            2 * leaf_length,
+            angle=wall_angle,
+            theta1=theta1,
+            theta2=theta2,
+            color=color,
+            linewidth=1,
+        )
+    )
+
+
 def draw_door(
     ax: Axes,
     start: Coord,
@@ -69,6 +116,8 @@ def draw_door(
     to_the_right: bool = True,
     color: str | tuple[float, float, float] = "black",
     draw_arc: bool = True,
+    door_type: str = "single",
+    arc_angle_deg: float = 90.0,
 ) -> None:
     length, angle = _segment(start, end)
     if length < 1e-6:
@@ -81,37 +130,36 @@ def draw_door(
     if not draw_arc:
         return
 
-    door_width = length
-    hinges = start
-    leaf_angle = angle - 90 if to_the_right else angle + 90
-    leaf_end = _shift(hinges, door_width, leaf_angle)
-    ax.plot(
-        [hinges[0], leaf_end[0]],
-        [hinges[1], leaf_end[1]],
-        color=color,
-        linewidth=1.5,
-        solid_capstyle="butt",
-    )
-
-    arc_center = _shift(hinges, 1.5, angle)
-    swing = max(door_width - 1.5, length * 0.5)
-    if swing <= 0:
-        return
-    if to_the_right:
-        theta1, theta2 = -92, 0
-    else:
-        theta1, theta2 = 0, 92
-    ax.add_patch(
-        Arc(
-            arc_center,
-            2 * swing,
-            2 * door_width,
-            angle=angle,
-            theta1=theta1,
-            theta2=theta2,
+    if door_type == "double":
+        half = length / 2.0
+        _draw_door_swing(
+            ax,
+            start,
+            angle,
+            half,
+            arc_angle_deg=arc_angle_deg,
+            to_the_right=to_the_right,
             color=color,
-            linewidth=1,
         )
+        _draw_door_swing(
+            ax,
+            end,
+            angle + 180.0,
+            half,
+            arc_angle_deg=arc_angle_deg,
+            to_the_right=not to_the_right,
+            color=color,
+        )
+        return
+
+    _draw_door_swing(
+        ax,
+        start,
+        angle,
+        length,
+        arc_angle_deg=arc_angle_deg,
+        to_the_right=to_the_right,
+        color=color,
     )
 
 

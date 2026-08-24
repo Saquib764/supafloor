@@ -12,7 +12,13 @@ from PIL import Image
 from transformers import Trainer, TrainerCallback, TrainingArguments
 
 from config import CONFIG_PATH, Config, datasets_cache_dir
-from data import FlorenceCollator, FloorplanFlorenceDataset, load_rows, prepare_image
+from data import (
+    FlorenceCollator,
+    FloorplanFlorenceDataset,
+    _VARIATIONS_PER_ROOM,
+    load_rows,
+    prepare_image,
+)
 from infer import infer_image
 from model import load_model_and_processor, save_trainable_projector, use_bf16
 from plot import draw_rooms
@@ -129,8 +135,9 @@ def _print_training_setup(
     args: TrainingArguments,
 ) -> None:
     plan_ids = len(set(rows["plan_id"]))
+    floorplans_per_batch = cfg.train.batch_size // cfg.data.variations_per_floorplan
     effective_batch = cfg.train.batch_size * cfg.train.grad_accum
-    steps_per_epoch = math.ceil(len(train_ds) / effective_batch)
+    steps_per_epoch = math.ceil(len(train_ds) / floorplans_per_batch / cfg.train.grad_accum)
     total_steps = steps_per_epoch * cfg.train.epochs
 
     print("\n=== Device ===")
@@ -147,7 +154,6 @@ def _print_training_setup(
     print(f"cache_dir:        {datasets_cache_dir(cfg)}")
     print(f"train rows:       {len(rows):,} ({plan_ids:,} plan_ids)")
     print(f"test images:      {', '.join(name for name, _ in test_images)}")
-    print(f"task_prompt:      {cfg.task_prompt!r}")
     print(f"image_size:       {cfg.image_size}")
     print(f"canvas_size:      {cfg.canvas_size}")
     print(f"max_label_tokens: {cfg.data.max_label_tokens}")
@@ -159,7 +165,7 @@ def _print_training_setup(
     print("\n=== Training ===")
     print(f"output_dir:       {cfg.train.session_dir}")
     print(f"epochs:           {cfg.train.epochs}")
-    print(f"batch_size:       {cfg.train.batch_size}")
+    print(f"batch_size:       {cfg.train.batch_size} samples ({floorplans_per_batch} floorplans × {cfg.data.variations_per_floorplan})")
     print(f"grad_accum:       {cfg.train.grad_accum}")
     print(f"effective batch:  {effective_batch}")
     print(f"steps/epoch:      {steps_per_epoch:,}")
@@ -188,19 +194,32 @@ def run(cfg: Config) -> None:
     collator = FlorenceCollator(processor, cfg.data.max_label_tokens)
     train_ds = FloorplanFlorenceDataset(
         rows,
-        cfg.task_prompt,
         cfg.image_size,
         loc_bins=cfg.loc_bins,
         canvas_size=cfg.canvas_size,
+        empty_polygon_prob=cfg.data.empty_polygon_prob,
+        excluded_point_prob=cfg.data.excluded_point_prob,
+        variations_per_floorplan=cfg.data.variations_per_floorplan,
         seed=cfg.data.seed,
     )
+    if cfg.data.variations_per_floorplan % _VARIATIONS_PER_ROOM != 0:
+        raise ValueError(
+            f"data.variations_per_floorplan ({cfg.data.variations_per_floorplan}) must be divisible by "
+            f"{_VARIATIONS_PER_ROOM} (variations per room)"
+        )
+    if cfg.train.batch_size % cfg.data.variations_per_floorplan != 0:
+        raise ValueError(
+            f"train.batch_size ({cfg.train.batch_size}) must be divisible by "
+            f"{cfg.data.variations_per_floorplan} (variations per floorplan)"
+        )
+    floorplans_per_batch = cfg.train.batch_size // cfg.data.variations_per_floorplan
     test_images = _load_test_images(cfg.image_size)
 
     cfg.train.session_dir.mkdir(parents=True, exist_ok=True)
     args = TrainingArguments(
         output_dir=str(cfg.train.session_dir),
         num_train_epochs=cfg.train.epochs,
-        per_device_train_batch_size=cfg.train.batch_size,
+        per_device_train_batch_size=floorplans_per_batch,
         gradient_accumulation_steps=cfg.train.grad_accum,
         learning_rate=cfg.train.learning_rate,
         warmup_ratio=cfg.train.warmup_ratio,

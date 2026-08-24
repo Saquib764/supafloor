@@ -117,7 +117,7 @@ def _print_model_and_lora(model: Any, processor: Any, cfg: Config) -> None:
 def _print_samples(cfg: Config, *, count: int, seed: int | None) -> None:
     import json
 
-    from data import build_referring_sample, load_sample_rows, prepare_image
+    from data import build_referring_variations, load_sample_rows, prepare_image
 
     cache_dir = datasets_cache_dir(cfg)
     print(f"Loading dataset into {cache_dir} …")
@@ -139,7 +139,6 @@ def _print_samples(cfg: Config, *, count: int, seed: int | None) -> None:
     print(f"rows:         {num_rows:,}")
     print(f"cache_dir:    {cache_dir}")
     print(f"preview_dir:  {_PREVIEW_DIR}")
-    print(f"task_prefix:  {cfg.task_prompt!r}")
 
     for n, (index, row) in enumerate(zip(indices, samples, strict=True), start=1):
         stem = str(row["stem"])
@@ -147,13 +146,15 @@ def _print_samples(cfg: Config, *, count: int, seed: int | None) -> None:
         saved_path = _PREVIEW_DIR / f"{stem}.png"
         image.save(saved_path)
         extraction = json.loads(str(row["extraction"]))
-        prompt, label = build_referring_sample(
+        variations = build_referring_variations(
             extraction,
             index,
-            task_prefix=cfg.task_prompt,
             canvas_size=cfg.canvas_size,
             bins=cfg.loc_bins,
             seed=cfg.data.seed,
+            empty_polygon_prob=cfg.data.empty_polygon_prob,
+            excluded_point_prob=cfg.data.excluded_point_prob,
+            variations_per_floorplan=cfg.data.variations_per_floorplan,
         )
 
         print(f"\n--- sample {n} (index {index}) ---")
@@ -162,9 +163,15 @@ def _print_samples(cfg: Config, *, count: int, seed: int | None) -> None:
         print(f"variant:      {row['variant']}")
         print(f"image_saved:  {saved_path}")
         print(f"image_size:   {image.size[0]}x{image.size[1]}")
-        print(f"prompt:       {prompt!r}")
-        print("label:")
-        print(label if label.endswith("\n") else f"{label}\n")
+        for v, datum in enumerate(variations, start=1):
+            print(f"\n  variation {v}:")
+            print(f"  prompt:           {datum.prompt!r}")
+            print(f"  positive points:  {len(datum.positive_points)}")
+            print(f"  excluded points:  {len(datum.excluded_points)}")
+            print("  label:")
+            text = datum.label if datum.label.endswith("\n") else f"{datum.label}\n"
+            for line in text.splitlines():
+                print(f"    {line}")
 
 
 def run(cfg: Config, *, count: int = 3, seed: int | None = None) -> None:

@@ -67,7 +67,6 @@ def load_florence_model_config() -> Any:
     return tc.Config(
         hf_cache=hf_cache,
         model_id=str(raw["model_id"]),
-        task_prompt=str(raw["task_prompt"]),
         image_size=int(raw["image_size"]),
         canvas_size=int(raw.get("canvas_size") or 1024),
         loc_bins=int(raw["loc_bins"]),

@@ -1,5 +1,4 @@
 model_id: microsoft/Florence-2-base-ft
-task_prompt: "<REFERRING_EXPRESSION_SEGMENTATION>"
 image_size: 768
 canvas_size: 1024
 loc_bins: 1000

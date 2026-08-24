@@ -19,20 +19,24 @@ DATASETS = ROOT / "datasets"
 _MARKER = ".hf_complete"
 
 
-def load_dotenv() -> None:
-    for env_dir in (ROOT, Path.cwd()):
-        env_path = env_dir / ".env"
-        if not env_path.is_file():
+def _load_dotenv_from(env_dir: Path) -> None:
+    env_path = env_dir / ".env"
+    if not env_path.is_file():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
             continue
-        for raw in env_path.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip("'").strip('"')
-            if key and key not in os.environ:
-                os.environ[key] = value
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'").strip('"')
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def load_dotenv(*env_dirs: Path) -> None:
+    for env_dir in env_dirs or (ROOT, Path.cwd()):
+        _load_dotenv_from(env_dir)
 
 
 def enable_download_progress() -> None:

@@ -14,7 +14,7 @@ This package is separate from `backend/floorplan/` so PyTorch / PEFT stay out of
 
 ## Dataset
 
-Training loads Hub rows through `dataset_manager` (`data.dataset` in `config.yaml`, default `florence-rooms`). That view keeps `stem`, `plan_id`, `variant`, `image`, and `extraction` from `saquiboye/floorplan-to-json`. Each training step randomly picks one room, samples an interior point, and builds a dynamic prompt + label.
+Training loads Hub rows through `dataset_manager` (`data.dataset` in `config.yaml`, default `florence-rooms`). That view keeps `stem`, `plan_id`, `variant`, `image`, and `extraction` from `saquiboye/floorplan-to-json`. Each training step picks two rooms (or the same room twice when only one exists), builds four prompt/label pairs per floorplan (two point variations per room slot), and with 5% probability per slot samples a point outside all rooms with an empty `<poly></poly>` label.
 
 Auth with `huggingface-cli login`, `HF_TOKEN`, or a `.env` in this folder. Do not put a token in `config.yaml`. Hub datasets are cached under `hf_cache/` in this folder.
 
@@ -36,7 +36,7 @@ Each training sample:
 
 **Prompt (input):**
 ```
-<REFERRING_EXPRESSION_SEGMENTATION>room containing <loc_602><loc_955>
+Locate room polygon containing point <loc_602><loc_955>
 ```
 
 **Label (target):**
@@ -62,8 +62,7 @@ Edit `config.yaml` for model, Hub dataset, LoRA, and training knobs. Paths in th
 
 | Key | Meaning |
 |---|---|
-| `model_id` | HuggingFace Florence-2 checkpoint (`microsoft/Florence-2-base-ft` by default) |
-| `task_prompt` | Prefix for referring prompts (`<REFERRING_EXPRESSION_SEGMENTATION>`) |
+| `model_id` | HuggingFace Florence-2 checkpoint (`microsoft/Florence-2-base` by default) |
 | `canvas_size` | Coordinate space for loc tokens (1024, matches extraction JSON) |
 | `data.seed` | RNG seed for room/point selection per row |
 | `data.dataset` | `dataset_manager` registry name (default `florence-rooms`) |
