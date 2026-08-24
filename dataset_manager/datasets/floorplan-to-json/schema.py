@@ -1,4 +1,4 @@
-"""Floorplan-to-json Hub schema: image + Florence + extraction JSON."""
+"""Floorplan-to-json Hub schema: image + extraction JSON."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ FEATURES = Features(
         "plan_id": Value("string"),
         "variant": Value("int32"),
         "image": Image(),
-        "florence": Value("string"),
         "extraction": Value("string"),
     }
 )
@@ -29,13 +28,11 @@ def split_stem(stem: str) -> tuple[str, int]:
 
 
 def _iter_local_rows(src: Path):
-    florence_dir = src / "florence"
     output_dir = src / "output"
     for png in sorted((src / "input").glob("*.png")):
         stem = png.stem
-        txt = florence_dir / f"{stem}.txt"
         json_path = output_dir / f"{stem}.json"
-        if not txt.is_file() or not json_path.is_file():
+        if not json_path.is_file():
             continue
         plan_id, variant = split_stem(stem)
         yield {
@@ -43,7 +40,6 @@ def _iter_local_rows(src: Path):
             "plan_id": plan_id,
             "variant": variant,
             "image": str(png),
-            "florence": txt.read_text(encoding="utf-8"),
             "extraction": json_path.read_text(encoding="utf-8"),
         }
 
@@ -58,7 +54,7 @@ def build_from_local(local_root: Path) -> Dataset:
         features=FEATURES,
     )
     if len(dataset) == 0:
-        raise FileNotFoundError(f"No complete triples under {local_root}")
+        raise FileNotFoundError(f"No complete input/output pairs under {local_root}")
     return dataset
 
 
@@ -77,17 +73,14 @@ def load_from_hub(repo: str, *, revision: str = "main", cache_dir: Path | None =
 def write_local_folders(dataset: Dataset, target: Path) -> int:
     target = Path(target)
     input_dir = target / "input"
-    florence_dir = target / "florence"
     output_dir = target / "output"
     input_dir.mkdir(parents=True, exist_ok=True)
-    florence_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     written = 0
     for row in dataset:
         stem = str(row["stem"])
         row["image"].convert("RGB").save(input_dir / f"{stem}.png")
-        (florence_dir / f"{stem}.txt").write_text(row["florence"], encoding="utf-8")
         (output_dir / f"{stem}.json").write_text(row["extraction"], encoding="utf-8")
         written += 1
     return written

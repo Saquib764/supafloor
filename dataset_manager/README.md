@@ -19,7 +19,7 @@ Registered today:
 
 | Name | Role |
 |---|---|
-| `floorplan-to-json` | Full Hub publish/download |
+| `floorplan-to-json` | Full Hub publish/download (`stem`, `plan_id`, `variant`, `image`, `extraction`) |
 | `florence-rooms` | Training view (`stem`, `plan_id`, `variant`, `image`, `extraction`) |
 
 ## Usage

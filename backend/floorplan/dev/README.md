@@ -47,6 +47,6 @@ uv run floorplan dataset -n 5000 --seed 0 --score-level basic --workers 4 \
 | `score_floorplans.py` | Score each plan; write human-readable reports and `README.md` |
 | `export_training.py` | Corpus JSON → training JSONL (`input.prompt` + `input.schema` → `output` rooms) |
 | `export_realistic.py` | FloorPlan JSON → realistic 1024 PNG |
-| `export_image_to_floorplan.py` | Corpus JSON → input PNG + extraction JSON training pairs |
+| `export_image_to_floorplan.py` | Corpus JSON → `input/` PNG + `output/` extraction JSON + `stats/` YAML per variant |
 | `summarize_dataset_stats.py` | `stats/*.yml` → Markdown summary (`STATS.md`) |
 | `floorplan dataset` | Threshold-gated unique corpus under `floorplan_dataset/` (gitignored) |

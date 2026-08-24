@@ -16,9 +16,9 @@ size_categories:
 
 # Floorplan to JSON
 
-Synthetic residential floor-plan images paired with Florence-2 loc-token labels and extraction JSON.
+Synthetic residential floor-plan images paired with extraction JSON (rooms, walls, openings, and render metadata).
 
-Each row is one augmented render of a unique apartment layout.
+Each row is one augmented render of a unique apartment layout. Florence loc-token training labels are **not** stored here — the trainer builds them from `extraction` at train time.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -26,32 +26,24 @@ Each row is one augmented render of a unique apartment layout.
 | `plan_id` | string | Unique apartment / plan id |
 | `variant` | int | Augmentation index (`0`–`4`) |
 | `image` | image | Realistic 1024×1024 floor-plan PNG |
-| `florence` | string | Florence loc-token target (room names + polygons) |
 | `extraction` | string | Full extraction JSON for the same image |
 
 ## Local layout (before / after Hub)
 
 ```
 input/<stem>.png
-florence/<stem>.txt
 output/<stem>.json
+stats/<stem>.yml     # local export only (transform stats; not uploaded to Hub)
 ```
 
-## Label format
+## Extraction JSON
 
-Each room in `florence`:
+Each `output/<stem>.json` file matches the rendered image. Room polygons are on the 1024×1024 canvas and are canonicalized after rotation and scaling:
 
-```
-Living
-<loc_158><loc_570>
-<poly>
-<loc_157><loc_569>
-<loc_463><loc_569>
-</poly>
-<sep>
-```
+- **Winding:** clockwise
+- **Start vertex:** closest to the origin `(0, 0)`
 
-Name, center loc pair, then polygon vertices. Loc bins are `0`–`999`.
+The Florence trainer reads these polygons and encodes loc-token labels on the fly.
 
 ## Dataset size (basic_5000)
 

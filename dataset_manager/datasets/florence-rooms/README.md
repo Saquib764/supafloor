@@ -17,4 +17,4 @@ At training time the Florence trainer picks a random room from `extraction`, sam
 - **Prompt:** `Locate room polygon containing point <loc_x><loc_y>[, and not containing <loc_x><loc_y>]`
 - **Label:** `<poly>…</poly>` + `Room name: {name|unlabeled}`
 
-Precomputed `florence` labels from the full Hub dataset are not used.
+Loc-token labels are derived from `extraction.rooms[].polygon` at train time (not precomputed on export). Polygons in extraction JSON are clockwise with the first vertex closest to the origin.
