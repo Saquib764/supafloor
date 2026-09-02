@@ -45,6 +45,24 @@ Each `output/<stem>.json` file matches the rendered image. Room polygons are on 
 
 The Florence trainer reads these polygons and encodes loc-token labels on the fly.
 
+Wall rendering metadata (plan-level):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `wall_render_mode` | `1 \| 2 \| 3` | `1` all walls textured, `2` mixed, `3` no texture |
+| `wall_hatch` | string \| null | Matplotlib hatch for textured walls; `null` = solid fill |
+| `wall_texture_cutoff` | float | Fraction textured in mixed mode |
+| `wall_centerline` | bool | Thin axis line on every wall (independent of texture) |
+
+Every wall is drawn with an outline (strip edge). Texture fill is optional per wall via `is_textured`. Each wall segment also includes `is_exterior` (bool).
+
+Room interior texture (per room):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `is_interior_textured` | bool | ~10% chance per room |
+| `interior_hatch` | string | `"."` or `"/"` when textured |
+
 ## Dataset size (basic_5000)
 
 | Metric | Value |

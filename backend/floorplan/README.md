@@ -49,3 +49,9 @@ backend/floorplan/          # service root (this directory)
   dataset/ extraction/ export/
   dev/                      # manual generate / score / export scripts
 ```
+
+## Sample test plans
+
+```bash
+uv run python dev/export_image_to_floorplan.py --dir ../../floorplan_dataset/basic_5000 --out ../../image-to-floorplan/smoke-test --limit 10
+```

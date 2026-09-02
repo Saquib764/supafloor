@@ -84,12 +84,10 @@ def export_realistic_route(body: RealisticExportRequest) -> dict[str, Any]:
         return export_realistic(
             plan=body.plan,
             rooms=body.rooms,
-            canvas_size=body.canvas_size,
             size=body.size,
             room_outline_thick=body.room_outline_thick,
             boundary_thick=body.boundary_thick,
             opening_thick=body.opening_thick,
-            symbol_probability=body.symbol_probability,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

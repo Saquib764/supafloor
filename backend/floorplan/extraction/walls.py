@@ -224,6 +224,21 @@ def _extract_walls(
     return walls
 
 
+def extract_walls(
+    rooms: list[dict[str, Any]],
+    *,
+    doors: list[dict[str, Any]] | None = None,
+    windows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Build wall segments from room polygons and openings."""
+    room_polygons = [
+        [(float(point["x"]), float(point["y"])) for point in room.get("polygon") or []]
+        for room in rooms
+    ]
+    openings = {"doors": list(doors or []), "windows": list(windows or [])}
+    return _extract_walls(room_polygons, openings)
+
+
 def _plan_id(document: dict[str, Any], source: Path | None = None) -> str:
     summary = document.get("summary") or {}
     plan_id = summary.get("id")
@@ -309,6 +324,10 @@ def render_extraction_png(
         symbols=list(extracted.get("symbols") or []),
         pillars=list(extracted.get("pillars") or []),
         wall_rects=list(extracted.get("wall_rects") or []),
+        walls=list(extracted.get("walls") or []),
+        wall_render_mode=extracted.get("wall_render_mode"),
+        wall_hatch=extracted.get("wall_hatch"),
+        wall_centerline=bool(extracted.get("wall_centerline")),
         image_gray=bool(extracted.get("image_gray")),
         image_grain=bool(extracted.get("image_grain")),
         size=_CANVAS_SIZE,

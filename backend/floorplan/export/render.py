@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import io
 import random
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -17,19 +16,31 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.axes import Axes
-from shapely.geometry import Polygon
-from shapely.ops import unary_union
 
-from export.draw import draw_door, draw_pillar, draw_polygon, draw_window
+from export.draw import (
+    draw_door,
+    draw_pillar_outline,
+    draw_pillar_textured,
+    draw_room_interior_textured,
+    draw_wall_rect_outline,
+    draw_wall_centerline,
+    draw_wall_strip_outline,
+    draw_wall_textured,
+    extend_wall_endpoints,
+    draw_window,
+)
 from export.symbols import draw_planned_symbol
 from schemas.models import FloorPlan
 
 Coord = tuple[float, float]
 
+_WALL_JUNCTION_TOL = 0.5
+
 DEFAULT_ROOM_OUTLINE_THICK = 4.0
 DEFAULT_BOUNDARY_THICK = 8.0
 DEFAULT_OPENING_THICK = 12.0
 DEFAULT_LABEL_FONT_SIZE = 16.0
+DEFAULT_WALL_CENTERLINE_THICK = 1.0
 BLACKNESS_MIN = 0.7
 BLACKNESS_MAX = 1.0
 GRAY_BLACKNESS_MIN = 0.55
@@ -55,13 +66,14 @@ def _apply_image_grain(png_bytes: bytes, rng: random.Random) -> bytes:
 
 @dataclass
 class _RoomPixel:
-    slug: str
     polygon: list[Coord]
     display: str
     label_x: float | None = None
     label_y: float | None = None
     font_size: float | None = None
     is_label_disabled: bool = False
+    is_interior_textured: bool = False
+    interior_hatch: str | None = None
 
 
 @dataclass
@@ -83,7 +95,10 @@ class _PixelGeom:
     symbols: list[dict[str, Any]] = field(default_factory=list)
     pillars: list[dict[str, Any]] = field(default_factory=list)
     wall_rects: list[dict[str, Any]] = field(default_factory=list)
-    plan_id: str = "export"
+    walls: list[dict[str, Any]] = field(default_factory=list)
+    wall_render_mode: int | None = None
+    wall_hatch: str | None = None
+    wall_centerline: bool = False
 
 
 def _open_ring(polygon: list[Coord]) -> list[Coord]:
@@ -92,9 +107,8 @@ def _open_ring(polygon: list[Coord]) -> list[Coord]:
     return list(polygon)
 
 
-def _slug_name(name: str, index: int) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
-    return slug or f"room_{index + 1}"
+def _point_dict(x: float, y: float) -> dict[str, float]:
+    return {"x": float(x), "y": float(y)}
 
 
 def _label_placement(
@@ -135,15 +149,46 @@ def _parse_door_item(item: Any) -> _DoorPixel | None:
     return None
 
 
+def _rooms_openings_from_plan(
+    plan: FloorPlan,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    rooms = [
+        {
+            "name": room.name,
+            "polygon": [_point_dict(x, y) for x, y in room.coords()],
+        }
+        for room in plan.rooms
+    ]
+    doors = [
+        {
+            "start": _point_dict(door.start.x, door.start.y),
+            "end": _point_dict(door.end.x, door.end.y),
+        }
+        for door in plan.doors
+    ]
+    windows = [
+        {
+            "start": _point_dict(window.start.x, window.start.y),
+            "end": _point_dict(window.end.x, window.end.y),
+        }
+        for window in plan.windows
+    ]
+    return rooms, doors, windows
+
+
 def _geom_from_rooms(
     rooms: list[dict[str, Any]],
     size: int,
     *,
     doors: list[Any] | None = None,
-    windows: list[tuple[Coord, Coord]] | None = None,
+    windows: list[Any] | None = None,
     symbols: list[dict[str, Any]] | None = None,
     pillars: list[dict[str, Any]] | None = None,
     wall_rects: list[dict[str, Any]] | None = None,
+    walls: list[dict[str, Any]] | None = None,
+    wall_render_mode: int | None = None,
+    wall_hatch: str | None = None,
+    wall_centerline: bool = False,
 ) -> _PixelGeom:
     geom = _PixelGeom(size=size)
     for i, raw in enumerate(rooms):
@@ -154,65 +199,68 @@ def _geom_from_rooms(
         label_x, label_y, font_size, is_label_disabled = _label_placement(raw.get("label"))
         geom.rooms.append(
             _RoomPixel(
-                slug=_slug_name(name, i),
                 polygon=polygon,
                 display=name,
                 label_x=label_x,
                 label_y=label_y,
                 font_size=font_size,
                 is_label_disabled=is_label_disabled,
+                is_interior_textured=bool(raw.get("is_interior_textured")),
+                interior_hatch=raw.get("interior_hatch"),
             )
         )
     for item in doors or []:
         door = _parse_door_item(item)
         if door is not None:
             geom.doors.append(door)
-    geom.windows = list(windows or [])
+    parsed_windows: list[tuple[Coord, Coord]] = []
+    for item in windows or []:
+        if isinstance(item, dict):
+            start = item.get("start") or {}
+            end = item.get("end") or {}
+            try:
+                parsed_windows.append(
+                    ((float(start["x"]), float(start["y"])), (float(end["x"]), float(end["y"])))
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+        elif isinstance(item, (tuple, list)) and len(item) >= 2:
+            parsed_windows.append((item[0], item[1]))
+    geom.windows = parsed_windows
     geom.symbols = list(symbols or [])
     geom.pillars = list(pillars or [])
     geom.wall_rects = list(wall_rects or [])
+    geom.walls = list(walls or [])
+    geom.wall_render_mode = wall_render_mode
+    geom.wall_hatch = wall_hatch
+    geom.wall_centerline = wall_centerline
     return geom
 
 
-def _geom_from_plan(plan: FloorPlan, size: int) -> _PixelGeom:
-    geom = _PixelGeom(size=size, plan_id=plan.id)
-    for room in plan.rooms:
-        label = room.metadata.get("label")
-        display = label.strip() if isinstance(label, str) and label.strip() else room.name.replace("_", " ")
-        geom.rooms.append(_RoomPixel(slug=room.name, polygon=list(room.coords()), display=display))
-    for door in plan.doors:
-        geom.doors.append(_DoorPixel(start=(door.start.x, door.start.y), end=(door.end.x, door.end.y)))
-    for window in plan.windows:
-        geom.windows.append(((window.start.x, window.start.y), (window.end.x, window.end.y)))
-    return geom
+def _ensure_walls(
+    geom: _PixelGeom,
+    rooms: list[dict[str, Any]],
+    doors: list[Any] | None,
+    windows: list[Any] | None,
+    rng: random.Random | None,
+) -> None:
+    from extraction.transform import assign_wall_rendering
+    from extraction.walls import extract_walls
 
-
-def _resolve_geom(
-    plan: FloorPlan | None,
-    rooms: list[dict[str, Any]] | None,
-    size: int,
-    *,
-    doors: list[Any] | None = None,
-    windows: list[tuple[Coord, Coord]] | None = None,
-    symbols: list[dict[str, Any]] | None = None,
-    pillars: list[dict[str, Any]] | None = None,
-    wall_rects: list[dict[str, Any]] | None = None,
-) -> _PixelGeom:
-    if rooms:
-        geom = _geom_from_rooms(
-            rooms,
-            size,
-            doors=doors,
-            windows=windows,
-            symbols=symbols,
-            pillars=pillars,
-            wall_rects=wall_rects,
+    door_dicts = [item for item in (doors or []) if isinstance(item, dict)]
+    window_dicts = [item for item in (windows or []) if isinstance(item, dict)]
+    if not geom.walls:
+        geom.walls = extract_walls(rooms, doors=door_dicts, windows=window_dicts)
+    if geom.wall_render_mode is None:
+        source_rng = rng or random.Random()
+        geom.walls, render_meta, geom.pillars = assign_wall_rendering(
+            geom.walls,
+            source_rng,
+            pillars=geom.pillars,
         )
-        geom.plan_id = "rooms"
-        return geom
-    if plan is not None:
-        return _geom_from_plan(plan, size)
-    raise ValueError("Provide either plan or rooms")
+        geom.wall_render_mode = render_meta["wall_render_mode"]
+        geom.wall_hatch = render_meta["wall_hatch"]
+        geom.wall_centerline = bool(render_meta["wall_centerline"])
 
 
 def _create_canvas(size: int) -> tuple[Any, Axes]:
@@ -227,75 +275,6 @@ def _create_canvas(size: int) -> tuple[Any, Axes]:
     return fig, ax
 
 
-def _room_polygons(geom: _PixelGeom) -> list[Polygon]:
-    polys: list[Polygon] = []
-    for room in geom.rooms:
-        ring = _open_ring(room.polygon)
-        if len(ring) >= 3:
-            polys.append(Polygon(ring))
-    return polys
-
-
-def _union_boundary_rings(geom: _PixelGeom) -> list[list[Coord]]:
-    polys = _room_polygons(geom)
-    if not polys:
-        return []
-    merged = unary_union(polys)
-    if merged.is_empty:
-        return []
-
-    if merged.geom_type == "Polygon":
-        geoms = [merged]
-    elif merged.geom_type == "MultiPolygon":
-        geoms = list(merged.geoms)
-    else:
-        return []
-
-    rings: list[list[Coord]] = []
-    for poly in geoms:
-        if poly.is_empty:
-            continue
-        rings.append([(float(x), float(y)) for x, y in poly.exterior.coords])
-    return rings
-
-
-def _draw_room_polygons(
-    ax: Axes,
-    geom: _PixelGeom,
-    *,
-    room_outline_thick: float,
-    ink: tuple[float, float, float],
-) -> None:
-    for room in geom.rooms:
-        draw_polygon(
-            ax,
-            room.polygon,
-            facecolor="none",
-            edgecolor=ink,
-            linewidth=room_outline_thick,
-        )
-
-
-def _draw_union_boundary(
-    ax: Axes,
-    geom: _PixelGeom,
-    *,
-    boundary_thick: float,
-    ink: tuple[float, float, float],
-) -> int:
-    count = 0
-    for ring in _union_boundary_rings(geom):
-        draw_polygon(
-            ax,
-            ring,
-            facecolor="none",
-            edgecolor=ink,
-            linewidth=boundary_thick,
-        )
-        count += 1
-    return count
-
-
 def _polygon_centroid(polygon: list[Coord]) -> Coord:
     ring = _open_ring(polygon)
     if not ring:
@@ -303,6 +282,120 @@ def _polygon_centroid(polygon: list[Coord]) -> Coord:
     xs = [p[0] for p in ring]
     ys = [p[1] for p in ring]
     return (sum(xs) / len(xs), sum(ys) / len(ys))
+
+
+def _wall_endpoint(wall: dict[str, Any], key: str) -> Coord | None:
+    point = wall.get(key) or {}
+    try:
+        return (float(point["x"]), float(point["y"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _shared_wall_endpoints(walls: list[dict[str, Any]]) -> set[tuple[int, str]]:
+    refs: list[tuple[int, str, Coord]] = []
+    for index, wall in enumerate(walls):
+        for key in ("start", "end"):
+            point = _wall_endpoint(wall, key)
+            if point is not None:
+                refs.append((index, key, point))
+
+    tol2 = _WALL_JUNCTION_TOL * _WALL_JUNCTION_TOL
+    shared: set[tuple[int, str]] = set()
+    for a in range(len(refs)):
+        index_a, key_a, (ax, ay) = refs[a]
+        for b in range(a + 1, len(refs)):
+            index_b, key_b, (bx, by) = refs[b]
+            dx, dy = ax - bx, ay - by
+            if dx * dx + dy * dy <= tol2:
+                shared.add((index_a, key_a))
+                shared.add((index_b, key_b))
+    return shared
+
+
+def _draw_room_interiors(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    ink: tuple[float, float, float],
+) -> int:
+    count = 0
+    for room in geom.rooms:
+        if not room.is_interior_textured or not room.interior_hatch:
+            continue
+        draw_room_interior_textured(
+            ax,
+            room.polygon,
+            ink=ink,
+            hatch=room.interior_hatch,
+        )
+        count += 1
+    return count
+
+
+def _draw_walls(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    ink: tuple[float, float, float],
+    room_outline_thick: float,
+    boundary_thick: float,
+) -> int:
+    shared = _shared_wall_endpoints(geom.walls)
+    count = 0
+    for index, wall in enumerate(geom.walls):
+        start = _wall_endpoint(wall, "start")
+        end = _wall_endpoint(wall, "end")
+        if start is None or end is None:
+            continue
+        thickness = boundary_thick if wall.get("is_exterior") else room_outline_thick
+        draw_start, draw_end = extend_wall_endpoints(
+            start,
+            end,
+            thickness=thickness,
+            extend_start=(index, "start") in shared,
+            extend_end=(index, "end") in shared,
+        )
+        if wall.get("is_textured"):
+            draw_wall_textured(
+                ax,
+                draw_start,
+                draw_end,
+                thickness=thickness,
+                ink=ink,
+                wall_hatch=geom.wall_hatch,
+            )
+        draw_wall_strip_outline(ax, draw_start, draw_end, thickness=thickness, ink=ink)
+        if geom.wall_centerline:
+            draw_wall_centerline(
+                ax,
+                start,
+                end,
+                ink=ink,
+                linewidth=DEFAULT_WALL_CENTERLINE_THICK,
+            )
+        count += 1
+    return count
+
+
+def _draw_wall_rects(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    ink: tuple[float, float, float],
+) -> int:
+    count = 0
+    for raw in geom.wall_rects:
+        polygon = raw.get("polygon") or []
+        if len(polygon) < 3:
+            continue
+        try:
+            ring = [(float(point["x"]), float(point["y"])) for point in polygon]
+        except (KeyError, TypeError, ValueError):
+            continue
+        draw_wall_rect_outline(ax, ring, ink=ink)
+        count += 1
+    return count
 
 
 def _draw_pillars(
@@ -320,24 +413,18 @@ def _draw_pillars(
             rotation_deg = float(raw.get("rotation_deg") or 0.0)
         except (KeyError, TypeError, ValueError):
             continue
-        draw_pillar(ax, cx, cy, width, height, rotation_deg, facecolor=ink, edgecolor=ink)
-
-
-def _draw_wall_rects(
-    ax: Axes,
-    geom: _PixelGeom,
-    *,
-    ink: tuple[float, float, float],
-) -> None:
-    for raw in geom.wall_rects:
-        polygon = raw.get("polygon") or []
-        if len(polygon) < 3:
-            continue
-        try:
-            ring = [(float(point["x"]), float(point["y"])) for point in polygon]
-        except (KeyError, TypeError, ValueError):
-            continue
-        draw_polygon(ax, ring, facecolor="none", edgecolor=ink, linewidth=1.0)
+        if raw.get("is_textured"):
+            draw_pillar_textured(
+                ax,
+                cx,
+                cy,
+                width,
+                height,
+                rotation_deg,
+                ink=ink,
+                wall_hatch=geom.wall_hatch,
+            )
+        draw_pillar_outline(ax, cx, cy, width, height, rotation_deg, ink=ink)
 
 
 def _draw_room_symbols(
@@ -414,9 +501,11 @@ def _render_geom(
     rng: random.Random | None = None,
     image_gray: bool = False,
     image_grain: bool = False,
-) -> tuple[bytes, int, int, int, int, int, int, float]:
+) -> tuple[bytes, int, int, int, int, int, int, int, float]:
     if not geom.rooms:
         raise ValueError("Floor plan has no rooms")
+    if not geom.walls:
+        raise ValueError("Floor plan has no walls")
 
     source_rng = rng or random.Random()
     if image_gray:
@@ -426,12 +515,18 @@ def _render_geom(
     ink = _ink_color(blackness)
 
     fig, ax = _create_canvas(geom.size)
-    _draw_room_polygons(ax, geom, room_outline_thick=room_outline_thick, ink=ink)
-    boundary_count = _draw_union_boundary(ax, geom, boundary_thick=boundary_thick, ink=ink)
+    _draw_room_interiors(ax, geom, ink=ink)
+    wall_count = _draw_walls(
+        ax,
+        geom,
+        ink=ink,
+        room_outline_thick=room_outline_thick,
+        boundary_thick=boundary_thick,
+    )
     door_count = _draw_doors(ax, geom, opening_thick=opening_thick, ink=ink)
     window_count = _draw_windows(ax, geom, opening_thick=boundary_thick)
+    wall_rect_count = _draw_wall_rects(ax, geom, ink=ink)
     _draw_pillars(ax, geom, ink=ink)
-    _draw_wall_rects(ax, geom, ink=ink)
     symbol_count = _draw_room_symbols(ax, geom, blackness=blackness)
     label_count = _draw_room_labels(ax, geom, ink=ink)
 
@@ -443,12 +538,13 @@ def _render_geom(
         png = _apply_image_grain(png, source_rng)
     return (
         png,
-        boundary_count,
+        wall_count,
         len(geom.rooms),
         label_count,
         door_count,
         window_count,
         symbol_count,
+        wall_rect_count,
         blackness,
     )
 
@@ -458,41 +554,56 @@ def export_realistic(
     plan: FloorPlan | None = None,
     rooms: list[dict[str, Any]] | None = None,
     doors: list[Any] | None = None,
-    windows: list[tuple[Coord, Coord]] | None = None,
+    windows: list[Any] | None = None,
     symbols: list[dict[str, Any]] | None = None,
     pillars: list[dict[str, Any]] | None = None,
     wall_rects: list[dict[str, Any]] | None = None,
-    canvas_size: int = 1024,
+    walls: list[dict[str, Any]] | None = None,
+    wall_render_mode: int | None = None,
+    wall_hatch: str | None = None,
+    wall_centerline: bool = False,
     size: int = 1024,
     room_outline_thick: float = DEFAULT_ROOM_OUTLINE_THICK,
     boundary_thick: float = DEFAULT_BOUNDARY_THICK,
     opening_thick: float = DEFAULT_OPENING_THICK,
-    symbol_probability: float = 0.0,
     rng: random.Random | None = None,
     image_gray: bool = False,
     image_grain: bool = False,
 ) -> dict[str, Any]:
-    """Render room outlines, boundary, doors, windows, labels, and planned symbols; return base64 + metadata."""
-    _ = canvas_size
-    _ = symbol_probability
-    geom = _resolve_geom(
-        plan,
-        rooms,
+    """Render walls, openings, labels, and planned symbols; return base64 + metadata."""
+    if plan is not None:
+        rooms_list, doors_list, windows_list = _rooms_openings_from_plan(plan)
+    else:
+        if not rooms:
+            raise ValueError("Provide either plan or rooms")
+        rooms_list = list(rooms)
+        doors_list = list(doors or [])
+        windows_list = list(windows or [])
+
+    geom = _geom_from_rooms(
+        rooms_list,
         size,
-        doors=doors,
-        windows=windows,
+        doors=doors_list,
+        windows=windows_list,
         symbols=symbols,
         pillars=pillars,
         wall_rects=wall_rects,
+        walls=walls,
+        wall_render_mode=wall_render_mode,
+        wall_hatch=wall_hatch,
+        wall_centerline=wall_centerline,
     )
+    _ensure_walls(geom, rooms_list, doors_list, windows_list, rng)
+
     (
         png,
-        boundary_count,
+        wall_count,
         room_count,
         label_count,
         door_count,
         window_count,
         symbol_count,
+        wall_rect_count,
         blackness,
     ) = _render_geom(
         geom,
@@ -503,24 +614,30 @@ def export_realistic(
         image_gray=image_gray,
         image_grain=image_grain,
     )
-    source = "rooms" if rooms else "floor_plan"
     return {
         "png_b64": base64.b64encode(png).decode("ascii"),
         "size": size,
         "metadata": {
-            "boundary_count": boundary_count,
+            "wall_count": wall_count,
             "room_count": room_count,
             "label_count": label_count,
             "door_count": door_count,
             "window_count": window_count,
-            "coord_source": source,
+            "coord_source": "floor_plan" if plan is not None else "rooms",
             "canvas_size": size,
             "room_outline_thick": room_outline_thick,
             "boundary_thick": boundary_thick,
             "opening_thick": opening_thick,
             "symbol_count": symbol_count,
+            "wall_rect_count": wall_rect_count,
             "blackness": round(blackness, 4),
             "image_gray": image_gray,
             "image_grain": image_grain,
+            "wall_render_mode": geom.wall_render_mode,
+            "wall_hatch": geom.wall_hatch,
+            "wall_centerline": geom.wall_centerline,
+            "textured_room_count": sum(
+                1 for room in geom.rooms if room.is_interior_textured
+            ),
         },
     }

@@ -6,7 +6,7 @@ import math
 import random
 from typing import Any
 
-from shapely.geometry import Point, Polygon as ShapelyPolygon
+from extraction.wall_rects import rotate_wall_rect, sample_wall_rects, transform_wall_rect
 
 Coord = tuple[float, float]
 
@@ -14,7 +14,6 @@ _CANVAS_SIZE = 1024
 _SCALE_MIN = 600.0
 _SCALE_MAX = 900.0
 _INCHES_PER_FOOT = 12.0
-_DOOR_WALL_END_MARGIN_IN = 3.0
 _DOOR_EDGE_MATCH_TOL = 1.0
 _WINDOW_LENGTH_IN = 36.0
 _WINDOW_MIN_LENGTH_IN = 12.0
@@ -27,9 +26,6 @@ _DOUBLE_DOOR_PROBABILITY = 0.25
 _SINGLE_DOOR_ARC_ANGLES = (90.0, 45.0, 30.0, 20.0)
 _DOUBLE_DOOR_ARC_MIN_DEG = 10.0
 _DOUBLE_DOOR_ARC_MAX_DEG = 30.0
-_CORNER_MOVE_PROBABILITY = 0.05
-_CORNER_MOVE_RANGE = 50.0
-_CORNER_MATCH_TOL = 0.5
 _SYMBOL_WALL_THICKNESS = 4.0
 _LABEL_FONT_BASE = 16.0
 _LABEL_FONT_SCALE_MIN = 0.82
@@ -40,17 +36,14 @@ _PILLAR_SIDE_MIN_IN = 24.0
 _PILLAR_SIDE_MAX_IN = 60.0
 _PILLAR_ROTATION_MIN_DEG = 1.0
 _PILLAR_ROTATION_MAX_DEG = 10.0
-_WALL_RECT_ROOM_PROBABILITY = 0.35
-_WALL_RECT_MAX_PER_ROOM = 2
-_WALL_RECT_MIN_WALL_LEN_IN = 36.0
-_WALL_RECT_EDGE_MARGIN_IN = 6.0
-_WALL_RECT_MIN_LENGTH_IN = 12.0
-_WALL_RECT_LENGTH_FRAC_MIN = 0.35
-_WALL_RECT_LENGTH_FRAC_MAX = 0.75
-_WALL_RECT_WIDTH_FRAC_MIN = 0.1
-_WALL_RECT_WIDTH_FRAC_MAX = 0.7
+_WALL_CENTERLINE_PROBABILITY = 0.5
+_WALL_TEXTURE_CUTOFF_MIN = 0.5
+_WALL_TEXTURE_CUTOFF_MAX = 1.0
+_WALL_HATCHES: tuple[str | None, ...] = (None, ".", "..", "...", "//", "||", "\\")
 _IMAGE_GRAY_PROBABILITY = 0.1
 _IMAGE_GRAIN_PROBABILITY = 0.1
+_ROOM_INTERIOR_TEXTURE_PROBABILITY = 0.1
+_ROOM_INTERIOR_HATCHES = ("...", "/", "..", "|", "\\")
 
 TRANSFORM_STATS_KEY = "transform_stats"
 
@@ -208,71 +201,6 @@ def _rebuild_walls(extracted: dict[str, Any]) -> dict[str, Any]:
     ]
     openings = extracted.get("openings") or {"doors": [], "windows": []}
     return {**extracted, "walls": _extract_walls(room_polygons, openings)}
-
-
-def _enlarge_random_door(extracted: dict[str, Any], rng: random.Random) -> dict[str, Any]:
-    """Pick one door and stretch it to leave 3\" clearance at each wall end."""
-    openings = extracted.get("openings") or {}
-    doors = list(openings.get("doors") or [])
-    if not doors:
-        return extracted
-
-    edges = _room_edges(extracted)
-    other_openings = [
-        (_coord(item["start"]), _coord(item["end"]))
-        for group in ("doors", "windows")
-        for item in openings.get(group) or []
-    ]
-
-    candidates: list[tuple[int, tuple[Coord, Coord], float]] = []
-    for index, door in enumerate(doors):
-        start, end = _coord(door["start"]), _coord(door["end"])
-        host = _host_edge_for_opening(start, end, edges)
-        if host is None:
-            continue
-        a, b = host
-        length = _segment_length(a, b)
-        if length <= 2.0 * _DOOR_WALL_END_MARGIN_IN + 1e-6:
-            continue
-        others = 0
-        for oi, (os, oe) in enumerate(other_openings):
-            # skip this door itself: doors come first in other_openings
-            if oi == index:
-                continue
-            if _opening_on_edge(os, oe, a, b):
-                others += 1
-        if others:
-            continue
-        candidates.append((index, host, length))
-
-    if not candidates:
-        return extracted
-
-    index, (a, b), length = rng.choice(candidates)
-    door = doors[index]
-    start, end = _coord(door["start"]), _coord(door["end"])
-    margin_t = _DOOR_WALL_END_MARGIN_IN / length
-    near = _lerp(a, b, margin_t)
-    far = _lerp(a, b, 1.0 - margin_t)
-    if _project_t(start, a, b) <= _project_t(end, a, b):
-        new_start, new_end = near, far
-    else:
-        new_start, new_end = far, near
-
-    updated = dict(door)
-    updated["start"] = {"x": new_start[0], "y": new_start[1]}
-    updated["end"] = {"x": new_end[0], "y": new_end[1]}
-    doors[index] = updated
-
-    extracted = {
-        **extracted,
-        "openings": {
-            **openings,
-            "doors": doors,
-            "windows": list(openings.get("windows") or []),
-        },
-    }
-    return _rebuild_walls(extracted)
 
 
 def _same_point(a: Coord, b: Coord, *, tol: float = _DOOR_EDGE_MATCH_TOL) -> bool:
@@ -512,61 +440,6 @@ def _disable_random_door_arcs(extracted: dict[str, Any], rng: random.Random) -> 
     }
 
 
-def _coords_close(a: Coord, b: Coord) -> bool:
-    return math.hypot(a[0] - b[0], a[1] - b[1]) <= _CORNER_MATCH_TOL
-
-
-def _apply_corner_move(ring: list[Coord], old: Coord, new: Coord) -> list[Coord]:
-    if len(ring) < 3:
-        return ring
-    updated: list[Coord] = []
-    for i, a in enumerate(ring):
-        b = ring[(i + 1) % len(ring)]
-        updated.append(new if _coords_close(a, old) else a)
-        if _coords_close(a, old) or _coords_close(b, old):
-            continue
-        if _dist_to_segment(old, a, b) > _CORNER_MATCH_TOL:
-            continue
-        t = _project_t(old, a, b)
-        if 0.0 < t < 1.0:
-            updated.append(new)
-    return updated
-
-
-def _jitter_room_corners(extracted: dict[str, Any], rng: random.Random) -> dict[str, Any]:
-    """With p=0.05 per unique vertex, offset it by up to 50\" and insert on mid-edge walls."""
-    rooms = list(extracted.get("rooms") or [])
-    rings = [_open_polygon_ring(room.get("polygon") or []) for room in rooms]
-    if not any(len(ring) >= 3 for ring in rings):
-        return extracted
-
-    seen: set[tuple[float, float]] = set()
-    corners: list[Coord] = []
-    for ring in rings:
-        for point in ring:
-            key = (round(point[0], 3), round(point[1], 3))
-            if key in seen:
-                continue
-            seen.add(key)
-            corners.append(point)
-
-    selected = [point for point in corners if rng.random() < _CORNER_MOVE_PROBABILITY]
-    if not selected:
-        return extracted
-
-    for old in selected:
-        dx = rng.uniform(-_CORNER_MOVE_RANGE, _CORNER_MOVE_RANGE)
-        dy = rng.uniform(-_CORNER_MOVE_RANGE, _CORNER_MOVE_RANGE)
-        new = (old[0] + dx, old[1] + dy)
-        rings = [_apply_corner_move(ring, old, new) for ring in rings]
-
-    updated_rooms = [
-        {**room, "polygon": [{"x": x, "y": y} for x, y in ring]}
-        for room, ring in zip(rooms, rings)
-    ]
-    return _rebuild_walls({**extracted, "rooms": updated_rooms})
-
-
 def _rotate_point(point: dict[str, Any], cos_t: float, sin_t: float) -> dict[str, float]:
     x, y = float(point["x"]), float(point["y"])
     return {"x": x * cos_t - y * sin_t, "y": x * sin_t + y * cos_t}
@@ -594,14 +467,6 @@ def _rotate_pillar(raw: dict[str, Any], cos_t: float, sin_t: float, rotation_deg
     updated["x"] = x * cos_t - y * sin_t
     updated["y"] = x * sin_t + y * cos_t
     updated["rotation_deg"] = float(raw.get("rotation_deg") or 0.0) + rotation_deg
-    return updated
-
-
-def _rotate_wall_rect(raw: dict[str, Any], cos_t: float, sin_t: float) -> dict[str, Any]:
-    updated = dict(raw)
-    updated["polygon"] = [
-        _rotate_point(point, cos_t, sin_t) for point in raw.get("polygon") or []
-    ]
     return updated
 
 
@@ -645,7 +510,7 @@ def _rotate_extraction(extracted: dict[str, Any], theta: float) -> dict[str, Any
             for pillar in extracted.get("pillars") or []
         ],
         "wall_rects": [
-            _rotate_wall_rect(wall_rect, cos_t, sin_t)
+            rotate_wall_rect(wall_rect, cos_t, sin_t)
             for wall_rect in extracted.get("wall_rects") or []
         ],
     }
@@ -672,6 +537,9 @@ def _iter_coords(extracted: dict[str, Any]) -> list[Coord]:
             for key in ("start", "end"):
                 point = item[key]
                 coords.append((float(point["x"]), float(point["y"])))
+    for wall_rect in extracted.get("wall_rects") or []:
+        for point in wall_rect.get("polygon") or []:
+            coords.append((float(point["x"]), float(point["y"])))
     return coords
 
 
@@ -688,6 +556,15 @@ def _polygon_centroid(polygon: list[dict[str, Any]]) -> Coord:
     if not ring:
         return (0.0, 0.0)
     return (sum(x for x, _ in ring) / len(ring), sum(y for _, y in ring) / len(ring))
+
+
+def _room_interior_texture(rng: random.Random) -> dict[str, Any]:
+    if rng.random() >= _ROOM_INTERIOR_TEXTURE_PROBABILITY:
+        return {"is_interior_textured": False}
+    return {
+        "is_interior_textured": True,
+        "interior_hatch": rng.choice(_ROOM_INTERIOR_HATCHES),
+    }
 
 
 def _room_label(
@@ -724,15 +601,6 @@ def _transform_symbol(raw: dict[str, Any], mapper, scale: float) -> dict[str, An
     updated["y"] = math.ceil(y)
     updated["width"] = round(float(raw["width"]) * scale, 2)
     updated["height"] = round(float(raw["height"]) * scale, 2)
-    return updated
-
-
-def _transform_wall_rect(raw: dict[str, Any], mapper) -> dict[str, Any]:
-    updated = dict(raw)
-    updated["polygon"] = [
-        _round_point(*mapper(float(point["x"]), float(point["y"])))
-        for point in raw.get("polygon") or []
-    ]
     return updated
 
 
@@ -797,93 +665,61 @@ def _sample_pillars(extracted: dict[str, Any], rng: random.Random) -> list[dict[
     return pillars
 
 
-def _inward_normal(a: Coord, b: Coord, room_poly: ShapelyPolygon) -> Coord | None:
-    dx, dy = b[0] - a[0], b[1] - a[1]
-    length = math.hypot(dx, dy)
-    if length < 1e-9:
-        return None
-    mid = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
-    for nx, ny in ((-dy / length, dx / length), (dy / length, -dx / length)):
-        if room_poly.contains(Point(mid[0] + nx, mid[1] + ny)):
-            return (nx, ny)
-    return None
+def _texture_flags(n: int, mode: int, rng: random.Random) -> tuple[list[bool], float]:
+    if mode == 1:
+        return [True] * n, 1.0
+    if mode == 3:
+        return [False] * n, 0.0
+    cutoff = rng.uniform(_WALL_TEXTURE_CUTOFF_MIN, _WALL_TEXTURE_CUTOFF_MAX)
+    k = round(n * cutoff)
+    flags = [True] * k + [False] * (n - k)
+    rng.shuffle(flags)
+    return flags, cutoff
 
 
-def _wall_rect_polygon(
-    a: Coord,
-    b: Coord,
-    room_poly: ShapelyPolygon,
+def _apply_texture_flags(
+    items: list[dict[str, Any]],
+    flags: list[bool],
+) -> tuple[list[dict[str, Any]], int]:
+    updated: list[dict[str, Any]] = []
+    textured_count = 0
+    for item, is_textured in zip(items, flags):
+        copy = dict(item)
+        copy["is_textured"] = is_textured
+        updated.append(copy)
+        if is_textured:
+            textured_count += 1
+    return updated, textured_count
+
+
+def assign_wall_rendering(
+    walls: list[dict[str, Any]],
     rng: random.Random,
-) -> list[dict[str, float]] | None:
-    dx, dy = b[0] - a[0], b[1] - a[1]
-    wall_len = math.hypot(dx, dy)
-    if wall_len < _WALL_RECT_MIN_WALL_LEN_IN:
-        return None
+    *,
+    pillars: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
+    # Mode 1: texture on all; 2: mixed; 3: texture on none. Outline is always drawn at render time.
+    mode = rng.choice([1, 2, 3])
+    wall_hatch = rng.choice(_WALL_HATCHES)
+    wall_centerline = rng.random() < _WALL_CENTERLINE_PROBABILITY
 
-    inward = _inward_normal(a, b, room_poly)
-    if inward is None:
-        return None
+    wall_flags, cutoff = _texture_flags(len(walls), mode, rng)
+    updated_walls, textured_wall_count = _apply_texture_flags(walls, wall_flags)
 
-    ux, uy = dx / wall_len, dy / wall_len
-    nx, ny = inward
-    usable = wall_len - 2.0 * _WALL_RECT_EDGE_MARGIN_IN
-    if usable < _WALL_RECT_MIN_LENGTH_IN:
-        return None
+    pillar_list = list(pillars or [])
+    pillar_flags, _ = _texture_flags(len(pillar_list), mode, rng)
+    updated_pillars, textured_pillar_count = _apply_texture_flags(pillar_list, pillar_flags)
 
-    rect_len = min(
-        rng.uniform(
-            usable * _WALL_RECT_LENGTH_FRAC_MIN,
-            usable * _WALL_RECT_LENGTH_FRAC_MAX,
-        ),
-        usable,
-    )
-    start_t = rng.uniform(
-        _WALL_RECT_EDGE_MARGIN_IN,
-        wall_len - _WALL_RECT_EDGE_MARGIN_IN - rect_len,
-    )
-    depth = rect_len * rng.uniform(_WALL_RECT_WIDTH_FRAC_MIN, _WALL_RECT_WIDTH_FRAC_MAX)
-
-    p0 = (a[0] + ux * start_t, a[1] + uy * start_t)
-    p1 = (a[0] + ux * (start_t + rect_len), a[1] + uy * (start_t + rect_len))
-    p2 = (p1[0] + nx * depth, p1[1] + ny * depth)
-    p3 = (p0[0] + nx * depth, p0[1] + ny * depth)
-
-    rect_poly = ShapelyPolygon([p0, p1, p2, p3])
-    if rect_poly.is_empty or not rect_poly.is_valid:
-        return None
-    diff = rect_poly.difference(room_poly)
-    if not diff.is_empty and diff.area > 1e-6:
-        return None
-
-    return [{"x": x, "y": y} for x, y in (p0, p1, p2, p3)]
-
-
-def _sample_wall_rects(extracted: dict[str, Any], rng: random.Random) -> list[dict[str, Any]]:
-    wall_rects: list[dict[str, Any]] = []
-    for room in extracted.get("rooms") or []:
-        if rng.random() >= _WALL_RECT_ROOM_PROBABILITY:
-            continue
-        ring = _open_polygon_ring(room.get("polygon") or [])
-        if len(ring) < 3:
-            continue
-        room_poly = ShapelyPolygon(ring)
-        if room_poly.is_empty or not room_poly.is_valid:
-            continue
-
-        edge_indices = list(range(len(ring)))
-        rng.shuffle(edge_indices)
-        added = 0
-        for index in edge_indices:
-            if added >= _WALL_RECT_MAX_PER_ROOM:
-                break
-            a = ring[index]
-            b = ring[(index + 1) % len(ring)]
-            polygon = _wall_rect_polygon(a, b, room_poly, rng)
-            if polygon is None:
-                continue
-            wall_rects.append({"polygon": polygon})
-            added += 1
-    return wall_rects
+    return updated_walls, {
+        "wall_render_mode": mode,
+        "wall_hatch": wall_hatch,
+        "wall_texture_cutoff": round(cutoff, 4),
+        "wall_centerline": wall_centerline,
+        "textured_wall_count": textured_wall_count,
+        "untextured_wall_count": len(walls) - textured_wall_count,
+        "textured_pillar_count": textured_pillar_count,
+        "untextured_pillar_count": len(pillar_list) - textured_pillar_count,
+    }, updated_pillars
 
 
 def transform_extraction(
@@ -899,13 +735,15 @@ def transform_extraction(
     source_rng = rng or random.Random(str(extracted.get("id") or ""))
     image_gray = source_rng.random() < _IMAGE_GRAY_PROBABILITY
     image_grain = source_rng.random() < _IMAGE_GRAIN_PROBABILITY
+    image_flags = {
+        "image_gray": image_gray,
+        "image_grain": image_grain,
+    }
     extracted = _convert_extraction_to_inches(extracted)
-    # extracted = _enlarge_random_door(extracted, source_rng)
     extracted = _add_random_windows(extracted, source_rng)
     extracted = _widen_random_windows(extracted, source_rng)
     extracted = _assign_door_type_and_angle(extracted, source_rng)
     extracted = _disable_random_door_arcs(extracted, source_rng)
-    # extracted = _jitter_room_corners(extracted, source_rng)
     extracted = {
         **extracted,
         "symbols": _sample_symbols(
@@ -914,7 +752,7 @@ def transform_extraction(
             symbol_probability=symbol_probability,
         ),
         "pillars": _sample_pillars(extracted, source_rng),
-        "wall_rects": _sample_wall_rects(extracted, source_rng),
+        "wall_rects": sample_wall_rects(extracted, source_rng),
     }
     theta = source_rng.uniform(0.0, 2.0 * math.pi)
     is_rotated = abs(theta) > 1e-9
@@ -922,7 +760,7 @@ def transform_extraction(
     coords = _iter_coords(extracted)
     if not coords:
         return _with_transform_stats(
-            {**extracted, "image_gray": image_gray, "image_grain": image_grain},
+            {**extracted, **image_flags},
             is_rotated=is_rotated,
         )
 
@@ -932,7 +770,7 @@ def transform_extraction(
     max_dim = max(width, height)
     if max_dim < 1e-9:
         return _with_transform_stats(
-            {**extracted, "image_gray": image_gray, "image_grain": image_grain},
+            {**extracted, **image_flags},
             is_rotated=is_rotated,
         )
 
@@ -968,18 +806,25 @@ def transform_extraction(
                 "name": room["name"],
                 "polygon": polygon,
                 "label": _room_label(polygon, source_rng),
+                **_room_interior_texture(source_rng),
             }
         )
 
     openings = extracted.get("openings") or {}
+    transformed_pillars = [
+        _transform_symbol(pillar, mapper, scale)
+        for pillar in extracted.get("pillars") or []
+    ]
+    walls, wall_render, pillars = assign_wall_rendering(
+        [_transform_segment(wall, mapper) for wall in extracted.get("walls") or []],
+        source_rng,
+        pillars=transformed_pillars,
+    )
     return _with_transform_stats(
         {
             "id": extracted["id"],
             "rooms": rooms,
-            "walls": [
-                _transform_segment(wall, mapper)
-                for wall in extracted.get("walls") or []
-            ],
+            "walls": walls,
             "openings": {
                 "doors": [
                     _transform_segment(door, mapper)
@@ -994,16 +839,13 @@ def transform_extraction(
                 _transform_symbol(symbol, mapper, scale)
                 for symbol in extracted.get("symbols") or []
             ],
-            "pillars": [
-                _transform_symbol(pillar, mapper, scale)
-                for pillar in extracted.get("pillars") or []
-            ],
+            "pillars": pillars,
             "wall_rects": [
-                _transform_wall_rect(wall_rect, mapper)
+                transform_wall_rect(wall_rect, mapper, _round_point)
                 for wall_rect in extracted.get("wall_rects") or []
             ],
-            "image_gray": image_gray,
-            "image_grain": image_grain,
+            **image_flags,
+            **wall_render,
         },
         is_rotated=is_rotated,
     )
@@ -1030,8 +872,22 @@ def transform_stats(extracted: dict[str, Any], *, is_rotated: bool) -> dict[str,
         "double_doors": sum(1 for door in doors if door.get("door_type") == "double"),
         "pillars": len(extracted.get("pillars") or []),
         "wall_rects": len(extracted.get("wall_rects") or []),
+        "wall_render_mode": extracted.get("wall_render_mode"),
+        "wall_hatch": extracted.get("wall_hatch"),
+        "wall_texture_cutoff": extracted.get("wall_texture_cutoff"),
+        "wall_centerline": bool(extracted.get("wall_centerline")),
+        "textured_wall_count": int(extracted.get("textured_wall_count") or 0),
+        "untextured_wall_count": int(extracted.get("untextured_wall_count") or 0),
+        "textured_pillar_count": int(extracted.get("textured_pillar_count") or 0),
+        "untextured_pillar_count": int(extracted.get("untextured_pillar_count") or 0),
         "image_gray": bool(extracted.get("image_gray")),
         "image_grain": bool(extracted.get("image_grain")),
+        "textured_room_count": sum(
+            1 for room in rooms if room.get("is_interior_textured")
+        ),
+        "untextured_room_count": sum(
+            1 for room in rooms if not room.get("is_interior_textured")
+        ),
     }
 
 

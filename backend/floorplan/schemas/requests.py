@@ -32,12 +32,10 @@ class GenerateRequest(BaseModel):
 class RealisticExportRequest(BaseModel):
     plan: FloorPlan | None = None
     rooms: list[dict] | None = None
-    canvas_size: int = 1024
     size: int = Field(default=1024, ge=256, le=2048)
     room_outline_thick: float = Field(default=4.0, gt=0)
     boundary_thick: float = Field(default=8.0, gt=0)
     opening_thick: float = Field(default=12.0, gt=0)
-    symbol_probability: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class UpdateConfigRequest(BaseModel):

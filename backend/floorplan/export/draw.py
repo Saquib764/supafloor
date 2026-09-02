@@ -27,6 +27,7 @@ def draw_polygon(
     facecolor: str | None = "none",
     edgecolor: str = "black",
     linewidth: float = 1.5,
+    hatch: str | None = None,
 ) -> None:
     if len(polygon) < 3:
         return
@@ -40,7 +41,96 @@ def draw_polygon(
             facecolor=facecolor,
             edgecolor=edgecolor,
             linewidth=linewidth,
+            hatch=hatch,
         )
+    )
+
+
+def extend_wall_endpoints(
+    start: Coord,
+    end: Coord,
+    *,
+    thickness: float,
+    extend_start: bool,
+    extend_end: bool,
+) -> tuple[Coord, Coord]:
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    length = math.hypot(dx, dy)
+    if length < 1e-6:
+        return start, end
+    half = thickness / 2.0
+    ux, uy = dx / length, dy / length
+    sx, sy = start
+    ex, ey = end
+    if extend_start:
+        sx -= ux * half
+        sy -= uy * half
+    if extend_end:
+        ex += ux * half
+        ey += uy * half
+    return (sx, sy), (ex, ey)
+
+
+def draw_room_interior_textured(
+    ax: Axes,
+    polygon: list[Coord],
+    *,
+    ink: str | tuple[float, float, float],
+    hatch: str,
+) -> None:
+    draw_polygon(ax, polygon, facecolor="white", edgecolor=ink, linewidth=0.0, hatch=hatch)
+
+
+def draw_wall_textured(
+    ax: Axes,
+    start: Coord,
+    end: Coord,
+    *,
+    thickness: float,
+    ink: str | tuple[float, float, float],
+    wall_hatch: str | None = None,
+) -> None:
+    strip = _opening_cut_polygon(start, end, thickness)
+    if not strip:
+        return
+    if wall_hatch:
+        draw_polygon(ax, strip, facecolor="white", edgecolor=ink, linewidth=0.0, hatch=wall_hatch)
+    else:
+        draw_polygon(ax, strip, facecolor=ink, edgecolor="none", linewidth=0.0)
+
+
+def draw_wall_strip_outline(
+    ax: Axes,
+    start: Coord,
+    end: Coord,
+    *,
+    thickness: float,
+    ink: str | tuple[float, float, float],
+    linewidth: float = 1.0,
+) -> None:
+    strip = _opening_cut_polygon(start, end, thickness)
+    if not strip:
+        return
+    draw_polygon(ax, strip, facecolor="none", edgecolor=ink, linewidth=linewidth)
+
+
+def draw_wall_centerline(
+    ax: Axes,
+    start: Coord,
+    end: Coord,
+    *,
+    ink: str | tuple[float, float, float],
+    linewidth: float = 1.0,
+) -> None:
+    length, _ = _segment(start, end)
+    if length < 1e-6:
+        return
+    ax.plot(
+        [start[0], end[0]],
+        [start[1], end[1]],
+        color=ink,
+        linewidth=linewidth,
+        solid_capstyle="butt",
     )
 
 
@@ -175,7 +265,25 @@ def draw_window(
         draw_polygon(ax, cut, facecolor="white", edgecolor="white", linewidth=0.0)
 
 
-def draw_pillar(
+def _pillar_corners(
+    cx: float,
+    cy: float,
+    width: float,
+    height: float,
+    rotation_deg: float,
+) -> list[Coord]:
+    if width <= 0 or height <= 0:
+        return []
+    hw, hh = width / 2.0, height / 2.0
+    rad = math.radians(rotation_deg)
+    cos_t, sin_t = math.cos(rad), math.sin(rad)
+    return [
+        (cx + x * cos_t - y * sin_t, cy + x * sin_t + y * cos_t)
+        for x, y in ((-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh))
+    ]
+
+
+def draw_pillar_textured(
     ax: Axes,
     cx: float,
     cy: float,
@@ -183,17 +291,42 @@ def draw_pillar(
     height: float,
     rotation_deg: float,
     *,
-    facecolor: str | tuple[float, float, float] = "black",
-    edgecolor: str | tuple[float, float, float] = "black",
+    ink: str | tuple[float, float, float],
+    wall_hatch: str | None = None,
+) -> None:
+    corners = _pillar_corners(cx, cy, width, height, rotation_deg)
+    if not corners:
+        return
+    if wall_hatch:
+        draw_polygon(ax, corners, facecolor="white", edgecolor=ink, linewidth=0.0, hatch=wall_hatch)
+    else:
+        draw_polygon(ax, corners, facecolor=ink, edgecolor="none", linewidth=0.0)
+
+
+def draw_pillar_outline(
+    ax: Axes,
+    cx: float,
+    cy: float,
+    width: float,
+    height: float,
+    rotation_deg: float,
+    *,
+    ink: str | tuple[float, float, float],
     linewidth: float = 1.0,
 ) -> None:
-    if width <= 0 or height <= 0:
+    corners = _pillar_corners(cx, cy, width, height, rotation_deg)
+    if not corners:
         return
-    hw, hh = width / 2.0, height / 2.0
-    rad = math.radians(rotation_deg)
-    cos_t, sin_t = math.cos(rad), math.sin(rad)
-    corners = [
-        (cx + x * cos_t - y * sin_t, cy + x * sin_t + y * cos_t)
-        for x, y in ((-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh))
-    ]
-    draw_polygon(ax, corners, facecolor=facecolor, edgecolor=edgecolor, linewidth=linewidth)
+    draw_polygon(ax, corners, facecolor="none", edgecolor=ink, linewidth=linewidth)
+
+
+def draw_wall_rect_outline(
+    ax: Axes,
+    polygon: list[Coord],
+    *,
+    ink: str | tuple[float, float, float],
+    linewidth: float = 1.0,
+) -> None:
+    if len(polygon) < 3:
+        return
+    draw_polygon(ax, polygon, facecolor="none", edgecolor=ink, linewidth=linewidth)
