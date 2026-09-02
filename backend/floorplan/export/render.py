@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.axes import Axes
 
 from export.draw import (
+    draw_dimension,
     draw_door,
     draw_pillar_outline,
     draw_pillar_textured,
@@ -40,6 +41,7 @@ DEFAULT_ROOM_OUTLINE_THICK = 4.0
 DEFAULT_BOUNDARY_THICK = 8.0
 DEFAULT_OPENING_THICK = 12.0
 DEFAULT_LABEL_FONT_SIZE = 16.0
+DEFAULT_DIMENSION_FONT_SIZE = 10.0
 DEFAULT_WALL_CENTERLINE_THICK = 1.0
 BLACKNESS_MIN = 0.7
 BLACKNESS_MAX = 1.0
@@ -99,6 +101,8 @@ class _PixelGeom:
     wall_render_mode: int | None = None
     wall_hatch: str | None = None
     wall_centerline: bool = False
+    dimensions: list[dict[str, Any]] = field(default_factory=list)
+    margin_noise: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _open_ring(polygon: list[Coord]) -> list[Coord]:
@@ -189,6 +193,8 @@ def _geom_from_rooms(
     wall_render_mode: int | None = None,
     wall_hatch: str | None = None,
     wall_centerline: bool = False,
+    dimensions: list[dict[str, Any]] | None = None,
+    margin_noise: list[dict[str, Any]] | None = None,
 ) -> _PixelGeom:
     geom = _PixelGeom(size=size)
     for i, raw in enumerate(rooms):
@@ -234,6 +240,8 @@ def _geom_from_rooms(
     geom.wall_render_mode = wall_render_mode
     geom.wall_hatch = wall_hatch
     geom.wall_centerline = wall_centerline
+    geom.dimensions = list(dimensions or [])
+    geom.margin_noise = list(margin_noise or [])
     return geom
 
 
@@ -460,6 +468,51 @@ def _draw_room_labels(
     return count
 
 
+def _draw_dimensions(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    ink: tuple[float, float, float],
+) -> int:
+    count = 0
+    for spec in geom.dimensions:
+        draw_dimension(ax, spec, ink=ink, font_size=DEFAULT_DIMENSION_FONT_SIZE)
+        count += 1
+    return count
+
+
+def _draw_margin_noise(
+    ax: Axes,
+    geom: _PixelGeom,
+    *,
+    ink: tuple[float, float, float],
+) -> int:
+    count = 0
+    for spec in geom.margin_noise:
+        try:
+            text = str(spec["text"])
+            x = float(spec["x"])
+            y = float(spec["y"])
+            font_size = float(spec.get("font_size") or DEFAULT_DIMENSION_FONT_SIZE)
+            rotation = float(spec.get("rotation") or 0.0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        ax.text(
+            x,
+            y,
+            text,
+            ha="center",
+            va="center",
+            color=ink,
+            fontsize=font_size,
+            rotation=rotation,
+            family="monospace",
+            parse_math=False,
+        )
+        count += 1
+    return count
+
+
 def _draw_doors(
     ax: Axes,
     geom: _PixelGeom,
@@ -501,7 +554,7 @@ def _render_geom(
     rng: random.Random | None = None,
     image_gray: bool = False,
     image_grain: bool = False,
-) -> tuple[bytes, int, int, int, int, int, int, int, float]:
+) -> tuple[bytes, int, int, int, int, int, int, int, int, float]:
     if not geom.rooms:
         raise ValueError("Floor plan has no rooms")
     if not geom.walls:
@@ -529,6 +582,8 @@ def _render_geom(
     _draw_pillars(ax, geom, ink=ink)
     symbol_count = _draw_room_symbols(ax, geom, blackness=blackness)
     label_count = _draw_room_labels(ax, geom, ink=ink)
+    dimension_count = _draw_dimensions(ax, geom, ink=ink)
+    _draw_margin_noise(ax, geom, ink=ink)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=100, pad_inches=0, facecolor="white")
@@ -545,6 +600,7 @@ def _render_geom(
         window_count,
         symbol_count,
         wall_rect_count,
+        dimension_count,
         blackness,
     )
 
@@ -562,6 +618,8 @@ def export_realistic(
     wall_render_mode: int | None = None,
     wall_hatch: str | None = None,
     wall_centerline: bool = False,
+    dimensions: list[dict[str, Any]] | None = None,
+    margin_noise: list[dict[str, Any]] | None = None,
     size: int = 1024,
     room_outline_thick: float = DEFAULT_ROOM_OUTLINE_THICK,
     boundary_thick: float = DEFAULT_BOUNDARY_THICK,
@@ -592,6 +650,8 @@ def export_realistic(
         wall_render_mode=wall_render_mode,
         wall_hatch=wall_hatch,
         wall_centerline=wall_centerline,
+        dimensions=dimensions,
+        margin_noise=margin_noise,
     )
     _ensure_walls(geom, rooms_list, doors_list, windows_list, rng)
 
@@ -604,6 +664,7 @@ def export_realistic(
         window_count,
         symbol_count,
         wall_rect_count,
+        dimension_count,
         blackness,
     ) = _render_geom(
         geom,
@@ -630,6 +691,7 @@ def export_realistic(
             "opening_thick": opening_thick,
             "symbol_count": symbol_count,
             "wall_rect_count": wall_rect_count,
+            "dimension_count": dimension_count,
             "blackness": round(blackness, 4),
             "image_gray": image_gray,
             "image_grain": image_grain,

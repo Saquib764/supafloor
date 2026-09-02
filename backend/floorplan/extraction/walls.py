@@ -328,6 +328,8 @@ def render_extraction_png(
         wall_render_mode=extracted.get("wall_render_mode"),
         wall_hatch=extracted.get("wall_hatch"),
         wall_centerline=bool(extracted.get("wall_centerline")),
+        dimensions=list(extracted.get("dimensions") or []),
+        margin_noise=list(extracted.get("margin_noise") or []),
         image_gray=bool(extracted.get("image_gray")),
         image_grain=bool(extracted.get("image_grain")),
         size=_CANVAS_SIZE,

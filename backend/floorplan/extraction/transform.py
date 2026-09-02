@@ -6,6 +6,8 @@ import math
 import random
 from typing import Any
 
+from extraction.dimensions import sample_dimensions
+from extraction.margin_noise import sample_margin_noise
 from extraction.wall_rects import rotate_wall_rect, sample_wall_rects, transform_wall_rect
 
 Coord = tuple[float, float]
@@ -42,8 +44,19 @@ _WALL_TEXTURE_CUTOFF_MAX = 1.0
 _WALL_HATCHES: tuple[str | None, ...] = (None, ".", "..", "...", "//", "||", "\\")
 _IMAGE_GRAY_PROBABILITY = 0.1
 _IMAGE_GRAIN_PROBABILITY = 0.1
-_ROOM_INTERIOR_TEXTURE_PROBABILITY = 0.1
-_ROOM_INTERIOR_HATCHES = ("...", "/", "..", "|", "\\")
+_ROOM_INTERIOR_TEXTURE_PROBABILITY = 0.15
+_ROOM_INTERIOR_HATCHES = ("...", "/", "..", "|", "\\", "++", "+")
+_DIMENSION_PLAN_PROBABILITY = 0.1
+_DIMENSION_EXTERNAL_PROBABILITY = 0.4
+_DIMENSION_INTERNAL_PROBABILITY = 0.4
+_MARGIN_NOISE_PROBABILITY = 0.65
+_MARGIN_BAND_FRACTION = 0.10
+_MARGIN_NOISE_MIN_LEN = 4
+_MARGIN_NOISE_MAX_LEN = 200
+_MARGIN_NOISE_FONT_MIN = 8.0
+_MARGIN_NOISE_FONT_MAX = 14.0
+_MARGIN_NOISE_ROTATION_MIN_DEG = -2.0
+_MARGIN_NOISE_ROTATION_MAX_DEG = 2.0
 
 TRANSFORM_STATS_KEY = "transform_stats"
 
@@ -820,30 +833,65 @@ def transform_extraction(
         source_rng,
         pillars=transformed_pillars,
     )
+    transformed_openings = {
+        "doors": [
+            _transform_segment(door, mapper)
+            for door in openings.get("doors") or []
+        ],
+        "windows": [
+            _transform_segment(window, mapper)
+            for window in openings.get("windows") or []
+        ],
+    }
+    dimensions, dimension_flags = sample_dimensions(
+        rooms,
+        walls,
+        transformed_openings,
+        source_rng,
+        plan_probability=_DIMENSION_PLAN_PROBABILITY,
+        external_probability=_DIMENSION_EXTERNAL_PROBABILITY,
+        internal_probability=_DIMENSION_INTERNAL_PROBABILITY,
+    )
+    transformed_symbols = [
+        _transform_symbol(symbol, mapper, scale)
+        for symbol in extracted.get("symbols") or []
+    ]
+    transformed_wall_rects = [
+        transform_wall_rect(wall_rect, mapper, _round_point)
+        for wall_rect in extracted.get("wall_rects") or []
+    ]
+    margin_noise, margin_noise_flags = sample_margin_noise(
+        rooms=rooms,
+        walls=walls,
+        openings=transformed_openings,
+        symbols=transformed_symbols,
+        pillars=pillars,
+        wall_rects=transformed_wall_rects,
+        dimensions=dimensions,
+        rng=source_rng,
+        canvas_size=_CANVAS_SIZE,
+        probability=_MARGIN_NOISE_PROBABILITY,
+        band_fraction=_MARGIN_BAND_FRACTION,
+        min_len=_MARGIN_NOISE_MIN_LEN,
+        max_len=_MARGIN_NOISE_MAX_LEN,
+        font_min=_MARGIN_NOISE_FONT_MIN,
+        font_max=_MARGIN_NOISE_FONT_MAX,
+        rotation_min_deg=_MARGIN_NOISE_ROTATION_MIN_DEG,
+        rotation_max_deg=_MARGIN_NOISE_ROTATION_MAX_DEG,
+    )
     return _with_transform_stats(
         {
             "id": extracted["id"],
             "rooms": rooms,
             "walls": walls,
-            "openings": {
-                "doors": [
-                    _transform_segment(door, mapper)
-                    for door in openings.get("doors") or []
-                ],
-                "windows": [
-                    _transform_segment(window, mapper)
-                    for window in openings.get("windows") or []
-                ],
-            },
-            "symbols": [
-                _transform_symbol(symbol, mapper, scale)
-                for symbol in extracted.get("symbols") or []
-            ],
+            "openings": transformed_openings,
+            "symbols": transformed_symbols,
             "pillars": pillars,
-            "wall_rects": [
-                transform_wall_rect(wall_rect, mapper, _round_point)
-                for wall_rect in extracted.get("wall_rects") or []
-            ],
+            "wall_rects": transformed_wall_rects,
+            "dimensions": dimensions,
+            "dimension_flags": dimension_flags,
+            "margin_noise": margin_noise,
+            "margin_noise_flags": margin_noise_flags,
             **image_flags,
             **wall_render,
         },
@@ -888,6 +936,20 @@ def transform_stats(extracted: dict[str, Any], *, is_rotated: bool) -> dict[str,
         "untextured_room_count": sum(
             1 for room in rooms if not room.get("is_interior_textured")
         ),
+        "has_dimensions": bool(extracted.get("dimensions")),
+        "dimension_count": len(extracted.get("dimensions") or []),
+        "dimension_plan_enabled": bool((extracted.get("dimension_flags") or {}).get("enabled")),
+        "dimension_external": bool((extracted.get("dimension_flags") or {}).get("external")),
+        "dimension_internal": bool((extracted.get("dimension_flags") or {}).get("internal")),
+        "external_dimension_count": sum(
+            1 for item in (extracted.get("dimensions") or []) if item.get("kind") == "external"
+        ),
+        "internal_dimension_count": sum(
+            1 for item in (extracted.get("dimensions") or []) if item.get("kind") == "internal"
+        ),
+        "has_margin_noise": bool(extracted.get("margin_noise")),
+        "margin_noise_enabled": bool((extracted.get("margin_noise_flags") or {}).get("enabled")),
+        "margin_noise_edge": (extracted.get("margin_noise_flags") or {}).get("edge"),
     }
 
 

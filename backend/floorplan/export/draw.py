@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from matplotlib.axes import Axes
 from matplotlib.patches import Arc, Polygon as MplPolygon
@@ -330,3 +331,83 @@ def draw_wall_rect_outline(
     if len(polygon) < 3:
         return
     draw_polygon(ax, polygon, facecolor="none", edgecolor=ink, linewidth=linewidth)
+
+
+def _coord_from_dict(point: dict[str, Any]) -> Coord:
+    return (float(point["x"]), float(point["y"]))
+
+
+def draw_dimension_tick(
+    ax: Axes,
+    center: Coord,
+    line_angle_deg: float,
+    *,
+    length: float,
+    ink: str | tuple[float, float, float],
+    linewidth: float = 0.75,
+) -> None:
+    half = length / 2.0
+    tick_angle = line_angle_deg + 45.0
+    a = _shift(center, half, tick_angle)
+    b = _shift(center, half, tick_angle + 180.0)
+    ax.plot([a[0], b[0]], [a[1], b[1]], color=ink, linewidth=linewidth, solid_capstyle="butt")
+
+
+def draw_dimension(
+    ax: Axes,
+    spec: dict[str, Any],
+    *,
+    ink: str | tuple[float, float, float],
+    linewidth: float = 0.75,
+    tick_length: float = 6.0,
+    font_size: float = 10.0,
+) -> None:
+    try:
+        dim_a = _coord_from_dict(spec["dim_a"])
+        dim_b = _coord_from_dict(spec["dim_b"])
+        witness_a = _coord_from_dict(spec["witness_a"])
+        witness_b = _coord_from_dict(spec["witness_b"])
+        witness_c = _coord_from_dict(spec["witness_c"])
+        witness_d = _coord_from_dict(spec["witness_d"])
+        label = str(spec["label"])
+        label_x = float(spec["label_x"])
+        label_y = float(spec["label_y"])
+        label_rotation = float(spec.get("label_rotation") or 0.0)
+    except (KeyError, TypeError, ValueError):
+        return
+
+    _, line_angle = _segment(dim_a, dim_b)
+    ax.plot(
+        [witness_a[0], witness_b[0]],
+        [witness_a[1], witness_b[1]],
+        color=ink,
+        linewidth=linewidth,
+        solid_capstyle="butt",
+    )
+    ax.plot(
+        [witness_c[0], witness_d[0]],
+        [witness_c[1], witness_d[1]],
+        color=ink,
+        linewidth=linewidth,
+        solid_capstyle="butt",
+    )
+    ax.plot(
+        [dim_a[0], dim_b[0]],
+        [dim_a[1], dim_b[1]],
+        color=ink,
+        linewidth=linewidth,
+        solid_capstyle="butt",
+    )
+    draw_dimension_tick(ax, dim_a, line_angle, length=tick_length, ink=ink, linewidth=linewidth)
+    draw_dimension_tick(ax, dim_b, line_angle, length=tick_length, ink=ink, linewidth=linewidth)
+    ax.text(
+        label_x,
+        label_y,
+        label,
+        ha="center",
+        va="center",
+        color=ink,
+        fontsize=font_size,
+        rotation=label_rotation,
+        family="monospace",
+    )
