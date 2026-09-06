@@ -1,0 +1,27 @@
+hf_cache: hf_cache
+image_size: 512
+patch_size: 32
+latent_channels: 4
+
+data:
+  dataset: floorplan-vae
+  seed: 42
+
+loss:
+  ink_weight: 10.0
+  kl_beta: 1.0e-5
+  kl_warmup_steps: 500
+
+train:
+  session_dir: training_session
+  epochs: 10
+  batch_size: 2
+  grad_accum: 3
+  learning_rate: 1.0e-4
+  weight_decay: 0.0
+  bf16: true
+  resume: true
+  save_steps: 1000
+  recon_steps: 100
+  max_grad_norm: 1.0
+  num_workers: 0

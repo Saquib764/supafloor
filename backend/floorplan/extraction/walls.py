@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import random
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from export.render import export_realistic
+from PIL import Image
+
+from export.render import export_realistic, export_simple
 
 from .transform import _CANVAS_SIZE, pop_transform_stats, transform_extraction
 
 Coord = tuple[float, float]
 Edge = tuple[Coord, Coord]
 Gap = tuple[float, float]
+
+EXPORT_IMAGE_EXT = ".jpg"
+JPEG_QUALITY = 95
 
 _EDGE_KEY_PREC = 1
 _MATCH_TOL = 0.5
@@ -307,13 +313,27 @@ def write_extraction(extracted: dict[str, Any], directory: Path | None = None) -
     return path
 
 
+def _write_render_b64(path: Path, png_b64: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = base64.b64decode(png_b64)
+    if path.suffix.lower() in {".jpg", ".jpeg"}:
+        Image.open(io.BytesIO(raw)).convert("RGB").save(
+            path,
+            format="JPEG",
+            quality=JPEG_QUALITY,
+        )
+    else:
+        path.write_bytes(raw)
+    return path
+
+
 def render_extraction_png(
     extracted: dict[str, Any],
     path: Path,
     *,
     rng: random.Random | None = None,
 ) -> Path:
-    """Render transformed extraction JSON to a realistic PNG."""
+    """Render transformed extraction JSON to a realistic image."""
     openings = extracted.get("openings") or {}
     doors = list(openings.get("doors") or [])
     windows = _opening_lines(openings.get("windows") or [])
@@ -335,9 +355,34 @@ def render_extraction_png(
         size=_CANVAS_SIZE,
         rng=rng,
     )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(base64.b64decode(result["png_b64"]))
-    return path
+    return _write_render_b64(path, result["png_b64"])
+
+
+def render_extraction_simple_png(
+    extracted: dict[str, Any],
+    path: Path,
+    *,
+    rng: random.Random | None = None,
+) -> Path:
+    """Render a realistic-style image without text, dimensions, room fills, noise, or gray ink."""
+    openings = extracted.get("openings") or {}
+    doors = list(openings.get("doors") or [])
+    windows = _opening_lines(openings.get("windows") or [])
+    result = export_simple(
+        rooms=extracted["rooms"],
+        doors=doors,
+        windows=windows,
+        symbols=list(extracted.get("symbols") or []),
+        pillars=list(extracted.get("pillars") or []),
+        wall_rects=list(extracted.get("wall_rects") or []),
+        walls=list(extracted.get("walls") or []),
+        wall_render_mode=extracted.get("wall_render_mode"),
+        wall_hatch=extracted.get("wall_hatch"),
+        wall_centerline=bool(extracted.get("wall_centerline")),
+        size=_CANVAS_SIZE,
+        rng=rng,
+    )
+    return _write_render_b64(path, result["png_b64"])
 
 
 def extract_and_write(
@@ -350,5 +395,5 @@ def extract_and_write(
     plan_id = str(extracted["id"])
     out_dir = output_directory or output_dir()
     json_path = write_extraction(extracted, out_dir)
-    png_path = render_extraction_png(extracted, out_dir / f"{plan_id}.png")
+    png_path = render_extraction_png(extracted, out_dir / f"{plan_id}{EXPORT_IMAGE_EXT}")
     return {"json": json_path, "png": png_path}

@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         "-o",
         type=Path,
         default=None,
-        help="Output PNG path (default: <input_stem>_realistic.png)",
+        help="Output JPG path (default: <input_stem>_realistic.jpg)",
     )
     parser.add_argument(
         "--seed",
@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
 
     out_path = args.output
     if out_path is None:
-        out_path = input_path.with_name(f"{input_path.stem}_realistic.png")
+        out_path = input_path.with_name(f"{input_path.stem}_realistic.jpg")
     elif not out_path.is_absolute():
         out_path = service_root / out_path
 

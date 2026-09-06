@@ -6,6 +6,9 @@ from pathlib import Path
 
 from datasets import Dataset, Features, Image, Value, load_dataset
 
+JPEG_QUALITY = 95
+IMAGE_EXT = ".jpg"
+
 FEATURES = Features(
     {
         "stem": Value("string"),
@@ -13,6 +16,7 @@ FEATURES = Features(
         "variant": Value("int32"),
         "image": Image(),
         "extraction": Value("string"),
+        "simple_image": Image(),
     }
 )
 
@@ -29,18 +33,20 @@ def split_stem(stem: str) -> tuple[str, int]:
 
 def _iter_local_rows(src: Path):
     output_dir = src / "output"
-    for png in sorted((src / "input").glob("*.png")):
-        stem = png.stem
+    for image_path in sorted((src / "input").glob(f"*{IMAGE_EXT}")):
+        stem = image_path.stem
         json_path = output_dir / f"{stem}.json"
-        if not json_path.is_file():
+        simple_path = src / "output2" / f"{stem}{IMAGE_EXT}"
+        if not json_path.is_file() or not simple_path.is_file():
             continue
         plan_id, variant = split_stem(stem)
         yield {
             "stem": stem,
             "plan_id": plan_id,
             "variant": variant,
-            "image": str(png),
+            "image": str(image_path),
             "extraction": json_path.read_text(encoding="utf-8"),
+            "simple_image": str(simple_path),
         }
 
 
@@ -74,13 +80,20 @@ def write_local_folders(dataset: Dataset, target: Path) -> int:
     target = Path(target)
     input_dir = target / "input"
     output_dir = target / "output"
+    output2_dir = target / "output2"
     input_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
+    output2_dir.mkdir(parents=True, exist_ok=True)
 
     written = 0
     for row in dataset:
         stem = str(row["stem"])
-        row["image"].convert("RGB").save(input_dir / f"{stem}.png")
+        row["image"].convert("RGB").save(
+            input_dir / f"{stem}{IMAGE_EXT}", format="JPEG", quality=JPEG_QUALITY
+        )
         (output_dir / f"{stem}.json").write_text(row["extraction"], encoding="utf-8")
+        row["simple_image"].convert("RGB").save(
+            output2_dir / f"{stem}{IMAGE_EXT}", format="JPEG", quality=JPEG_QUALITY
+        )
         written += 1
     return written

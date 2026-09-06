@@ -25,14 +25,16 @@ Each row is one augmented render of a unique apartment layout. Florence loc-toke
 | `stem` | string | `{plan_id}_{variant}` |
 | `plan_id` | string | Unique apartment / plan id |
 | `variant` | int | Augmentation index (`0`–`4`) |
-| `image` | image | Realistic 1024×1024 floor-plan PNG |
+| `image` | image | Realistic 1024×1024 floor-plan JPG |
 | `extraction` | string | Full extraction JSON for the same image |
+| `simple_image` | image | Simple grayscale render (black walls, gray-80 windows, gray-160 doors) |
 
 ## Local layout (before / after Hub)
 
 ```
-input/<stem>.png
+input/<stem>.jpg
 output/<stem>.json
+output2/<stem>.jpg   # simple_image; uploaded to Hub
 stats/<stem>.yml     # local export only (transform stats; not uploaded to Hub)
 ```
 

@@ -29,6 +29,7 @@ def draw_polygon(
     edgecolor: str = "black",
     linewidth: float = 1.5,
     hatch: str | None = None,
+    antialiased: bool = True,
 ) -> None:
     if len(polygon) < 3:
         return
@@ -43,6 +44,7 @@ def draw_polygon(
             edgecolor=edgecolor,
             linewidth=linewidth,
             hatch=hatch,
+            antialiased=antialiased,
         )
     )
 
@@ -90,11 +92,12 @@ def draw_wall_textured(
     thickness: float,
     ink: str | tuple[float, float, float],
     wall_hatch: str | None = None,
+    fill_black: bool = False,
 ) -> None:
     strip = _opening_cut_polygon(start, end, thickness)
     if not strip:
         return
-    if wall_hatch:
+    if wall_hatch and not fill_black:
         draw_polygon(ax, strip, facecolor="white", edgecolor=ink, linewidth=0.0, hatch=wall_hatch)
     else:
         draw_polygon(ax, strip, facecolor=ink, edgecolor="none", linewidth=0.0)
@@ -294,11 +297,12 @@ def draw_pillar_textured(
     *,
     ink: str | tuple[float, float, float],
     wall_hatch: str | None = None,
+    fill_black: bool = False,
 ) -> None:
     corners = _pillar_corners(cx, cy, width, height, rotation_deg)
     if not corners:
         return
-    if wall_hatch:
+    if wall_hatch and not fill_black:
         draw_polygon(ax, corners, facecolor="white", edgecolor=ink, linewidth=0.0, hatch=wall_hatch)
     else:
         draw_polygon(ax, corners, facecolor=ink, edgecolor="none", linewidth=0.0)

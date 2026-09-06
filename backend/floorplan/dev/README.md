@@ -25,9 +25,7 @@ uv run python dev/export_realistic.py \
   --input dev/output/plans/9044f6156937/floorplan.json
 
 # 5) Corpus → image-to-floorplan training pairs
-uv run python dev/export_image_to_floorplan.py \
-  --dir ../../floorplan_dataset/basic_5000 \
-  --out ../../image-to-floorplan/basic_5000
+uv run python dev/export_image_to_floorplan.py --dir ../../floorplan_dataset/basic_5000 --out ../../image-to-floorplan/basic_5000
 
 # 6) Aggregate transform stats YAML → Markdown summary
 uv run python dev/summarize_dataset_stats.py
@@ -46,7 +44,7 @@ uv run floorplan dataset -n 5000 --seed 0 --score-level basic --workers 4 \
 | `generate_floorplans.py` | Run the generator; write `<id>.json` + `<id>.png` (+ `index.json`) |
 | `score_floorplans.py` | Score each plan; write human-readable reports and `README.md` |
 | `export_training.py` | Corpus JSON → training JSONL (`input.prompt` + `input.schema` → `output` rooms) |
-| `export_realistic.py` | FloorPlan JSON → realistic 1024 PNG |
-| `export_image_to_floorplan.py` | Corpus JSON → `input/` PNG + `output/` extraction JSON + `stats/` YAML per variant |
+| `export_realistic.py` | FloorPlan JSON → realistic 1024 JPG |
+| `export_image_to_floorplan.py` | Corpus JSON → `input/` JPG + `output/` extraction JSON + `output2/` simple JPG + `stats/` YAML per variant |
 | `summarize_dataset_stats.py` | `stats/*.yml` → Markdown summary (`STATS.md`) |
 | `floorplan dataset` | Threshold-gated unique corpus under `floorplan_dataset/` (gitignored) |

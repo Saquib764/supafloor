@@ -8,12 +8,23 @@ from pathlib import Path
 
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "0")
 os.environ.setdefault("HF_DATASETS_DISABLE_PROGRESS_BARS", "0")
+os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", "120")
+os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "120")
 
 import yaml
 from datasets import Dataset
 from huggingface_hub import HfApi
 
-ROOT = Path(__file__).resolve().parent
+def _manager_root() -> Path:
+    """Resolve dataset_manager/ even when registry.py is copied into site-packages."""
+    for parent in (Path(__file__).resolve().parent, *Path(__file__).resolve().parents):
+        manager = parent if parent.name == "dataset_manager" else parent / "dataset_manager"
+        if (manager / "registry.py").is_file() and (manager / "datasets").is_dir():
+            return manager
+    raise FileNotFoundError("dataset_manager/datasets not found")
+
+
+ROOT = _manager_root()
 REPO_ROOT = ROOT.parent
 DATASETS = ROOT / "datasets"
 _MARKER = ".hf_complete"

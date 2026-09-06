@@ -22,9 +22,10 @@ from export.draw import (
     draw_door,
     draw_pillar_outline,
     draw_pillar_textured,
+    draw_polygon,
     draw_room_interior_textured,
-    draw_wall_rect_outline,
     draw_wall_centerline,
+    draw_wall_rect_outline,
     draw_wall_strip_outline,
     draw_wall_textured,
     extend_wall_endpoints,
@@ -348,6 +349,7 @@ def _draw_walls(
     ink: tuple[float, float, float],
     room_outline_thick: float,
     boundary_thick: float,
+    filled_black_walls: bool = False,
 ) -> int:
     shared = _shared_wall_endpoints(geom.walls)
     count = 0
@@ -364,17 +366,19 @@ def _draw_walls(
             extend_start=(index, "start") in shared,
             extend_end=(index, "end") in shared,
         )
-        if wall.get("is_textured"):
+        is_textured = bool(wall.get("is_textured"))
+        if is_textured or filled_black_walls:
             draw_wall_textured(
                 ax,
                 draw_start,
                 draw_end,
                 thickness=thickness,
                 ink=ink,
-                wall_hatch=geom.wall_hatch,
+                wall_hatch=geom.wall_hatch if is_textured else None,
+                fill_black=filled_black_walls,
             )
         draw_wall_strip_outline(ax, draw_start, draw_end, thickness=thickness, ink=ink)
-        if geom.wall_centerline:
+        if geom.wall_centerline and not filled_black_walls:
             draw_wall_centerline(
                 ax,
                 start,
@@ -411,6 +415,7 @@ def _draw_pillars(
     geom: _PixelGeom,
     *,
     ink: tuple[float, float, float],
+    filled_black_walls: bool = False,
 ) -> None:
     for raw in geom.pillars:
         try:
@@ -421,7 +426,8 @@ def _draw_pillars(
             rotation_deg = float(raw.get("rotation_deg") or 0.0)
         except (KeyError, TypeError, ValueError):
             continue
-        if raw.get("is_textured"):
+        is_textured = bool(raw.get("is_textured"))
+        if is_textured or filled_black_walls:
             draw_pillar_textured(
                 ax,
                 cx,
@@ -430,7 +436,8 @@ def _draw_pillars(
                 height,
                 rotation_deg,
                 ink=ink,
-                wall_hatch=geom.wall_hatch,
+                wall_hatch=geom.wall_hatch if is_textured else None,
+                fill_black=filled_black_walls,
             )
         draw_pillar_outline(ax, cx, cy, width, height, rotation_deg, ink=ink)
 
@@ -554,6 +561,12 @@ def _render_geom(
     rng: random.Random | None = None,
     image_gray: bool = False,
     image_grain: bool = False,
+    draw_interiors: bool = True,
+    draw_labels: bool = True,
+    draw_dimensions: bool = True,
+    draw_margin_noise: bool = True,
+    filled_black_walls: bool = False,
+    blackness_override: float | None = None,
 ) -> tuple[bytes, int, int, int, int, int, int, int, int, float]:
     if not geom.rooms:
         raise ValueError("Floor plan has no rooms")
@@ -561,29 +574,34 @@ def _render_geom(
         raise ValueError("Floor plan has no walls")
 
     source_rng = rng or random.Random()
-    if image_gray:
+    if blackness_override is not None:
+        blackness = blackness_override
+    elif image_gray:
         blackness = source_rng.uniform(GRAY_BLACKNESS_MIN, GRAY_BLACKNESS_MAX)
     else:
         blackness = source_rng.uniform(BLACKNESS_MIN, BLACKNESS_MAX)
     ink = _ink_color(blackness)
 
     fig, ax = _create_canvas(geom.size)
-    _draw_room_interiors(ax, geom, ink=ink)
+    if draw_interiors:
+        _draw_room_interiors(ax, geom, ink=ink)
     wall_count = _draw_walls(
         ax,
         geom,
         ink=ink,
         room_outline_thick=room_outline_thick,
         boundary_thick=boundary_thick,
+        filled_black_walls=filled_black_walls,
     )
     door_count = _draw_doors(ax, geom, opening_thick=opening_thick, ink=ink)
     window_count = _draw_windows(ax, geom, opening_thick=boundary_thick)
     wall_rect_count = _draw_wall_rects(ax, geom, ink=ink)
-    _draw_pillars(ax, geom, ink=ink)
+    _draw_pillars(ax, geom, ink=ink, filled_black_walls=filled_black_walls)
     symbol_count = _draw_room_symbols(ax, geom, blackness=blackness)
-    label_count = _draw_room_labels(ax, geom, ink=ink)
-    dimension_count = _draw_dimensions(ax, geom, ink=ink)
-    _draw_margin_noise(ax, geom, ink=ink)
+    label_count = _draw_room_labels(ax, geom, ink=ink) if draw_labels else 0
+    dimension_count = _draw_dimensions(ax, geom, ink=ink) if draw_dimensions else 0
+    if draw_margin_noise:
+        _draw_margin_noise(ax, geom, ink=ink)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=100, pad_inches=0, facecolor="white")
@@ -701,5 +719,89 @@ def export_realistic(
             "textured_room_count": sum(
                 1 for room in geom.rooms if room.is_interior_textured
             ),
+        },
+    }
+
+
+def export_simple(
+    *,
+    plan: FloorPlan | None = None,
+    rooms: list[dict[str, Any]] | None = None,
+    doors: list[Any] | None = None,
+    windows: list[Any] | None = None,
+    symbols: list[dict[str, Any]] | None = None,
+    pillars: list[dict[str, Any]] | None = None,
+    wall_rects: list[dict[str, Any]] | None = None,
+    walls: list[dict[str, Any]] | None = None,
+    wall_render_mode: int | None = None,
+    wall_hatch: str | None = None,
+    wall_centerline: bool = False,
+    size: int = 1024,
+    room_outline_thick: float = DEFAULT_ROOM_OUTLINE_THICK,
+    boundary_thick: float = DEFAULT_BOUNDARY_THICK,
+    opening_thick: float = DEFAULT_OPENING_THICK,
+    rng: random.Random | None = None,
+) -> dict[str, Any]:
+    """Render like export_realistic but with solid walls and no text, dimensions, room fills, or noise."""
+    if plan is not None:
+        rooms_list, doors_list, windows_list = _rooms_openings_from_plan(plan)
+    else:
+        if not rooms:
+            raise ValueError("Provide either plan or rooms")
+        rooms_list = list(rooms)
+        doors_list = list(doors or [])
+        windows_list = list(windows or [])
+
+    geom = _geom_from_rooms(
+        rooms_list,
+        size,
+        doors=doors_list,
+        windows=windows_list,
+        symbols=symbols,
+        pillars=pillars,
+        wall_rects=wall_rects,
+        walls=walls,
+        wall_render_mode=wall_render_mode,
+        wall_hatch=wall_hatch,
+        wall_centerline=wall_centerline,
+    )
+    _ensure_walls(geom, rooms_list, doors_list, windows_list, rng)
+
+    (
+        png,
+        wall_count,
+        room_count,
+        _label_count,
+        door_count,
+        window_count,
+        symbol_count,
+        wall_rect_count,
+        _dimension_count,
+        blackness,
+    ) = _render_geom(
+        geom,
+        room_outline_thick=room_outline_thick,
+        boundary_thick=boundary_thick,
+        opening_thick=opening_thick,
+        rng=rng,
+        image_grain=False,
+        draw_interiors=False,
+        draw_labels=False,
+        draw_dimensions=False,
+        draw_margin_noise=False,
+        filled_black_walls=True,
+        blackness_override=BLACKNESS_MAX,
+    )
+    return {
+        "png_b64": base64.b64encode(png).decode("ascii"),
+        "size": size,
+        "metadata": {
+            "wall_count": wall_count,
+            "room_count": room_count,
+            "door_count": door_count,
+            "window_count": window_count,
+            "symbol_count": symbol_count,
+            "wall_rect_count": wall_rect_count,
+            "blackness": round(blackness, 4),
         },
     }

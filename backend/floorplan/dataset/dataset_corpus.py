@@ -53,7 +53,7 @@ def load_json(stem: str) -> dict:
 
 def image_path(stem: str) -> Path:
     _validate_stem(stem)
-    path = CORPUS_ROOT / "input" / f"{stem}.png"
+    path = CORPUS_ROOT / "input" / f"{stem}.jpg"
     if not path.is_file():
         raise FileNotFoundError(stem)
     return path

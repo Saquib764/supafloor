@@ -2,8 +2,9 @@
 """Export image-to-floorplan training pairs from a floorplan_dataset corpus.
 
 Reads canonical plan JSON from ``floorplan_dataset/`` and writes ``N`` variants per plan:
-  <out>/input/<id>_<n>.png     — realistic 1024×1024 render (model input)
+  <out>/input/<id>_<n>.jpg     — realistic 1024×1024 render (model input)
   <out>/output/<id>_<n>.json   — transformed extraction JSON (model target)
+  <out>/output2/<id>_<n>.jpg   — simplified realistic render (VAE target)
   <out>/stats/<id>_<n>.yml     — transform stats for later dataset analysis
 
 Usage (from backend/floorplan):
@@ -57,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = service_root.parents[1]
 
     parser = argparse.ArgumentParser(
-        description="Export image-to-floorplan input PNGs + output extraction JSON"
+        description="Export image-to-floorplan input JPGs + output extraction JSON"
     )
     parser.add_argument(
         "--dir",
@@ -71,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         "-o",
         type=Path,
         default=repo_root / "image-to-floorplan" / "basic_5000",
-        help="Output root with input/, output/, and stats/ subfolders",
+        help="Output root with input/, output/, output2/, and stats/ subfolders",
     )
     parser.add_argument(
         "--limit",
@@ -89,15 +90,22 @@ def main(argv: list[str] | None = None) -> int:
     out_root = args.out if args.out.is_absolute() else service_root / args.out
     input_dir = out_root / "input"
     output_dir = out_root / "output"
+    output2_dir = out_root / "output2"
     stats_dir = out_root / "stats"
     input_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
+    output2_dir.mkdir(parents=True, exist_ok=True)
     stats_dir.mkdir(parents=True, exist_ok=True)
 
     import yaml
 
     from extraction.transform import pop_transform_stats
-    from extraction.walls import prepare_extraction, render_extraction_png
+    from extraction.walls import (
+        EXPORT_IMAGE_EXT,
+        prepare_extraction,
+        render_extraction_png,
+        render_extraction_simple_png,
+    )
 
     json_paths = list(_iter_plan_json_paths(source))
     if args.limit is not None:
@@ -118,7 +126,10 @@ def main(argv: list[str] | None = None) -> int:
             (stats_dir / f"{stem}.yml").write_text(
                 yaml.safe_dump(stats, sort_keys=False, allow_unicode=True)
             )
-            render_extraction_png(extracted, input_dir / f"{stem}.png", rng=rng)
+            render_extraction_png(extracted, input_dir / f"{stem}{EXPORT_IMAGE_EXT}", rng=rng)
+            render_extraction_simple_png(
+                extracted, output2_dir / f"{stem}{EXPORT_IMAGE_EXT}", rng=rng
+            )
             written += 1
             if written % 100 == 0 or written == total:
                 print(f"exported {written}/{total}", flush=True)
@@ -126,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Wrote {written} pairs ({len(json_paths)} plans × {N}) → {out_root.resolve()}")
     print(f"  input:    {input_dir.resolve()}")
     print(f"  output:   {output_dir.resolve()}")
+    print(f"  output2:  {output2_dir.resolve()}")
     print(f"  stats:    {stats_dir.resolve()}")
     return 0
 

@@ -19,8 +19,9 @@ Registered today:
 
 | Name | Role |
 |---|---|
-| `floorplan-to-json` | Full Hub publish/download (`stem`, `plan_id`, `variant`, `image`, `extraction`) |
+| `floorplan-to-json` | Full Hub publish/download (`stem`, `plan_id`, `variant`, `image`, `extraction`, `simple_image`) |
 | `florence-rooms` | Training view (`stem`, `plan_id`, `variant`, `image`, `extraction`) |
+| `floorplan-vae` | VAE view (`stem`, `plan_id`, `variant`, `image`, `simple_image`) |
 
 ## Usage
 
@@ -33,4 +34,4 @@ uv run python cli.py download floorplan-to-json
 # or: uv run dataset-mgr upload floorplan-to-json
 ```
 
-Auth: `HF_TOKEN` in `.env` (gitignored). Load-only views such as `florence-rooms` are used by `backend/florence_trainer` (`data.dataset: florence-rooms`).
+Auth: `HF_TOKEN` in `.env` (gitignored). Load-only Hub views: `florence-rooms` (`backend/florence_trainer`), `floorplan-vae` (`backend/vae_trainer`). They do not read local export folders.
