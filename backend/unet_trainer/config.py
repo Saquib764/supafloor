@@ -135,7 +135,7 @@ def load_config(path: Path | None = None) -> Config:
     from model import compressed_hw
 
     compressed_hw(image_size, patch_size)
-    hf_cache = apply_hf_cache(_resolve(Path(raw.get("hf_cache") or "../hf_cache"), base))
+    hf_cache = apply_hf_cache(_resolve(Path(raw["hf_cache"]), base))
     return Config(
         hf_cache=hf_cache,
         image_size=image_size,

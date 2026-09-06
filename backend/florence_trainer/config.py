@@ -36,6 +36,8 @@ class DataSettings:
     max_label_tokens: int
     empty_polygon_prob: float
     excluded_point_prob: float
+    inside_counts: tuple[int, ...]
+    excluded_counts: tuple[int, ...]
     variations_per_floorplan: int
     revision: str | None = None
     seed: int | None = None
@@ -93,6 +95,15 @@ def _resolve(path: Path, base: Path) -> Path:
     return path if path.is_absolute() else (base / path).resolve()
 
 
+def _int_list(raw_value: Any, *, field: str) -> tuple[int, ...]:
+    if not isinstance(raw_value, list) or not raw_value:
+        raise ValueError(f"data.{field} must be a non-empty list of integers")
+    counts = tuple(int(value) for value in raw_value)
+    if any(count < 0 for count in counts):
+        raise ValueError(f"data.{field} values must be >= 0")
+    return counts
+
+
 def apply_hf_cache(path: Path) -> Path:
     cache = path.resolve()
     hub_cache = cache / "hub"
@@ -126,24 +137,26 @@ def load_config(path: Path | None = None) -> Config:
     lora = raw["lora"]
     train = raw["train"]
     infer = raw["infer"]
-    dataset = str(data.get("dataset") or "").strip()
+    dataset = str(data["dataset"]).strip()
     if not dataset:
         raise ValueError("data.dataset is required (dataset_manager registry name)")
-    hf_cache = apply_hf_cache(_resolve(Path(raw.get("hf_cache") or "hf_cache"), base))
+    hf_cache = apply_hf_cache(_resolve(Path(raw["hf_cache"]), base))
     return Config(
         hf_cache=hf_cache,
         model_id=str(raw["model_id"]),
         image_size=int(raw["image_size"]),
-        canvas_size=int(raw.get("canvas_size") or 1024),
+        canvas_size=int(raw["canvas_size"]),
         loc_bins=int(raw["loc_bins"]),
         data=DataSettings(
             dataset=dataset,
             max_label_tokens=int(data["max_label_tokens"]),
-            empty_polygon_prob=float(data.get("empty_polygon_prob", 0.05)),
-            excluded_point_prob=float(data.get("excluded_point_prob", 0.1)),
-            variations_per_floorplan=int(data.get("variations_per_floorplan", 4)),
+            empty_polygon_prob=float(data["empty_polygon_prob"]),
+            excluded_point_prob=float(data["excluded_point_prob"]),
+            inside_counts=_int_list(data["inside_counts"], field="inside_counts"),
+            excluded_counts=_int_list(data["excluded_counts"], field="excluded_counts"),
+            variations_per_floorplan=int(data["variations_per_floorplan"]),
             revision=str(data["revision"]).strip() if data.get("revision") else None,
-            seed=int(data["seed"]) if data.get("seed") is not None else None,
+            seed=int(data["seed"]) if data["seed"] is not None else None,
         ),
         lora=LoraSettings(
             dropout=float(lora["dropout"]),
@@ -160,21 +173,18 @@ def load_config(path: Path | None = None) -> Config:
             warmup_ratio=float(train["warmup_ratio"]),
             weight_decay=float(train["weight_decay"]),
             bf16=bool(train["bf16"]),
-            resume=bool(train.get("resume", False)),
+            resume=bool(train["resume"]),
             save_steps=int(train["save_steps"]),
             test_infer_steps=int(train["test_infer_steps"]),
-            test_infer_render=bool(train.get("test_infer_render", True)),
+            test_infer_render=bool(train["test_infer_render"]),
             max_grad_norm=float(train["max_grad_norm"]),
-            sample_region_size_path=_resolve(
-                Path(train.get("sample_region_size_path") or "sample_region_size.txt"),
-                base,
-            ),
-            sample_region_refresh_steps=int(train.get("sample_region_refresh_steps", 100)),
+            sample_region_size_path=_resolve(Path(train["sample_region_size_path"]), base),
+            sample_region_refresh_steps=int(train["sample_region_refresh_steps"]),
         ),
         infer=InferSettings(
             num_points=int(infer["num_points"]),
             max_new_tokens=int(infer["max_new_tokens"]),
             num_beams=int(infer["num_beams"]),
-            seed=int(infer["seed"]) if infer.get("seed") is not None else None,
+            seed=int(infer["seed"]) if infer["seed"] is not None else None,
         ),
     )

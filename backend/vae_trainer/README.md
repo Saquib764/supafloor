@@ -30,7 +30,7 @@ uv sync
 
 Auth with `huggingface-cli login`, `HF_TOKEN`, or a `.env` in this folder. Training streams `image` and `simple_image` from the Hub (`data.dataset: floorplan-vae`) so Arrow does not copy the full dataset to disk. It does not read local export folders.
 
-Edit `config.yaml` for dataset, loss, and training knobs. Paths in the yaml are relative to this folder. Hub cache is `../hf_cache` (shared with `unet_trainer`).
+Edit `config.yaml` for dataset, loss, and training knobs. Paths in the yaml are relative to this folder. Hub cache is `../hf_cache` (shared with `florence_trainer` and `unet_trainer`).
 
 ## Execution
 

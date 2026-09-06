@@ -154,6 +154,8 @@ def _print_samples(cfg: Config, *, count: int, seed: int | None) -> None:
             seed=cfg.data.seed,
             empty_polygon_prob=cfg.data.empty_polygon_prob,
             excluded_point_prob=cfg.data.excluded_point_prob,
+            inside_counts=cfg.data.inside_counts,
+            excluded_counts=cfg.data.excluded_counts,
             variations_per_floorplan=cfg.data.variations_per_floorplan,
         )
 

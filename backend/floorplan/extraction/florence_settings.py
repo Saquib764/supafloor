@@ -61,7 +61,7 @@ def load_florence_model_config() -> Any:
 
     raw = _load_raw_config()
     base = _FLOORPLAN_ROOT
-    hf_cache = tc.apply_hf_cache(_resolve(Path(raw.get("hf_cache") or "hf_cache"), base))
+    hf_cache = tc.apply_hf_cache(_resolve(Path(raw["hf_cache"]), base))
     adapter_dir = _resolve(Path(raw["adapter_dir"]), base)
 
     return tc.Config(

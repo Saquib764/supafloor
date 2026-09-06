@@ -37,9 +37,9 @@ def infer_params_from_config(cfg: Config) -> InferParams:
 def infer_params_from_mapping(raw: dict[str, Any]) -> InferParams:
     return InferParams(
         image_size=int(raw["image_size"]),
-        canvas_size=int(raw.get("canvas_size") or 1024),
+        canvas_size=int(raw["canvas_size"]),
         loc_bins=int(raw["loc_bins"]),
         max_new_tokens=int(raw["max_new_tokens"]),
         num_beams=int(raw["num_beams"]),
-        seed=int(raw["infer_seed"]) if raw.get("infer_seed") is not None else None,
+        seed=int(raw["infer_seed"]) if raw["infer_seed"] is not None else None,
     )

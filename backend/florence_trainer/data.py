@@ -161,13 +161,13 @@ def format_prompt(
     bins: int,
     excluded_points: list[tuple[float, float]] | None = None,
 ) -> str:
-    positive_locs = "".join(
+    positive_locs = ",".join(
         format_loc_point(x, y, canvas_size=canvas_size, bins=bins)
         for x, y in positive_points
     )
     prompt = f"Locate room polygon containing point {positive_locs}"
     if excluded_points:
-        excluded_locs = "".join(
+        excluded_locs = ",".join(
             format_loc_point(x, y, canvas_size=canvas_size, bins=bins)
             for x, y in excluded_points
         )
@@ -192,6 +192,8 @@ def build_referring_variations(
     seed: int | None,
     empty_polygon_prob: float,
     excluded_point_prob: float,
+    inside_counts: tuple[int, ...],
+    excluded_counts: tuple[int, ...],
     variations_per_floorplan: int,
     inside_sample_side: float | None = None,
 ) -> list[ReferringDatum]:
@@ -213,7 +215,7 @@ def build_referring_variations(
     variations: list[ReferringDatum] = []
     for room in selected_rooms:
         for _ in range(_VARIATIONS_PER_ROOM):
-            excluded_count = rng.randint(1, 6) if rng.random() < excluded_point_prob else 0
+            excluded_count = rng.choice(excluded_counts) if rng.random() < excluded_point_prob else 0
             empty_polygon = rng.random() < empty_polygon_prob
 
             if empty_polygon:
@@ -223,7 +225,7 @@ def build_referring_variations(
                 label_room = None
             else:
                 polygon = _polygon_from_vertices(room["polygon"])
-                inside_count = rng.randint(1, 6)
+                inside_count = rng.choice(inside_counts)
                 outside_count = excluded_count
                 label_room = room
 
@@ -332,6 +334,8 @@ class FloorplanFlorenceDataset(Dataset):
         canvas_size: int,
         empty_polygon_prob: float,
         excluded_point_prob: float,
+        inside_counts: tuple[int, ...],
+        excluded_counts: tuple[int, ...],
         variations_per_floorplan: int,
         seed: int | None = None,
         sample_region: SampleRegionSize | None = None,
@@ -342,6 +346,8 @@ class FloorplanFlorenceDataset(Dataset):
         self._canvas_size = canvas_size
         self._empty_polygon_prob = empty_polygon_prob
         self._excluded_point_prob = excluded_point_prob
+        self._inside_counts = inside_counts
+        self._excluded_counts = excluded_counts
         self._variations_per_floorplan = variations_per_floorplan
         self._seed = seed
         self._sample_region = sample_region
@@ -364,6 +370,8 @@ class FloorplanFlorenceDataset(Dataset):
             seed=self._seed,
             empty_polygon_prob=self._empty_polygon_prob,
             excluded_point_prob=self._excluded_point_prob,
+            inside_counts=self._inside_counts,
+            excluded_counts=self._excluded_counts,
             variations_per_floorplan=self._variations_per_floorplan,
             inside_sample_side=inside_sample_side,
         )

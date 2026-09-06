@@ -18,7 +18,7 @@ Training loads Hub rows through `dataset_manager` (`data.dataset` in `config.yam
 
 Each training step picks two rooms (or the same room twice when only one exists), builds four prompt/label pairs per floorplan (two point variations per room slot), and with 5% probability per slot samples a point outside all rooms with an empty `<poly></poly>` label.
 
-Auth with `huggingface-cli login`, `HF_TOKEN`, or a `.env` in this folder. Do not put a token in `config.yaml`. Hub datasets are cached under `hf_cache/` in this folder.
+Auth with `huggingface-cli login`, `HF_TOKEN`, or a `.env` in this folder. Do not put a token in `config.yaml`. Hub cache is `../hf_cache` (shared with `vae_trainer` and `unet_trainer`).
 
 To publish the full Hub dataset, export locally from `backend/floorplan/` then upload via `dataset_manager/` (registry name `floorplan-to-json`):
 

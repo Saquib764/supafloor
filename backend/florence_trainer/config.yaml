@@ -1,4 +1,4 @@
-hf_cache: hf_cache
+hf_cache: ../hf_cache
 
 model_id: microsoft/Florence-2-base
 image_size: 768
@@ -10,6 +10,8 @@ data:
   max_label_tokens: 256
   empty_polygon_prob: 0.05
   excluded_point_prob: 0.1
+  inside_counts: [1, 1, 1, 1, 1, 2, 2, 2, 3, 4]
+  excluded_counts: [1, 1, 2, 2, 3, 4]
   variations_per_floorplan: 4
   seed: 42
 
