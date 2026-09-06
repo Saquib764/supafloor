@@ -38,18 +38,6 @@ def generate_for_prompts(
         "do_sample": False,
         "use_cache": True,
     }
-    if torch.cuda.is_available():
-        inputs = processor(
-            text=prompts,
-            images=[image] * len(prompts),
-            return_tensors="pt",
-            padding=True,
-        )
-        inputs = move_inputs_to_model(inputs, model)
-        with torch.inference_mode():
-            generated = model.generate(**inputs, **gen_kwargs)
-        return processor.batch_decode(generated, skip_special_tokens=False)
-
     texts: list[str] = []
     for prompt in prompts:
         inputs = processor(text=[prompt], images=[image], return_tensors="pt")
