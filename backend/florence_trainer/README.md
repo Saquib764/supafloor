@@ -70,9 +70,8 @@ Edit `config.yaml` for model, Hub dataset, LoRA, and training knobs. Paths in th
 | `data.dataset` | `dataset_manager` registry name (default `florence-rooms`) |
 | `data.revision` | Optional Hub revision override |
 | `lora.*` | Rank, alpha, dropout; vision encoder is frozen |
-| `train.session_dir` | LoRA checkpoints and test outputs (`training_session/`, gitignored) |
+| `train.session_dir` | LoRA checkpoints (`training_session/`, gitignored) |
 | `train.save_steps` | Save LoRA checkpoint every N steps (default 1000) |
-| `train.test_infer_steps` | Run test infer + plot every N steps (default 200) |
 
 ## Execution
 
@@ -107,12 +106,6 @@ Kitchen
 
 The JSON is `{ "rooms": [...], "text": "<plot format>", "prompts": [...] }`.
 
-During training, every `test_infer_steps` the trainer saves under `training_session/test/step-NNNNNN/`:
-
-- `input.jpg` — fixed validation sample
-- `rooms.json` — parsed room polygons
-- `overlay.jpg` — input image with polygons drawn
-
 ## Code
 
 | File | Role |
@@ -123,4 +116,4 @@ During training, every `test_infer_steps` the trainer saves under `training_sess
 | `data.py` | Hub loading, training/infer sample builders, collator |
 | `model.py` | Load Florence-2, LoRA, custom tokens |
 | `train.py` | HuggingFace `Trainer` loop (loads data via `dataset_manager.registry`) |
-| `infer.py` | Generate text, parse rooms onto the input image size |
+| `infer_progressive.py` | Progressive grid inference CLI |

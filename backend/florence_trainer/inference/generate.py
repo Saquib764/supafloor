@@ -41,6 +41,9 @@ def generate_for_prompts(
     texts: list[str] = []
     for prompt in prompts:
         inputs = processor(text=[prompt], images=[image], return_tensors="pt")
+        # Processor mask covers text tokens only; Florence generate merges image tokens
+        # into inputs_embeds but still forwards this short mask via **kwargs.
+        inputs.pop("attention_mask", None)
         inputs = move_inputs_to_model(inputs, model)
         with torch.inference_mode():
             generated = model.generate(**inputs, **gen_kwargs)

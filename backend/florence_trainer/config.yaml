@@ -31,9 +31,7 @@ train:
   weight_decay: 0.01
   bf16: true
   save_steps: 2000
-  test_infer_steps: 50
   max_grad_norm: 1.0
-  test_infer_render: false
   resume: false
   sample_region_size_path: sample_region_size.txt
   sample_region_refresh_steps: 100

@@ -83,9 +83,9 @@ def load_florence_model_config() -> Any:
             bf16=bool(raw.get("bf16", True)),
             resume=False,
             save_steps=1000,
-            test_infer_steps=200,
-            test_infer_render=False,
             max_grad_norm=1.0,
+            sample_region_size_path=adapter_dir / "sample_region_size.txt",
+            sample_region_refresh_steps=100,
         ),
         infer=tc.InferSettings(
             num_points=16,

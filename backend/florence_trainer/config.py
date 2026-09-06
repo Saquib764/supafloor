@@ -63,8 +63,6 @@ class TrainSettings:
     bf16: bool
     resume: bool
     save_steps: int
-    test_infer_steps: int
-    test_infer_render: bool
     max_grad_norm: float
     sample_region_size_path: Path
     sample_region_refresh_steps: int
@@ -175,8 +173,6 @@ def load_config(path: Path | None = None) -> Config:
             bf16=bool(train["bf16"]),
             resume=bool(train["resume"]),
             save_steps=int(train["save_steps"]),
-            test_infer_steps=int(train["test_infer_steps"]),
-            test_infer_render=bool(train["test_infer_render"]),
             max_grad_norm=float(train["max_grad_norm"]),
             sample_region_size_path=_resolve(Path(train["sample_region_size_path"]), base),
             sample_region_refresh_steps=int(train["sample_region_refresh_steps"]),

@@ -46,7 +46,6 @@ dev-mode-dirs = ["."]
 "config.py" = "config.py"
 "config.yaml" = "config.yaml"
 "data.py" = "data.py"
-"infer.py" = "infer.py"
 "infer_progressive.py" = "infer_progressive.py"
 "preview.py" = "preview.py"
 "loc.py" = "loc.py"

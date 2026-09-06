@@ -2,98 +2,22 @@
 
 from __future__ import annotations
 
-import json
 import math
-from pathlib import Path
 from typing import Any
 
 import torch
-from PIL import Image
 from transformers import Trainer, TrainerCallback, TrainingArguments
 
-from config import CONFIG_PATH, Config, datasets_cache_dir
+from config import Config, datasets_cache_dir
 from data import (
     FlorenceCollator,
     FloorplanFlorenceDataset,
     SampleRegionSize,
     _VARIATIONS_PER_ROOM,
     load_rows,
-    prepare_image,
 )
-from infer import infer_image
 from model import load_model_and_processor, save_trainable_projector, use_bf16
-from plot import draw_rooms
 from preview import _print_model_and_lora
-
-_TEST_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
-
-
-def _test_dir() -> Path:
-    # Prefer project tree (next to config.yaml); fall back to packaged test/ beside train.py.
-    for candidate in (CONFIG_PATH.parent / "test", Path(__file__).resolve().parent / "test"):
-        if candidate.is_dir():
-            return candidate
-    raise FileNotFoundError(
-        "Test image dir not found (expected florence_trainer/test or packaged site-packages/test)"
-    )
-
-
-def _load_test_images(image_size: int) -> list[tuple[str, Image.Image]]:
-    test_dir = _test_dir()
-    paths = sorted(p for p in test_dir.iterdir() if p.suffix.lower() in _TEST_EXTENSIONS)
-    if not paths:
-        raise ValueError(f"No test images in {test_dir}")
-    return [(path.stem, prepare_image(Image.open(path), image_size)) for path in paths]
-
-
-class TestInferCallback(TrainerCallback):
-    def __init__(
-        self,
-        cfg: Config,
-        processor: Any,
-        test_images: list[tuple[str, Image.Image]],
-    ) -> None:
-        self._cfg = cfg
-        self._processor = processor
-        self._test_images = test_images
-        self._test_dir = cfg.train.session_dir / "test"
-
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: Any,
-        control: Any,
-        model: Any = None,
-        **kwargs: Any,
-    ) -> None:
-        step = int(state.global_step)
-        if step <= 0 or step % self._cfg.train.test_infer_steps != 0:
-            return
-        if model is None:
-            return
-
-        step_dir = self._test_dir / f"step-{step:06d}"
-        for name, image in self._test_images:
-            payload = infer_image(model, self._processor, self._cfg, image.copy())
-            out_dir = step_dir / name
-            out_dir.mkdir(parents=True, exist_ok=True)
-
-            payload["image"].save(out_dir / "input.jpg", format="JPEG", quality=95)
-            (out_dir / "prompts.txt").write_text("\n\n".join(payload["prompts"]), encoding="utf-8")
-            (out_dir / "output.txt").write_text(payload["text"], encoding="utf-8")
-            if self._cfg.train.test_infer_render:
-                overlay = draw_rooms(payload["image"], payload["rooms"])
-                overlay.save(out_dir / "overlay.jpg", format="JPEG", quality=95)
-                (out_dir / "rooms.json").write_text(
-                    json.dumps({"rooms": payload["rooms"], "text": payload["text"]}, indent=2),
-                    encoding="utf-8",
-                )
-                print(
-                    f"Test infer step {step} {name} → {out_dir} "
-                    f"({len(payload['rooms'])} rooms)"
-                )
-            else:
-                print(f"Test infer step {step} {name} → {out_dir}")
 
 
 class SampleRegionCallback(TrainerCallback):
@@ -151,7 +75,6 @@ def _print_training_setup(
     processor: Any,
     rows: Any,
     train_ds: FloorplanFlorenceDataset,
-    test_images: list[tuple[str, Image.Image]],
     args: TrainingArguments,
     sample_region: SampleRegionSize | None = None,
 ) -> None:
@@ -174,7 +97,6 @@ def _print_training_setup(
     print(f"revision:         {cfg.data.revision or '(default)'}")
     print(f"cache_dir:        {datasets_cache_dir(cfg)}")
     print(f"train rows:       {len(rows):,} ({plan_ids:,} plan_ids)")
-    print(f"test images:      {', '.join(name for name, _ in test_images)}")
     print(f"image_size:       {cfg.image_size}")
     print(f"canvas_size:      {cfg.canvas_size}")
     print(f"max_label_tokens: {cfg.data.max_label_tokens}")
@@ -203,8 +125,6 @@ def _print_training_setup(
     print(f"max_grad_norm:    {cfg.train.max_grad_norm}")
     print(f"resume:           {cfg.train.resume}")
     print(f"save_steps:       {cfg.train.save_steps}")
-    print(f"test_infer_steps: {cfg.train.test_infer_steps}")
-    print(f"test_infer_render: {cfg.train.test_infer_render}")
     print(f"logging_steps:    {args.logging_steps}")
     print()
 
@@ -245,7 +165,6 @@ def run(cfg: Config) -> None:
             f"{cfg.data.variations_per_floorplan} (variations per floorplan)"
         )
     floorplans_per_batch = cfg.train.batch_size // cfg.data.variations_per_floorplan
-    test_images = _load_test_images(cfg.image_size)
 
     cfg.train.session_dir.mkdir(parents=True, exist_ok=True)
     args = TrainingArguments(
@@ -260,17 +179,14 @@ def run(cfg: Config) -> None:
         save_steps=cfg.train.save_steps,
         save_total_limit=3,
         eval_strategy="no",
-        logging_steps=min(50, cfg.train.test_infer_steps),
+        logging_steps=50,
         max_grad_norm=cfg.train.max_grad_norm,
         remove_unused_columns=False,
         label_names=["labels"],
         report_to="none",
         dataloader_num_workers=0,
     )
-    callbacks = [
-        TestInferCallback(cfg, processor, test_images),
-        SampleRegionCallback(sample_region, cfg.train.sample_region_refresh_steps),
-    ]
+    callbacks = [SampleRegionCallback(sample_region, cfg.train.sample_region_refresh_steps)]
     trainer = FlorenceTrainer(
         model=model,
         args=args,
@@ -278,10 +194,10 @@ def run(cfg: Config) -> None:
         data_collator=collator,
         callbacks=callbacks,
     )
-    _print_training_setup(cfg, model, processor, rows, train_ds, test_images, args, sample_region)
+    _print_training_setup(cfg, model, processor, rows, train_ds, args, sample_region)
     trainer.train(resume_from_checkpoint=True if cfg.train.resume else None)
     trainer.save_model(str(cfg.train.session_dir))
     save_trainable_projector(model, cfg.train.session_dir)
     processor.save_pretrained(str(cfg.train.session_dir))
     print(f"Saved adapter → {cfg.train.session_dir}")
-    print(f"train={len(train_ds)} test={len(test_images)}")
+    print(f"train={len(train_ds)}")
