@@ -1,4 +1,4 @@
-"""Train the latent ViT: Hub image → simple_image (both 1-channel)."""
+"""Train the latent ViT: Hub image → simple_image (latent or image space)."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 
 from config import Config, datasets_cache_dir, load_config
-from data import FloorplanPairDataset, hub_row_count, load_rows
-from model import FloorplanLatentViT, recon_loss
+from data import FloorplanPairDataset, build_taesd, decode_latent, hub_row_count, load_rows
+from model import FloorplanLatentViT, image_recon_loss, latent_recon_loss
 from preview import print_model
 
 CHECKPOINT_NAME = "last.pt"
@@ -38,27 +38,24 @@ def _tensor_to_image(tensor: torch.Tensor) -> Image.Image:
     return Image.fromarray(array, mode="L")
 
 
-def _save_recon(
-    model: FloorplanLatentViT,
-    source: torch.Tensor,
-    target: torch.Tensor,
+def _merge_recon_panels(
+    source_image: torch.Tensor,
+    target_image: torch.Tensor,
+    recon_from_image: torch.Tensor,
+    recon_from_simple: torch.Tensor,
     out_dir: Path,
     step: int,
 ) -> None:
-    model.eval()
-    with torch.no_grad():
-        recon_from_image = model(source[:1])
-        recon_from_simple = model(target[:1])
     rows = (
         (
-            _tensor_to_image(source[0]),
+            _tensor_to_image(source_image[0]),
             _tensor_to_image(recon_from_image[0]),
-            _tensor_to_image(target[0]),
+            _tensor_to_image(target_image[0]),
         ),
         (
-            _tensor_to_image(target[0]),
+            _tensor_to_image(target_image[0]),
             _tensor_to_image(recon_from_simple[0]),
-            _tensor_to_image(target[0]),
+            _tensor_to_image(target_image[0]),
         ),
     )
     width, height = rows[0][0].size
@@ -69,8 +66,48 @@ def _save_recon(
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"step-{step:06d}.jpg"
     merged.save(path, format="JPEG", quality=95)
-    model.train()
     print(f"recon → {path}")
+
+
+def _save_recon_latent(
+    model: FloorplanLatentViT,
+    taesd,
+    source_latent: torch.Tensor,
+    target_latent: torch.Tensor,
+    source_image: torch.Tensor,
+    target_image: torch.Tensor,
+    out_dir: Path,
+    step: int,
+    device: torch.device,
+) -> None:
+    model.eval()
+    with torch.no_grad():
+        pred_from_image = model(source_latent[:1].to(device))
+        pred_from_simple = model(target_latent[:1].to(device))
+        recon_from_image = decode_latent(taesd, pred_from_image)
+        recon_from_simple = decode_latent(taesd, pred_from_simple)
+    _merge_recon_panels(
+        source_image, target_image, recon_from_image, recon_from_simple, out_dir, step
+    )
+    model.train()
+
+
+def _save_recon_image(
+    model: FloorplanLatentViT,
+    source_image: torch.Tensor,
+    target_image: torch.Tensor,
+    out_dir: Path,
+    step: int,
+    device: torch.device,
+) -> None:
+    model.eval()
+    with torch.no_grad():
+        recon_from_image = model(source_image[:1].to(device))
+        recon_from_simple = model(target_image[:1].to(device))
+    _merge_recon_panels(
+        source_image, target_image, recon_from_image, recon_from_simple, out_dir, step
+    )
+    model.train()
 
 
 def _save_checkpoint(
@@ -93,6 +130,7 @@ def _save_checkpoint(
 
 
 def _print_setup(cfg: Config, rows_len: int, steps_per_epoch: int, device: torch.device) -> None:
+    precompute = cfg.train.precompute_latent
     print("\n=== Device ===")
     print(f"device:         {device}")
     print(f"cuda available: {torch.cuda.is_available()}")
@@ -107,8 +145,13 @@ def _print_setup(cfg: Config, rows_len: int, steps_per_epoch: int, device: torch
     print(f"hub rows:       {rows_len // 2:,}")
     print(f"train pairs:    {rows_len:,} (image→simple + simple→simple)")
     print(f"image_size:     {cfg.image_size}")
+    if precompute:
+        print(f"latent space:   taef2 ({cfg.image_size // 8}×{cfg.image_size // 8}), precomputed")
+    else:
+        print(f"latent space:   taef2 in model, image-space loss")
 
     print("\n=== Training ===")
+    print(f"precompute_latent: {precompute}")
     print(f"output_dir:     {cfg.train.session_dir}")
     print(f"epochs:         {cfg.train.epochs}")
     print(f"batch_size:     {cfg.train.batch_size}")
@@ -123,8 +166,132 @@ def _print_setup(cfg: Config, rows_len: int, steps_per_epoch: int, device: torch
     print()
 
 
+def _train_latent(
+    cfg: Config,
+    *,
+    model: FloorplanLatentViT,
+    taesd,
+    loader: DataLoader,
+    optimizer: AdamW,
+    device: torch.device,
+    recon_dir: Path,
+    checkpoint_path: Path,
+    amp: bool,
+    start_epoch: int,
+    step: int,
+) -> int:
+    accum = cfg.train.grad_accum
+    optimizer.zero_grad(set_to_none=True)
+    micro = 0
+    for epoch in range(start_epoch, cfg.train.epochs):
+        loader.dataset.epoch = epoch
+        for source_latent, target_latent, weight, source_image, target_image in loader:
+            source_latent = source_latent.to(device, non_blocking=True)
+            target_latent = target_latent.to(device, non_blocking=True)
+            weight = weight.to(device, non_blocking=True)
+            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
+                pred = model(source_latent)
+                loss = latent_recon_loss(pred, target_latent, weight=weight)
+            (loss / accum).backward()
+            micro += 1
+            if micro % accum != 0:
+                continue
+            torch.nn.utils.clip_grad_norm_(
+                (param for param in model.parameters() if param.requires_grad),
+                cfg.train.max_grad_norm,
+            )
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            step += 1
+            print(f"step {step}  loss={loss.item():.4f}")
+            if step % cfg.train.recon_steps == 0:
+                _save_recon_latent(
+                    model,
+                    taesd,
+                    source_latent,
+                    target_latent,
+                    source_image,
+                    target_image,
+                    recon_dir,
+                    step,
+                    device,
+                )
+            if step % cfg.train.save_steps == 0:
+                _save_checkpoint(
+                    checkpoint_path, model=model, optimizer=optimizer, step=step, epoch=epoch
+                )
+                print(f"saved → {checkpoint_path}")
+
+    if micro % accum != 0:
+        torch.nn.utils.clip_grad_norm_(
+            (param for param in model.parameters() if param.requires_grad),
+            cfg.train.max_grad_norm,
+        )
+        optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+        step += 1
+    return step
+
+
+def _train_image(
+    cfg: Config,
+    *,
+    model: FloorplanLatentViT,
+    loader: DataLoader,
+    optimizer: AdamW,
+    device: torch.device,
+    recon_dir: Path,
+    checkpoint_path: Path,
+    amp: bool,
+    start_epoch: int,
+    step: int,
+) -> int:
+    accum = cfg.train.grad_accum
+    optimizer.zero_grad(set_to_none=True)
+    micro = 0
+    for epoch in range(start_epoch, cfg.train.epochs):
+        loader.dataset.epoch = epoch
+        for source_image, target_image in loader:
+            source_image = source_image.to(device, non_blocking=True)
+            target_image = target_image.to(device, non_blocking=True)
+            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
+                recon = model(source_image)
+                loss = image_recon_loss(recon, target_image, ink_weight=cfg.loss.ink_weight)
+            (loss / accum).backward()
+            micro += 1
+            if micro % accum != 0:
+                continue
+            torch.nn.utils.clip_grad_norm_(
+                (param for param in model.parameters() if param.requires_grad),
+                cfg.train.max_grad_norm,
+            )
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            step += 1
+            print(f"step {step}  loss={loss.item():.4f}")
+            if step % cfg.train.recon_steps == 0:
+                _save_recon_image(model, source_image, target_image, recon_dir, step, device)
+            if step % cfg.train.save_steps == 0:
+                _save_checkpoint(
+                    checkpoint_path, model=model, optimizer=optimizer, step=step, epoch=epoch
+                )
+                print(f"saved → {checkpoint_path}")
+
+    if micro % accum != 0:
+        torch.nn.utils.clip_grad_norm_(
+            (param for param in model.parameters() if param.requires_grad),
+            cfg.train.max_grad_norm,
+        )
+        optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+        step += 1
+    return step
+
+
 def run(cfg: Config) -> None:
     device = _device()
+    precompute = cfg.train.precompute_latent
+    taesd = build_taesd(cfg.taesd.encoder, cfg.taesd.decoder, device) if precompute else None
     rows = load_rows(
         cfg.data.dataset,
         revision=cfg.data.revision,
@@ -132,7 +299,14 @@ def run(cfg: Config) -> None:
     )
     num_rows = hub_row_count(rows)
     dataset = FloorplanPairDataset(
-        rows, cfg.image_size, num_rows=num_rows, seed=cfg.data.seed
+        rows,
+        cfg.image_size,
+        num_rows=num_rows,
+        precompute_latent=precompute,
+        taesd=taesd,
+        device=device,
+        ink_weight=cfg.loss.ink_weight,
+        seed=cfg.data.seed,
     )
     if num_rows == 0:
         raise FileNotFoundError(f"No rows in dataset {cfg.data.dataset!r}")
@@ -173,45 +347,33 @@ def run(cfg: Config) -> None:
     recon_dir = cfg.train.session_dir / "recon"
     amp = use_bf16(cfg)
 
-    accum = cfg.train.grad_accum
-    optimizer.zero_grad(set_to_none=True)
-    micro = 0
-    for epoch in range(start_epoch, cfg.train.epochs):
-        dataset.epoch = epoch
-        for source, target in loader:
-            source = source.to(device, non_blocking=True)
-            target = target.to(device, non_blocking=True)
-            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-                recon = model(source)
-                loss = recon_loss(recon, target, ink_weight=cfg.loss.ink_weight)
-            (loss / accum).backward()
-            micro += 1
-            if micro % accum != 0:
-                continue
-            torch.nn.utils.clip_grad_norm_(
-                (param for param in model.parameters() if param.requires_grad),
-                cfg.train.max_grad_norm,
-            )
-            optimizer.step()
-            optimizer.zero_grad(set_to_none=True)
-            step += 1
-            print(f"step {step}  loss={loss.item():.4f}")
-            if step % cfg.train.recon_steps == 0:
-                _save_recon(model, source, target, recon_dir, step)
-            if step % cfg.train.save_steps == 0:
-                _save_checkpoint(
-                    checkpoint_path, model=model, optimizer=optimizer, step=step, epoch=epoch
-                )
-                print(f"saved → {checkpoint_path}")
-
-    if micro % accum != 0:
-        torch.nn.utils.clip_grad_norm_(
-            (param for param in model.parameters() if param.requires_grad),
-            cfg.train.max_grad_norm,
+    if precompute:
+        step = _train_latent(
+            cfg,
+            model=model,
+            taesd=taesd,
+            loader=loader,
+            optimizer=optimizer,
+            device=device,
+            recon_dir=recon_dir,
+            checkpoint_path=checkpoint_path,
+            amp=amp,
+            start_epoch=start_epoch,
+            step=step,
         )
-        optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
-        step += 1
+    else:
+        step = _train_image(
+            cfg,
+            model=model,
+            loader=loader,
+            optimizer=optimizer,
+            device=device,
+            recon_dir=recon_dir,
+            checkpoint_path=checkpoint_path,
+            amp=amp,
+            start_epoch=start_epoch,
+            step=step,
+        )
 
     _save_checkpoint(
         checkpoint_path, model=model, optimizer=optimizer, step=step, epoch=cfg.train.epochs

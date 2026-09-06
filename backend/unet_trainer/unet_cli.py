@@ -9,7 +9,7 @@ from config import CONFIG_PATH, load_config
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Train a frozen-taef2 + ViT floor-plan reconstructor")
+    parser = argparse.ArgumentParser(description="Train a ViT floor-plan reconstructor in taef2 latent space")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_train = sub.add_parser("train", help="Train on Hub image → simple_image pairs")

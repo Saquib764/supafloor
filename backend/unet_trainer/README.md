@@ -1,19 +1,28 @@
 # UNet trainer
 
-Frozen [TAESD](https://github.com/madebyollin/taesd) (taef2) around a trainable compressor + ViT + expander. Encodes a 1-channel floor-plan `image` to a taef2 latent, compresses it, runs a ViT with a residual skip around it, upsamples, and decodes to `simple_image`.
+Trainable compressor + ViT + expander maps floor plans (`image` → `simple_image`). By default (`train.precompute_latent: true`), taef2 encode runs in `data.py`, the model trains in latent space, and taef2 decode is used only for recon JPEG dumps. Set `precompute_latent: false` to run taef2 inside the model and train with image-space loss (previous behavior).
 
-Set `image_size` in `config.yaml` (512–1024, divisible by `16 × vit.patch_size`). Default 512. taef2 is 8× / 32-ch; the compressor halves spatial size and maps 32→16 channels.
+Set `image_size` in `config.yaml` (256–1024, divisible by `16 × vit.patch_size`). Default 512. taef2 is 8× / 32-ch; the compressor halves spatial size and maps 32→16 channels.
 
-Each Hub row yields two pairs: `image → simple_image` and `simple_image → simple_image`. Both columns are converted to grayscale and resized to `image_size`. The target is always `simple_image`.
+Each Hub row yields two pairs: `image → simple_image` and `simple_image → simple_image`. With precompute enabled, both columns are encoded once per row and the `simple_image` latent is reused for the identity pair.
 
 This package is separate from `backend/floorplan/` so PyTorch stays out of the geometry engine.
 
 ## Loss
 
-Ink-weighted L1 reconstruction (taef2 encoder/decoder stay frozen; no KL):
+Ink-weighted L1 (encoder/decoder frozen; no KL). Space depends on `train.precompute_latent`:
+
+**Precomputed latents (`true`, default):**
 
 ```
-w = 1 + α · (1 − x)
+w = 1 + α · (1 − x)   # x = simple_image, downsampled to latent resolution
+L = mean(w · |ẑ − z|)
+```
+
+**In-model taef2 (`false`):**
+
+```
+w = 1 + α · (1 − x)   # x = simple_image pixels
 L = mean(w · |x̂ − x|)
 ```
 
@@ -46,7 +55,7 @@ uv run unet-train inspect
 uv run unet-train train
 ```
 
-Checkpoints write `training_session/last.pt` (trainable weights only). Every `recon_steps`, a 2×3 JPEG is saved as `training_session/recon/step-NNNNNN.jpg`: top `image | recon | target`, bottom `simple_image | recon | target`.
+Checkpoints write `training_session/last.pt` (trainable weights only). Every `recon_steps`, a 2×3 JPEG is saved as `training_session/recon/step-NNNNNN.jpg`: top `image | recon | target`, bottom `simple_image | recon | target`. Recon panels are decoded from predicted latents via frozen taef2.
 
 ## Code
 
@@ -54,8 +63,8 @@ Checkpoints write `training_session/last.pt` (trainable weights only). Every `re
 |---|---|
 | `unet_cli.py` | `train` / `inspect` entry (`uv run unet-train …`) |
 | `config.yaml` / `config.py` | Training parameters |
-| `taesd.py` | Vendored TAESD (taef2 encoder/decoder stay frozen) |
-| `model.py` | Compressor, ViT, expander, reconstruction loss |
-| `data.py` | Hub `image` / `simple_image` → 1×image_size×image_size tensors |
+| `taesd.py` | Vendored TAESD (taef2 weights; data precompute or in-model when `precompute_latent: false`) |
+| `model.py` | Compressor, ViT, expander; optional taef2 wrap; latent and image losses |
+| `data.py` | Hub images → tensors; optional taef2 latent precompute |
 | `train.py` | PyTorch loop, checkpoints, recon dumps |
 | `preview.py` | Print model + dummy forward |

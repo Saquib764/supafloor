@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "unet-trainer"
 version = "0.1.0"
-description = "Frozen taef2 + ViT bottleneck: floor-plan image → simple_image"
+description = "ViT bottleneck in taef2 latent space: floor-plan image → simple_image"
 requires-python = ">=3.11"
 dependencies = [
   "dataset-manager",

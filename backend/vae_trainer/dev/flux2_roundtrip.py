@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -107,8 +108,22 @@ def roundtrip_one(
     original = pil_to_tensor(original_pil).unsqueeze(0).to(next(taesd.parameters()).device)
 
     with torch.no_grad():
+        t0 = time.perf_counter()
         latent = taesd.encoder(original)
-        recon = taesd.decoder(latent).clamp(0, 1)
+        encode_sec = time.perf_counter() - t0
+
+    latent_path = out_dir / f"{path.stem}_latent.pt"
+    latent_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(latent.detach().cpu(), latent_path)
+
+    t0 = time.perf_counter()
+    loaded = torch.load(latent_path, map_location=original.device, weights_only=False)
+    load_latent_sec = time.perf_counter() - t0
+
+    with torch.no_grad():
+        t0 = time.perf_counter()
+        recon = taesd.decoder(loaded).clamp(0, 1)
+        decode_sec = time.perf_counter() - t0
 
     mse, psnr = mse_psnr(original, recon)
     recon_pil = tensor_to_pil(recon[0])
@@ -121,8 +136,12 @@ def roundtrip_one(
         "file": path.name,
         "input_size": original_pil.size,
         "latent_shape": (lc, lh, lw),
+        "encode_sec": encode_sec,
+        "load_latent_sec": load_latent_sec,
+        "decode_sec": decode_sec,
         "mse": mse,
         "psnr": psnr,
+        "latent": str(latent_path.relative_to(_ROOT)),
         "output": str(out_path.relative_to(_ROOT)),
     }
 
@@ -166,12 +185,21 @@ def main(argv: list[str] | None = None) -> int:
         rows.append(row)
         print(
             f"{row['file']}: latent {row['latent_shape'][0]}×{row['latent_shape'][1]}×{row['latent_shape'][2]} "
-            f"(C×H×W) mse={row['mse']:.6f} psnr={row['psnr']:.2f} dB → {row['output']}"
+            f"(C×H×W) encode={row['encode_sec']:.3f}s load={row['load_latent_sec']:.3f}s "
+            f"decode={row['decode_sec']:.3f}s mse={row['mse']:.6f} psnr={row['psnr']:.2f} dB "
+            f"→ {row['latent']}, {row['output']}"
         )
 
+    encode_avg = sum(float(r["encode_sec"]) for r in rows) / len(rows)
+    load_avg = sum(float(r["load_latent_sec"]) for r in rows) / len(rows)
+    decode_avg = sum(float(r["decode_sec"]) for r in rows) / len(rows)
     mse_avg = sum(float(r["mse"]) for r in rows) / len(rows)
     psnr_avg = sum(float(r["psnr"]) for r in rows) / len(rows)
-    print(f"\n{len(rows)} images — avg mse={mse_avg:.6f}, avg psnr={psnr_avg:.2f} dB")
+    print(
+        f"\n{len(rows)} images — avg encode={encode_avg:.3f}s, avg load={load_avg:.3f}s, "
+        f"avg decode={decode_avg:.3f}s, avg mse={mse_avg:.6f}, avg psnr={psnr_avg:.2f} dB"
+    )
+    print(f"Wrote latents to {out_dir.relative_to(_ROOT)}/<stem>_latent.pt")
     print(f"Wrote triptychs (original | recon | |Δ|) to {out_dir.relative_to(_ROOT)}/")
     return 0
 

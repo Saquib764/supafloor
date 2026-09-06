@@ -1,5 +1,5 @@
 hf_cache: ../hf_cache
-image_size: 512
+image_size: 768
 
 data:
   dataset: floorplan-vae
@@ -32,3 +32,4 @@ train:
   recon_steps: 100
   max_grad_norm: 1.0
   num_workers: 0
+  precompute_latent: true

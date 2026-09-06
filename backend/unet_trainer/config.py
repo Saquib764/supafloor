@@ -74,6 +74,7 @@ class TrainSettings:
     recon_steps: int
     max_grad_norm: float
     num_workers: int
+    precompute_latent: bool
 
 
 @dataclass(frozen=True)
@@ -169,5 +170,6 @@ def load_config(path: Path | None = None) -> Config:
             recon_steps=int(train["recon_steps"]),
             max_grad_norm=float(train["max_grad_norm"]),
             num_workers=int(train.get("num_workers", 0)),
+            precompute_latent=bool(train.get("precompute_latent", True)),
         ),
     )

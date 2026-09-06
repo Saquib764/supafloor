@@ -8,8 +8,10 @@ from pathlib import Path
 import torch
 
 from config import CONFIG_PATH, Config, load_config
+from data import taesd_hw
 from model import FloorplanLatentViT, build_model
 
+_TAESD_CHANNELS = 32
 _FROZEN_ROOT = "taesd"
 _TRAINABLE_ROOTS = ("compressor", "vit", "expander")
 
@@ -33,6 +35,7 @@ def _fmt_line(n: int, num_bytes: int) -> str:
 def print_model(cfg: Config, *, dummy_forward: bool = True) -> FloorplanLatentViT:
     model = build_model(cfg)
     model.eval()
+    precompute = cfg.train.precompute_latent
 
     frozen = trainable = 0
     frozen_bytes = trainable_bytes = 0
@@ -41,7 +44,7 @@ def print_model(cfg: Config, *, dummy_forward: bool = True) -> FloorplanLatentVi
         n = param.numel()
         nbytes = n * param.element_size()
         root = name.split(".", 1)[0]
-        if root == _FROZEN_ROOT:
+        if not precompute and root == _FROZEN_ROOT:
             frozen += n
             frozen_bytes += nbytes
         elif root in parts:
@@ -54,34 +57,51 @@ def print_model(cfg: Config, *, dummy_forward: bool = True) -> FloorplanLatentVi
 
     print(model, flush=True)
     print("\n=== Parameters ===", flush=True)
-    print(f"taesd (frozen): {_fmt_line(frozen, frozen_bytes)}", flush=True)
+    if not precompute:
+        print(f"taesd (frozen): {_fmt_line(frozen, frozen_bytes)}", flush=True)
     for name in _TRAINABLE_ROOTS:
         count, size = parts[name]
         print(f"{name + ':':<16} {_fmt_line(count, size)}", flush=True)
     print(f"{'trainable:':<16} {_fmt_line(trainable, trainable_bytes)}", flush=True)
-    print(f"{'total:':<16} {_fmt_line(frozen + trainable, frozen_bytes + trainable_bytes)}", flush=True)
+    if not precompute:
+        print(f"{'total:':<16} {_fmt_line(frozen + trainable, frozen_bytes + trainable_bytes)}", flush=True)
 
     if dummy_forward:
-        x = torch.zeros(1, 1, cfg.image_size, cfg.image_size)
         with torch.no_grad():
-            z_taesd = model.encode_taesd(x)
-            z_comp = model.compressor(z_taesd)
-            z_vit = model.vit(z_comp)
-            z_up = model.expander(z_vit)
-            recon = model.decode_taesd(z_up)
-        if tuple(recon.shape) != tuple(x.shape):
-            raise RuntimeError(f"recon shape {tuple(recon.shape)} != {tuple(x.shape)}")
-
-        print("\n=== Dummy forward ===")
-        print(f"x:           {tuple(x.shape)}")
-        print(f"z_taesd:     {tuple(z_taesd.shape)}")
-        print(f"z_compress:  {tuple(z_comp.shape)}")
-        print(f"z_vit:       {tuple(z_vit.shape)}")
-        print(f"z_up:        {tuple(z_up.shape)}")
-        print(f"x̂:           {tuple(recon.shape)}")
+            if precompute:
+                spatial = taesd_hw(cfg.image_size)
+                z = torch.zeros(1, _TAESD_CHANNELS, spatial, spatial)
+                z_comp = model.compressor(z)
+                z_vit = model.vit(z_comp)
+                z_up = model.expander(z_vit)
+                if tuple(z_up.shape) != tuple(z.shape):
+                    raise RuntimeError(f"output shape {tuple(z_up.shape)} != {tuple(z.shape)}")
+                print("\n=== Dummy forward (latent) ===")
+                print(f"z_in:        {tuple(z.shape)}")
+                print(f"z_compress:  {tuple(z_comp.shape)}")
+                print(f"z_vit:       {tuple(z_vit.shape)}")
+                print(f"z_out:       {tuple(z_up.shape)}")
+            else:
+                x = torch.zeros(1, 1, cfg.image_size, cfg.image_size)
+                z_taesd = model.encode_taesd(x)
+                z_comp = model.compressor(z_taesd)
+                z_vit = model.vit(z_comp)
+                z_up = model.expander(z_vit)
+                recon = model.decode_taesd(z_up)
+                if tuple(recon.shape) != tuple(x.shape):
+                    raise RuntimeError(f"recon shape {tuple(recon.shape)} != {tuple(x.shape)}")
+                print("\n=== Dummy forward (image) ===")
+                print(f"x:           {tuple(x.shape)}")
+                print(f"z_taesd:     {tuple(z_taesd.shape)}")
+                print(f"z_compress:  {tuple(z_comp.shape)}")
+                print(f"z_vit:       {tuple(z_vit.shape)}")
+                print(f"z_up:        {tuple(z_up.shape)}")
+                print(f"x̂:           {tuple(recon.shape)}")
 
     print("\n=== Config ===")
     print(f"image_size:       {cfg.image_size}")
+    print(f"precompute_latent:{precompute}")
+    print(f"taef2 latent:     {_TAESD_CHANNELS}×{taesd_hw(cfg.image_size)}×{taesd_hw(cfg.image_size)}")
     print(f"compressed:       16×{cfg.compressed_size}×{cfg.compressed_size}")
     print(f"vit.dim:          {cfg.vit.dim}")
     print(f"vit.depth:        {cfg.vit.depth}")
