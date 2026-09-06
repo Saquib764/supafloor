@@ -20,9 +20,14 @@ import argparse
 import json
 import random
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 N = 5
+RENDER_THREADS = 4
+PROGRESS_INTERVAL = 50
 
 _SKIP_NAMES = frozenset({"index.json", "manifest.json", "scores_index.json"})
 
@@ -51,6 +56,39 @@ def _iter_plan_json_paths(directory: Path):
         if path.name in _SKIP_NAMES or path.name.endswith(".score.json"):
             continue
         yield path
+
+
+def _export_one_variant(
+    json_path: Path,
+    variant: int,
+    *,
+    input_dir: Path,
+    output_dir: Path,
+    output2_dir: Path,
+    stats_dir: Path,
+) -> None:
+    import yaml
+
+    from extraction.transform import pop_transform_stats
+    from extraction.walls import (
+        EXPORT_IMAGE_EXT,
+        prepare_extraction,
+        render_extraction_png,
+        render_extraction_simple_png,
+    )
+
+    rng = random.Random(f"{json_path}:{variant}")
+    extracted = prepare_extraction(json_path, rng=rng, symbol_probability=0.65)
+    stem = f"{extracted['id']}_{variant}"
+    stats = pop_transform_stats(extracted)
+    (output_dir / f"{stem}.json").write_text(json.dumps(extracted, indent=2))
+    (stats_dir / f"{stem}.yml").write_text(
+        yaml.safe_dump(stats, sort_keys=False, allow_unicode=True)
+    )
+    render_extraction_png(extracted, input_dir / f"{stem}{EXPORT_IMAGE_EXT}", rng=rng)
+    render_extraction_simple_png(
+        extracted, output2_dir / f"{stem}{EXPORT_IMAGE_EXT}", rng=rng
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -97,16 +135,6 @@ def main(argv: list[str] | None = None) -> int:
     output2_dir.mkdir(parents=True, exist_ok=True)
     stats_dir.mkdir(parents=True, exist_ok=True)
 
-    import yaml
-
-    from extraction.transform import pop_transform_stats
-    from extraction.walls import (
-        EXPORT_IMAGE_EXT,
-        prepare_extraction,
-        render_extraction_png,
-        render_extraction_simple_png,
-    )
-
     json_paths = list(_iter_plan_json_paths(source))
     if args.limit is not None:
         json_paths = json_paths[: args.limit]
@@ -114,25 +142,43 @@ def main(argv: list[str] | None = None) -> int:
         print(f"No plan JSON files found in {source}", file=sys.stderr)
         return 1
 
-    total = len(json_paths) * N
+    tasks = [(json_path, variant) for json_path in json_paths for variant in range(N)]
+    total = len(tasks)
     written = 0
-    for json_path in json_paths:
-        for variant in range(N):
-            rng = random.Random(f"{json_path}:{variant}")
-            extracted = prepare_extraction(json_path, rng=rng, symbol_probability=0.65)
-            stem = f"{extracted['id']}_{variant}"
-            stats = pop_transform_stats(extracted)
-            (output_dir / f"{stem}.json").write_text(json.dumps(extracted, indent=2))
-            (stats_dir / f"{stem}.yml").write_text(
-                yaml.safe_dump(stats, sort_keys=False, allow_unicode=True)
+    written_at_last_progress = 0
+    progress_lock = threading.Lock()
+    last_progress_at = time.perf_counter()
+
+    with ThreadPoolExecutor(max_workers=RENDER_THREADS) as executor:
+        futures = [
+            executor.submit(
+                _export_one_variant,
+                json_path,
+                variant,
+                input_dir=input_dir,
+                output_dir=output_dir,
+                output2_dir=output2_dir,
+                stats_dir=stats_dir,
             )
-            render_extraction_png(extracted, input_dir / f"{stem}{EXPORT_IMAGE_EXT}", rng=rng)
-            render_extraction_simple_png(
-                extracted, output2_dir / f"{stem}{EXPORT_IMAGE_EXT}", rng=rng
-            )
-            written += 1
-            if written % 100 == 0 or written == total:
-                print(f"exported {written}/{total}", flush=True)
+            for json_path, variant in tasks
+        ]
+        for future in as_completed(futures):
+            future.result()
+            with progress_lock:
+                previous_interval = written // PROGRESS_INTERVAL
+                written += 1
+                current_interval = written // PROGRESS_INTERVAL
+                if current_interval > previous_interval or written == total:
+                    now = time.perf_counter()
+                    elapsed = now - last_progress_at
+                    completed = written - written_at_last_progress
+                    avg = elapsed / completed if completed else 0.0
+                    last_progress_at = now
+                    written_at_last_progress = written
+                    print(
+                        f"exported {written}/{total} ({elapsed:.1f}s, {avg:.2f}s/img)",
+                        flush=True,
+                    )
 
     print(f"Wrote {written} pairs ({len(json_paths)} plans × {N}) → {out_root.resolve()}")
     print(f"  input:    {input_dir.resolve()}")

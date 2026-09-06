@@ -22,9 +22,11 @@ image-to-floorplan/
 backend/florence_trainer/training_session/
 backend/florence_trainer/hf_cache/
 backend/florence_trainer/_preview/
+backend/hf_cache/
 backend/vae_trainer/training_session/
 backend/vae_trainer/hf_cache/
 backend/vae_trainer/dev/weights/
 backend/vae_trainer/dev/output/
+backend/unet_trainer/training_session/
 
 checkpoints/

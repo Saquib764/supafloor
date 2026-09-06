@@ -117,11 +117,20 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │       ├── model.py
 │       ├── train.py
 │       └── infer.py
-│   └── vae_trainer/              # VAE (image → latent → simple_image)
+│   ├── vae_trainer/              # VAE (image → latent → simple_image)
 │       ├── pyproject.toml
 │       ├── README.md
 │       ├── config.yaml
 │       ├── cli.py                # uv run vae-train train|inspect
+│       ├── data.py
+│       ├── model.py
+│       ├── train.py
+│       └── preview.py
+│   └── unet_trainer/             # Frozen taef2 + ViT (image → simple_image)
+│       ├── pyproject.toml
+│       ├── README.md
+│       ├── config.yaml
+│       ├── unet_cli.py           # uv run unet-train train|inspect
 │       ├── data.py
 │       ├── model.py
 │       ├── train.py
@@ -159,6 +168,7 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 | Manual scripts | `backend/floorplan/dev/` |
 | Florence-2 LoRA (image → rooms) | `backend/florence_trainer/` |
 | VAE (image → simple_image latent) | `backend/vae_trainer/` |
+| Frozen taef2 + ViT (image → simple_image) | `backend/unet_trainer/` |
 | Viewer UI | `frontend/app/` |
 
 ## Tooling
@@ -166,5 +176,6 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 - Backend: **uv** from `backend/floorplan/` (`uv sync --group dev`, `uv run uvicorn app.main:app --reload`)
 - Florence trainer: **uv** from `backend/florence_trainer/` (`uv sync`, `uv run florence-train train`)
 - VAE trainer: **uv** from `backend/vae_trainer/` (`uv sync`, `uv run vae-train train`)
+- UNet trainer: **uv** from `backend/unet_trainer/` (`uv sync`, `uv run unet-train train`)
 - Tests: `uv run pytest -q` from `backend/floorplan/`
 - Dev checks: `dev/generate_floorplans.py`, `dev/score_floorplans.py`, `dev/export_training.py` (from `backend/floorplan/`)

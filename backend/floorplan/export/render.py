@@ -378,7 +378,7 @@ def _draw_walls(
                 fill_black=filled_black_walls,
             )
         draw_wall_strip_outline(ax, draw_start, draw_end, thickness=thickness, ink=ink)
-        if geom.wall_centerline and not filled_black_walls:
+        if geom.wall_centerline:
             draw_wall_centerline(
                 ax,
                 start,
@@ -565,6 +565,8 @@ def _render_geom(
     draw_labels: bool = True,
     draw_dimensions: bool = True,
     draw_margin_noise: bool = True,
+    draw_symbols: bool = True,
+    draw_wall_rects: bool = True,
     filled_black_walls: bool = False,
     blackness_override: float | None = None,
 ) -> tuple[bytes, int, int, int, int, int, int, int, int, float]:
@@ -595,9 +597,9 @@ def _render_geom(
     )
     door_count = _draw_doors(ax, geom, opening_thick=opening_thick, ink=ink)
     window_count = _draw_windows(ax, geom, opening_thick=boundary_thick)
-    wall_rect_count = _draw_wall_rects(ax, geom, ink=ink)
+    wall_rect_count = _draw_wall_rects(ax, geom, ink=ink) if draw_wall_rects else 0
     _draw_pillars(ax, geom, ink=ink, filled_black_walls=filled_black_walls)
-    symbol_count = _draw_room_symbols(ax, geom, blackness=blackness)
+    symbol_count = _draw_room_symbols(ax, geom, blackness=blackness) if draw_symbols else 0
     label_count = _draw_room_labels(ax, geom, ink=ink) if draw_labels else 0
     dimension_count = _draw_dimensions(ax, geom, ink=ink) if draw_dimensions else 0
     if draw_margin_noise:
@@ -789,6 +791,8 @@ def export_simple(
         draw_labels=False,
         draw_dimensions=False,
         draw_margin_noise=False,
+        draw_symbols=False,
+        draw_wall_rects=False,
         filled_black_walls=True,
         blackness_override=BLACKNESS_MAX,
     )

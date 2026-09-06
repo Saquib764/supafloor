@@ -1,4 +1,4 @@
-hf_cache: hf_cache
+hf_cache: ../hf_cache
 image_size: 512
 patch_size: 32
 latent_channels: 4
