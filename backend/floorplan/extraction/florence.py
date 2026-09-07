@@ -72,13 +72,18 @@ def _ensure_trainer_imports() -> None:
     _trainer_imports_ready = True
 
 
-@lru_cache(maxsize=1)
-def _runtime() -> tuple[Any, Any, Any, Any]:
+@lru_cache(maxsize=4)
+def _runtime_for(
+    config_path: str | None = None,
+    adapter_dir: str | None = None,
+) -> tuple[Any, Any, Any, Any]:
     _ensure_trainer_imports()
     from model import load_model_and_processor
 
-    cfg = load_florence_model_config()
-    params = load_infer_params()
+    cfg_path = Path(config_path) if config_path else None
+    adapter_path = Path(adapter_dir) if adapter_dir else None
+    cfg = load_florence_model_config(config_path=cfg_path, adapter_dir=adapter_path)
+    params = load_infer_params(config_path=cfg_path)
     adapter = cfg.train.session_dir
     if not adapter.exists():
         raise FlorenceUnavailableError(f"LoRA adapter not found: {adapter}")
@@ -90,6 +95,10 @@ def _runtime() -> tuple[Any, Any, Any, Any]:
         model.to("mps")
     model.eval()
     return model, processor, params, cfg
+
+
+def _runtime() -> tuple[Any, Any, Any, Any]:
+    return _runtime_for(None, None)
 
 
 def warmup() -> None:
@@ -181,6 +190,95 @@ def _rooms_for_response(
         meta=meta,
     ).model_dump()
     return rooms_out, floor_plan
+
+
+def _fit_to_canvas(image: Image.Image, size: int) -> Image.Image:
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    orig_w, orig_h = image.size
+    scale = size / max(orig_w, orig_h)
+    new_w = max(1, round(orig_w * scale))
+    new_h = max(1, round(orig_h * scale))
+    resized = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", (size, size), "white")
+    canvas.paste(resized, ((size - new_w) // 2, (size - new_h) // 2))
+    return canvas
+
+
+def _prepare_infer_image(path: Path) -> Image.Image:
+    _ensure_trainer_imports()
+    from data import prepare_image
+    from pre_clean import pre_clean
+
+    _model, _processor, _params, cfg = _runtime()
+    return prepare_image(
+        _fit_to_canvas(pre_clean(Image.open(path)), cfg.canvas_size),
+        cfg.image_size,
+    )
+
+
+def _generate_prompt(model: Any, processor: Any, cfg: Any, image: Image.Image, prompt: str) -> str:
+    gen_kwargs = {
+        "max_new_tokens": cfg.infer.max_new_tokens,
+        "num_beams": cfg.infer.num_beams,
+        "do_sample": False,
+        "use_cache": True,
+    }
+    inputs = processor(text=[prompt], images=[image], return_tensors="pt")
+    param = next(model.parameters())
+    device, dtype = param.device, param.dtype
+    inputs = {
+        key: (
+            value.to(device=device, dtype=dtype)
+            if torch.is_floating_point(value)
+            else value.to(device)
+        )
+        if hasattr(value, "to")
+        else value
+        for key, value in inputs.items()
+    }
+    with torch.inference_mode():
+        generated = model.generate(**inputs, **gen_kwargs)
+    text = processor.batch_decode(generated, skip_special_tokens=False)[0]
+    if text.startswith(prompt):
+        text = text[len(prompt) :]
+    return text
+
+
+def infer_room_at_canvas_point(
+    path: Path,
+    canvas_x: float,
+    canvas_y: float,
+    *,
+    config_path: Path | None = None,
+    adapter_dir: Path | None = None,
+) -> dict[str, Any] | None:
+    """Referring-room inference at canvas coords; returns canvas-space room dict."""
+    _ensure_trainer_imports()
+    from data import format_prompt
+    from loc import parse_referring_room
+
+    cfg_key = str(config_path.resolve()) if config_path else None
+    adapter_key = str(adapter_dir.resolve()) if adapter_dir else None
+    model, processor, _params, cfg = _runtime_for(cfg_key, adapter_key)
+    image = _prepare_infer_image(path)
+    prompt = format_prompt(
+        [(canvas_x, canvas_y)],
+        canvas_size=cfg.canvas_size,
+        bins=cfg.loc_bins,
+    )
+    text = _generate_prompt(model, processor, cfg, image, prompt)
+    room = parse_referring_room(text, image_size=cfg.image_size, bins=cfg.loc_bins)
+    if room is None or len(room.get("polygon") or []) < 3:
+        return None
+    scale = cfg.canvas_size / cfg.image_size
+    return {
+        "name": str(room.get("name") or "Room"),
+        "polygon": [
+            {"x": int(round(x * scale)), "y": int(round(y * scale))}
+            for x, y in room["polygon"]
+        ],
+    }
 
 
 def infer_automatic_image(data: bytes) -> dict[str, Any]:

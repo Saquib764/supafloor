@@ -94,6 +94,12 @@ def canonicalize_room_polygon(polygon: list[dict[str, Any]]) -> list[dict[str, A
     return ordered
 
 
+def export_room_polygon(polygon: list[dict[str, Any]]) -> list[dict[str, int]]:
+    """Ceil-round canvas coords and canonicalize ring order (synthetic extraction export)."""
+    rounded = [_round_point(float(point["x"]), float(point["y"])) for point in polygon]
+    return canonicalize_room_polygon(rounded)  # type: ignore[return-value]
+
+
 def _scale_point(point: dict[str, Any], factor: float) -> dict[str, float]:
     return {"x": float(point["x"]) * factor, "y": float(point["y"]) * factor}
 
@@ -808,7 +814,7 @@ def transform_extraction(
 
     rooms: list[dict[str, Any]] = []
     for room in extracted.get("rooms") or []:
-        polygon = canonicalize_room_polygon(
+        polygon = export_room_polygon(
             [
                 _round_point(*mapper(float(point["x"]), float(point["y"])))
                 for point in room.get("polygon") or []

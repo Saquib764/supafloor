@@ -25,16 +25,17 @@ def _ensure_trainer_path() -> None:
         sys.path.append(trainer_str)
 
 
-def _load_raw_config() -> dict[str, Any]:
-    return yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+def _load_raw_config(config_path: Path | None = None) -> dict[str, Any]:
+    path = config_path or _CONFIG_PATH
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
-def load_infer_params() -> Any:
-    """Load inference params from extraction/florence_config.yaml."""
+def load_infer_params(*, config_path: Path | None = None) -> Any:
+    """Load inference params from extraction/florence_config.yaml (or override path)."""
     _ensure_trainer_path()
     from inference.params import infer_params_from_mapping
 
-    return infer_params_from_mapping(_load_raw_config())
+    return infer_params_from_mapping(_load_raw_config(config_path))
 
 
 def _trainer_config_module() -> Any:
@@ -55,14 +56,22 @@ def _trainer_config_module() -> Any:
     return module
 
 
-def load_florence_model_config() -> Any:
+def load_florence_model_config(
+    *,
+    config_path: Path | None = None,
+    adapter_dir: Path | None = None,
+) -> Any:
     """Build a minimal trainer Config for model loading only."""
     tc = _trainer_config_module()
 
-    raw = _load_raw_config()
+    raw = _load_raw_config(config_path)
     base = _FLOORPLAN_ROOT
     hf_cache = tc.apply_hf_cache(_resolve(Path(raw["hf_cache"]), base))
-    adapter_dir = _resolve(Path(raw["adapter_dir"]), base)
+    resolved_adapter = (
+        adapter_dir.resolve()
+        if adapter_dir is not None
+        else _resolve(Path(raw["adapter_dir"]), base)
+    )
 
     return tc.Config(
         hf_cache=hf_cache,
@@ -70,10 +79,19 @@ def load_florence_model_config() -> Any:
         image_size=int(raw["image_size"]),
         canvas_size=int(raw.get("canvas_size") or 1024),
         loc_bins=int(raw["loc_bins"]),
-        data=tc.DataSettings(dataset="unused", max_label_tokens=256),
+        data=tc.DataSettings(
+            dataset="unused",
+            max_label_tokens=256,
+            empty_polygon_prob=0.0,
+            excluded_point_prob=0.0,
+            inside_counts=(1,),
+            excluded_counts=(1,),
+            room_slots=1,
+            per_room_variation=1,
+        ),
         lora=tc.LoraSettings(dropout=0.05, vision_rank=8, encoder_rank=8, decoder_rank=16),
         train=tc.TrainSettings(
-            session_dir=adapter_dir,
+            session_dir=resolved_adapter,
             epochs=1,
             batch_size=1,
             grad_accum=1,
@@ -82,10 +100,12 @@ def load_florence_model_config() -> Any:
             weight_decay=0.0,
             bf16=bool(raw.get("bf16", True)),
             resume=False,
+            from_adapter=None,
             save_steps=1000,
             max_grad_norm=1.0,
-            sample_region_size_path=adapter_dir / "sample_region_size.txt",
+            sample_region_size_path=resolved_adapter / "sample_region_size.txt",
             sample_region_refresh_steps=100,
+            num_workers=0,
         ),
         infer=tc.InferSettings(
             num_points=16,

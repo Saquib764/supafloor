@@ -1,0 +1,5 @@
+name: floorplan-manual
+hf_repo: saquiboye/floorplan-manual
+revision: main
+private: true
+local_root: floorplan-manual

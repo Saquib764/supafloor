@@ -3,7 +3,7 @@ image_size: 768
 canvas_size: 1024
 loc_bins: 1000
 
-adapter_dir: ../florence_trainer/training_session
+adapter_dir: ../florence_trainer/training_session_2/checkpoint-14000
 hf_cache: ../hf_cache
 samples_dir: ../florence_trainer/test
 

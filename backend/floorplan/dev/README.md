@@ -29,6 +29,12 @@ uv run python dev/export_image_to_floorplan.py --dir ../../floorplan_dataset/bas
 
 # 6) Aggregate transform stats YAML → Markdown summary
 uv run python dev/summarize_dataset_stats.py
+
+# 7) Manually annotate room polygons (pygame UI)
+uv sync --group dev
+uv run python dev/annotate_rooms.py
+# reads floorplan_dataset/manual/, writes floorplan-manual/{input,output,output2}/
+# predict mode uses extraction/florence_config.yaml
 ```
 
 Large deterministic corpus (basic score tier, no LLM) — prefer the CLI:
@@ -47,4 +53,15 @@ uv run floorplan dataset -n 5000 --seed 0 --score-level basic --workers 4 \
 | `export_realistic.py` | FloorPlan JSON → realistic 1024 JPG |
 | `export_image_to_floorplan.py` | Corpus JSON → `input/` JPG + `output/` extraction JSON + `output2/` simple JPG + `stats/` YAML per variant |
 | `summarize_dataset_stats.py` | `stats/*.yml` → Markdown summary (`STATS.md`) |
+| `annotate_rooms.py` | Pygame UI: annotate `floorplan_dataset/manual/` → `floorplan-manual/` (`input/` photo, `output/` JSON, `output2/` simple render) |
 | `floorplan dataset` | Threshold-gated unique corpus under `floorplan_dataset/` (gitignored) |
+
+Publish manual annotations to Hugging Face (`saquiboye/floorplan-manual`):
+
+```bash
+cd ../../dataset_manager
+uv sync
+uv run python cli.py upload floorplan-manual
+```
+
+See `dataset_manager/README.md` for auth (`HF_TOKEN`) and synthetic upload (`floorplan-to-json`).
