@@ -27,6 +27,7 @@ backend/vae_trainer/training_session/
 backend/vae_trainer/hf_cache/
 backend/vae_trainer/dev/weights/
 backend/vae_trainer/dev/output/
-backend/unet_trainer/training_session/
+backend/unet_trainer/training_session
+backend/unet_trainer/training_session_2
 
 checkpoints/
