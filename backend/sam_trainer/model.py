@@ -47,12 +47,28 @@ def trainable_param_count(model: torch.nn.Module) -> int:
     return sum(param.numel() for param in model.parameters() if param.requires_grad)
 
 
+def _segment(model: torch.nn.Module, **kwargs: object):
+    """Run single-image point/box segmentation (Sam2VideoModel image path)."""
+    return model._single_frame_forward(**kwargs)
+
+
+def post_process_pred_masks(
+    processor: object,
+    pred_masks: torch.Tensor,
+    original_sizes: torch.Tensor,
+) -> torch.Tensor:
+    """Sam2VideoModel returns 4D masks; post_process expects a multimask dim."""
+    if pred_masks.ndim == 4:
+        pred_masks = pred_masks.unsqueeze(2)
+    return processor.post_process_masks(pred_masks, original_sizes)[0]
+
+
 def load_model_and_processor(cfg: Config, *, for_training: bool = False) -> Sam2Predictor:
-    from transformers import Sam2Model, Sam2Processor
+    from transformers import Sam2VideoModel, Sam2VideoProcessor
 
     device = pick_device()
-    model = Sam2Model.from_pretrained(cfg.model_id).to(device)
-    processor = Sam2Processor.from_pretrained(cfg.model_id)
+    model = Sam2VideoModel.from_pretrained(cfg.model_id).to(device)
+    processor = Sam2VideoProcessor.from_pretrained(cfg.model_id)
     if for_training:
         apply_finetune(model, cfg.finetune)
         model.train()
@@ -117,7 +133,8 @@ class Sam2TrainingWrapper(nn.Module):
                 ihs,
                 batch_size,
             )
-            return self.model(
+            return _segment(
+                self.model,
                 input_points=input_points,
                 input_labels=input_labels,
                 image_embeddings=image_embeddings,
@@ -126,7 +143,8 @@ class Sam2TrainingWrapper(nn.Module):
 
         if pixel_values is None:
             raise ValueError("intermediate_hidden_states or pixel_values required")
-        return self.model(
+        return _segment(
+            self.model,
             pixel_values=pixel_values,
             input_points=input_points,
             input_labels=input_labels,
@@ -171,12 +189,19 @@ def predict_points(
     inputs = {key: value.to(predictor.device) for key, value in inputs.items()}
 
     with torch.no_grad():
-        outputs = predictor.model(**inputs)
+        outputs = _segment(
+            predictor.model,
+            pixel_values=inputs["pixel_values"],
+            input_points=inputs["input_points"],
+            input_labels=inputs["input_labels"],
+            multimask_output=multimask_output,
+        )
 
-    masks = predictor.processor.post_process_masks(
+    masks = post_process_pred_masks(
+        predictor.processor,
         outputs.pred_masks.cpu(),
         inputs["original_sizes"],
-    )[0]
+    )
     scores = outputs.iou_scores[0, 0].detach().cpu()
     if multimask_output:
         best_idx = int(scores.argmax().item())

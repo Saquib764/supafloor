@@ -82,6 +82,83 @@ def load_hub_dataset(name: str, *, revision: str | None = None, cache_dir: Path 
     return schema.load_from_hub(repo, revision=rev, cache_dir=cache_dir)
 
 
+def hub_dataset_row_count(
+    name: str,
+    *,
+    revision: str | None = None,
+    cache_dir: Path | None = None,
+) -> int:
+    from datasets import DownloadMode, load_dataset
+
+    enable_download_progress()
+    repo, _, rev = _hub(name, revision)
+    kwargs: dict[str, object] = {
+        "split": "train",
+        "revision": rev,
+        "download_mode": DownloadMode.REUSE_DATASET_IF_EXISTS,
+    }
+    if cache_dir is not None:
+        kwargs["cache_dir"] = str(cache_dir)
+    return len(load_dataset(repo, **kwargs))
+
+
+def load_hub_rows_at(
+    name: str,
+    indices: range | list[int],
+    *,
+    columns: tuple[str, ...] | None = None,
+    revision: str | None = None,
+    cache_dir: Path | None = None,
+) -> list[dict]:
+    from datasets import DownloadMode, load_dataset
+
+    enable_download_progress()
+    repo, _, rev = _hub(name, revision)
+    kwargs: dict[str, object] = {
+        "split": "train",
+        "revision": rev,
+        "download_mode": DownloadMode.REUSE_DATASET_IF_EXISTS,
+    }
+    if cache_dir is not None:
+        kwargs["cache_dir"] = str(cache_dir)
+    dataset = load_dataset(repo, **kwargs)
+    if columns is not None:
+        missing = [col for col in columns if col not in dataset.column_names]
+        if missing:
+            raise KeyError(f"Hub dataset missing columns: {missing}")
+        dataset = dataset.select_columns(list(columns))
+    return [dataset[index] for index in indices]
+
+
+def load_hub_stream(
+    name: str,
+    *,
+    split: str = "train",
+    columns: tuple[str, ...] | None = None,
+    revision: str | None = None,
+    cache_dir: Path | None = None,
+):
+    from datasets import DownloadMode, load_dataset
+
+    enable_download_progress()
+    repo, _, rev = _hub(name, revision)
+    kwargs: dict[str, object] = {
+        "split": split,
+        "revision": rev,
+        "streaming": True,
+        "download_mode": DownloadMode.REUSE_DATASET_IF_EXISTS,
+    }
+    if cache_dir is not None:
+        kwargs["cache_dir"] = str(cache_dir)
+    dataset = load_dataset(repo, **kwargs)
+    if columns is not None:
+        missing = [col for col in columns if col not in dataset.column_names]
+        if missing:
+            raise KeyError(f"Hub dataset missing columns: {missing}")
+        dataset = dataset.select_columns(list(columns))
+    return dataset
+
+
 def load_hub_samples(
     name: str,
     *,

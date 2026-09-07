@@ -10,9 +10,12 @@ from typing import Any, Iterator
 import numpy as np
 import torch
 from PIL import Image, ImageDraw
-from registry import load_hub_dataset
+from registry import hub_dataset_row_count, load_hub_rows_at, load_hub_stream
 from shapely.geometry import Point, Polygon
 from torch.utils.data import IterableDataset
+
+SAM_COLUMNS = ("stem", "image", "extraction")
+STREAM_SHUFFLE_BUFFER = 10_000
 
 
 @dataclass(frozen=True)
@@ -32,21 +35,53 @@ def prepare_image(image: Image.Image, size: int) -> Image.Image:
     return image
 
 
-def load_rows(dataset: str, *, revision: str | None = None, cache_dir: Any = None):
-    return load_hub_dataset(dataset, revision=revision, cache_dir=cache_dir)
-
-
-def split_rows(rows: Any, *, test_fraction: float, seed: int | None) -> tuple[Any, Any]:
+def load_train_stream(
+    dataset: str,
+    *,
+    test_fraction: float,
+    revision: str | None = None,
+    cache_dir: Any = None,
+) -> tuple[Any, int, int]:
     if not 0.0 < test_fraction < 1.0:
         raise ValueError("data.test_fraction must be between 0 and 1")
-    if len(rows) < 2:
+    total = hub_dataset_row_count(dataset, revision=revision, cache_dir=cache_dir)
+    if total < 2:
         raise ValueError("need at least 2 rows to split into train and test")
-    split = rows.train_test_split(test_size=test_fraction, seed=seed or 0)
-    return split["train"], split["test"]
+
+    train_pct = int(round((1.0 - test_fraction) * 100))
+    if not 0 < train_pct < 100:
+        raise ValueError("data.test_fraction must leave at least one train and test row")
+    train_count = int(total * train_pct / 100)
+    test_count = total - train_count
+
+    train_rows = load_hub_stream(
+        dataset,
+        split="train",
+        revision=revision,
+        cache_dir=cache_dir,
+        columns=SAM_COLUMNS,
+    ).take(train_count)
+    return train_rows, train_count, test_count
 
 
-def dataset_len(rows: Any) -> int:
-    return len(rows)
+def load_viz_rows(
+    dataset: str,
+    train_count: int,
+    *,
+    count: int,
+    revision: str | None = None,
+    cache_dir: Any = None,
+) -> list[dict[str, Any]]:
+    if count < 1:
+        return []
+    indices = range(train_count, train_count + count)
+    return load_hub_rows_at(
+        dataset,
+        indices,
+        columns=SAM_COLUMNS,
+        revision=revision,
+        cache_dir=cache_dir,
+    )
 
 
 def _polygon_from_vertices(vertices: list[dict[str, Any]]) -> Polygon:
@@ -100,7 +135,7 @@ def build_room_samples(
 
 
 def build_viz_samples(
-    rows: Any,
+    rows: list[dict[str, Any]],
     canvas_size: int,
     *,
     room_slots: int,
@@ -109,12 +144,9 @@ def build_viz_samples(
     precompute_backbone: bool,
     encode_backbone: Any,
     prepare_pixel_values: Any,
-    max_samples: int | None = None,
 ) -> list[VizSample]:
     samples: list[VizSample] = []
-    limit = len(rows) if max_samples is None else min(len(rows), max_samples)
-    for index in range(limit):
-        row = rows[index]
+    for index, row in enumerate(rows):
         image = prepare_image(row["image"], canvas_size)
         extraction = json.loads(str(row["extraction"]))
         point, _mask = build_room_samples(
@@ -171,7 +203,8 @@ class FloorplanSamDataset(IterableDataset):
         return self._num_rows * self._room_slots * self._per_room_variation
 
     def __iter__(self) -> Iterator[dict[str, Any]]:
-        shuffled = self._rows.shuffle(seed=self._seed + self.epoch)
+        buffer_size = min(STREAM_SHUFFLE_BUFFER, self._num_rows)
+        shuffled = self._rows.shuffle(seed=self._seed + self.epoch, buffer_size=buffer_size)
         for index, row in enumerate(shuffled):
             if index >= self._num_rows:
                 break

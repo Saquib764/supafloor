@@ -19,15 +19,15 @@ from data import (
     SamCollator,
     VizSample,
     build_viz_samples,
-    dataset_len,
-    load_rows,
-    split_rows,
+    load_train_stream,
+    load_viz_rows,
 )
 from model import (
     Sam2TrainingWrapper,
     compute_segmentation_loss,
     encode_backbone,
     load_model_and_processor,
+    post_process_pred_masks,
     prepare_pixel_values,
     trainable_param_count,
 )
@@ -137,7 +137,7 @@ def _predict_mask(
             input_labels=labels,
         )
     original_sizes = torch.tensor([[canvas_size, canvas_size]])
-    masks = processor.post_process_masks(outputs.pred_masks.cpu(), original_sizes)[0]
+    masks = post_process_pred_masks(processor, outputs.pred_masks.cpu(), original_sizes)
     return masks[0, 0].numpy().astype(bool)
 
 
@@ -241,18 +241,20 @@ def _print_training_setup(
 
 
 def run(cfg: Config) -> None:
-    rows = load_rows(
+    cache_dir = datasets_cache_dir(cfg)
+    train_rows, train_count, test_count = load_train_stream(
         cfg.data.dataset,
-        revision=cfg.data.revision,
-        cache_dir=datasets_cache_dir(cfg),
-    )
-    train_rows, test_rows = split_rows(
-        rows,
         test_fraction=cfg.data.test_fraction,
-        seed=cfg.data.seed,
+        revision=cfg.data.revision,
+        cache_dir=cache_dir,
     )
-    train_count = dataset_len(train_rows)
-    test_count = dataset_len(test_rows)
+    viz_rows = load_viz_rows(
+        cfg.data.dataset,
+        train_count,
+        count=cfg.train.viz_samples,
+        revision=cfg.data.revision,
+        cache_dir=cache_dir,
+    )
 
     predictor = load_model_and_processor(cfg, for_training=True)
     device = predictor.device
@@ -265,7 +267,7 @@ def run(cfg: Config) -> None:
         return prepare_pixel_values(predictor.processor, image, device)
 
     viz_samples = build_viz_samples(
-        test_rows,
+        viz_rows,
         cfg.canvas_size,
         room_slots=cfg.data.room_slots,
         per_room_variation=cfg.data.per_room_variation,
@@ -273,7 +275,6 @@ def run(cfg: Config) -> None:
         precompute_backbone=cfg.train.precompute_backbone,
         encode_backbone=_encode,
         prepare_pixel_values=_prepare,
-        max_samples=cfg.train.viz_samples,
     )
     viz_dir = cfg.train.session_dir / "viz"
 
