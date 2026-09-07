@@ -1,0 +1,36 @@
+model_id: facebook/sam2.1-hiera-small
+canvas_size: 1024
+margin: 10
+hf_cache: ../hf_cache
+
+data:
+  dataset: floorplan-manual
+  revision: null
+  seed: 42
+  test_fraction: 0.2
+  room_slots: 1
+  per_room_variation: 4
+  num_workers: 0
+
+finetune:
+  neck: true
+  prompt_encoder: false
+  mask_decoder: false
+
+train:
+  session_dir: training_session
+  precompute_backbone: true
+  epochs: 10
+  batch_size: 4
+  grad_accum: 1
+  learning_rate: 1.0e-4
+  warmup_ratio: 0.01
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  save_steps: 500
+  resume: false
+  fp16: true
+  viz_steps: 10
+
+infer:
+  multimask_output: false

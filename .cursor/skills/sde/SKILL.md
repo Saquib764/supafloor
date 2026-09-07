@@ -126,15 +126,23 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │       ├── model.py
 │       ├── train.py
 │       └── preview.py
-│   └── unet_trainer/             # Frozen taef2 + ViT (image → simple_image)
+│   ├── unet_trainer/             # Frozen taef2 + ViT (image → simple_image)
+│   │   ├── pyproject.toml
+│   │   ├── README.md
+│   │   ├── config.yaml
+│   │   ├── unet_cli.py           # uv run unet-train train|inspect
+│   │   ├── data.py
+│   │   ├── model.py
+│   │   ├── train.py
+│   │   └── preview.py
+│   └── sam_trainer/              # SAM 2.1 point-prompt room segmentation
 │       ├── pyproject.toml
 │       ├── README.md
 │       ├── config.yaml
-│       ├── unet_cli.py           # uv run unet-train train|inspect
-│       ├── data.py
+│       ├── sam_cli.py            # uv run sam-train train|inspect
 │       ├── model.py
-│       ├── train.py
-│       └── preview.py
+│       ├── canvas.py
+│       └── test_image/
 │
 └── frontend/                     # Viewer / debug UI
     ├── package.json
@@ -169,6 +177,7 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 | Florence-2 LoRA (image → rooms) | `backend/florence_trainer/` |
 | VAE (image → simple_image latent) | `backend/vae_trainer/` |
 | Frozen taef2 + ViT (image → simple_image) | `backend/unet_trainer/` |
+| SAM 2.1 point-prompt room segmentation | `backend/sam_trainer/` |
 | Viewer UI | `frontend/app/` |
 
 ## Tooling
@@ -177,5 +186,6 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 - Florence trainer: **uv** from `backend/florence_trainer/` (`uv sync`, `uv run florence-train train`)
 - VAE trainer: **uv** from `backend/vae_trainer/` (`uv sync`, `uv run vae-train train`)
 - UNet trainer: **uv** from `backend/unet_trainer/` (`uv sync`, `uv run unet-train train`)
+- SAM trainer: **uv** from `backend/sam_trainer/` (`uv sync`, `uv run sam-train train`)
 - Tests: `uv run pytest -q` from `backend/floorplan/`
 - Dev checks: `dev/generate_floorplans.py`, `dev/score_floorplans.py`, `dev/export_training.py` (from `backend/floorplan/`)

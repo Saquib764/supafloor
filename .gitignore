@@ -20,7 +20,8 @@ node_modules/
 uv.lock
 image-to-floorplan/
 /floorplan-manual/
-backend/florence_trainer/training_session/
+backend/florence_trainer/training_session
+backend/florence_trainer/training_session_*
 backend/florence_trainer/hf_cache/
 backend/florence_trainer/_preview/
 backend/hf_cache/
@@ -30,5 +31,6 @@ backend/vae_trainer/dev/weights/
 backend/vae_trainer/dev/output/
 backend/unet_trainer/training_session
 backend/unet_trainer/training_session_2
+backend/sam_trainer/training_session/
 
 checkpoints/

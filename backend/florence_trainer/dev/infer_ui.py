@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Interactive pygame UI: click points to infer room polygons.
+"""Interactive pygame UI: click points to infer room polygons or SAM masks.
 
 Left panel lists test/ images (sorted by name); first image loads by default.
-Single mode infers immediately on each click. Multiple mode places positive
-and optional exclusion points, then runs one inference when Infer is clicked.
-UNet runs the visible image through taef2 encode/decode + latest latent ViT;
-VAE runs the visible image through the floor-plan VAE (encode → decode);
-each click chains another pass on the current viewer image.
+Toggle backbone between Florence (room polygons) and SAM 2.1 (segmentation masks).
+Single mode infers immediately on each click. Multiple mode places points first,
+then runs one inference when Infer is clicked. Florence multiple mode also supports
+optional exclusion points. UNet/VAE buttons apply only in Florence mode.
 
 Usage (from backend/florence_trainer):
 
@@ -31,6 +30,7 @@ if str(_ROOT) not in sys.path:
 if str(_DEV) not in sys.path:
     sys.path.insert(0, str(_DEV))
 
+import numpy as np
 import pygame
 import torch
 from PIL import Image
@@ -46,8 +46,11 @@ from plot import draw_rooms
 from pre_clean import pre_clean
 from fit_test_canvas import fit_to_canvas
 
+from sam_infer import get_sam_runtime
 from unet_infer import get_unet_runtime
 from vae_infer import get_vae_runtime
+
+Backbone = Literal["florence", "sam"]
 
 def _generate_for_prompts(model, processor, cfg, image, prompts: list[str]) -> list[str]:
     gen_kwargs = {
@@ -213,6 +216,13 @@ def _wrap_text(font: pygame.font.Font, text: str, max_width: int) -> list[str]:
 
 
 @dataclass
+class MaskEntry:
+    mask: np.ndarray
+    points: list[tuple[float, float]]
+    score: float
+
+
+@dataclass
 class Button:
     rect: pygame.Rect
     label: str
@@ -239,6 +249,7 @@ class InferUI:
         processor,
         test_images: list[Path],
         *,
+        sam_config: Path,
         unet_checkpoint: Path,
         vae_checkpoint: Path,
     ) -> None:
@@ -247,42 +258,53 @@ class InferUI:
         self.cfg = cfg
         self.model = model
         self.processor = processor
+        self.sam_config = sam_config
+        self.sam_runtime = None
         self.unet_checkpoint = unet_checkpoint
         self.vae_checkpoint = vae_checkpoint
         self.test_images = test_images
         self.selected_index = 0
         self.list_scroll = 0
+        self.backbone: Backbone = "florence"
         self.base_image = load_viewer_image(test_images[0], cfg)
         self.rooms: list[dict] = []
+        self.sam_entries: list[MaskEntry] = []
         self.selected_points: list[tuple[int, int]] = []
         self.excluded_points: list[tuple[int, int]] = []
         self.placing_exclusion = False
         self.mode: Literal["single", "multiple"] = "single"
         self.last_prompt = ""
         self.last_raw = ""
-        self.status = f"Loaded {test_images[0].name} — single mode, click to infer."
-        self.image_w, self.image_h = self.base_image.size
+        self.status = f"Loaded {test_images[0].name} — florence, single mode, click to infer."
+        self.layout_w = cfg.image_size
+        self.layout_h = cfg.image_size
         self.display_scale = DISPLAY_SCALE
-        self.display_w = int(self.image_w * self.display_scale)
-        self.display_h = int(self.image_h * self.display_scale)
+        self.display_w = max(1, int(self.layout_w * self.display_scale))
+        self.display_h = max(1, int(self.layout_h * self.display_scale))
         self.list_w = LIST_WIDTH
         self.viewer_x = self.list_w
-        self.panel_w = int(self.image_w * PANEL_WIDTH_RATIO)
+        self.panel_w = int(self.layout_w * PANEL_WIDTH_RATIO)
         self.panel_x = self.viewer_x + self.display_w
         self.window_w = self.panel_x + self.panel_w
+        self.image_w, self.image_h = self.base_image.size
         self.window = pygame.display.set_mode((self.window_w, self.display_h))
-        pygame.display.set_caption("Florence infer UI")
+        pygame.display.set_caption("Infer UI — florence")
         self.font = pygame.font.SysFont("monospace", 14)
         self.label_font = pygame.font.SysFont("monospace", 13, bold=True)
         self.btn_font = pygame.font.SysFont("monospace", 13, bold=True)
         self._layout_buttons()
         self._rebuild_surface()
 
+    def _sync_image_size(self) -> None:
+        self.image_w, self.image_h = self.base_image.size
+
     def _layout_buttons(self) -> None:
         x = self.panel_x + 10
         btn_w = self.panel_w - 20
         y = 10
         self.clear_btn = Button(pygame.Rect(x, y, btn_w, 28), "Clear all")
+        y += 34
+        self.backbone_btn = Button(pygame.Rect(x, y, btn_w, 28), "Backbone: florence")
         y += 34
         self.unet_btn = Button(pygame.Rect(x, y, btn_w, 28), "UNet")
         y += 34
@@ -322,27 +344,57 @@ class InferUI:
             return None
         return index
 
+    def _viewer_image_for_path(self, path: Path) -> Image.Image:
+        if self.backbone == "florence":
+            return load_viewer_image(path, self.cfg)
+        runtime = self._ensure_sam_runtime()
+        return runtime.viewer_image(path)
+
+    def _ensure_sam_runtime(self):
+        if self.sam_runtime is None:
+            self.status = "Loading SAM 2.1..."
+            self._draw()
+            pygame.display.flip()
+            try:
+                self.sam_runtime = get_sam_runtime(str(self.sam_config.resolve()))
+            except Exception as exc:
+                self.status = f"SAM load failed: {exc}"
+                raise
+        return self.sam_runtime
+
     def _load_test_image(self, index: int) -> None:
         path = self.test_images[index]
         self.selected_index = index
         self._ensure_list_visible(index)
-        self.base_image = load_viewer_image(path, self.cfg)
+        self.base_image = self._viewer_image_for_path(path)
         self.rooms.clear()
+        self.sam_entries.clear()
         self._reset_point_selection()
         self.last_prompt = ""
         self.last_raw = ""
         if self.mode == "single":
-            self.status = f"Loaded {path.name} — click the floor plan to infer."
+            self.status = f"Loaded {path.name} — {self.backbone}, click to infer."
         else:
             self._update_multi_status()
+        self._sync_image_size()
         self._rebuild_surface()
 
     def _in_image(self, pos: tuple[int, int]) -> bool:
         mx, my = pos
         return self.viewer_x <= mx < self.panel_x and my < self.display_h
 
+    def _sam_masks_and_points(self) -> tuple[list[np.ndarray], list[tuple[float, float]]]:
+        masks = [entry.mask for entry in self.sam_entries]
+        points = [point for entry in self.sam_entries for point in entry.points]
+        return masks, points
+
     def _rebuild_surface(self) -> None:
-        overlay = draw_rooms(self.base_image.copy(), self.rooms)
+        if self.backbone == "florence":
+            overlay = draw_rooms(self.base_image.copy(), self.rooms)
+        else:
+            runtime = self._ensure_sam_runtime()
+            masks, points = self._sam_masks_and_points()
+            overlay = runtime.overlay(self.base_image, masks, points)
         self.image_surface = _pil_to_surface(overlay)
         self.display_surface = pygame.transform.smoothscale(
             self.image_surface,
@@ -350,12 +402,15 @@ class InferUI:
         )
 
     def _screen_to_image(self, sx: int, sy: int) -> tuple[int, int]:
-        ix = int((sx - self.viewer_x) / self.display_scale)
-        iy = int(sy / self.display_scale)
+        rx = sx - self.viewer_x
+        ix = int(rx * self.image_w / self.display_w) if self.display_w else 0
+        iy = int(sy * self.image_h / self.display_h) if self.display_h else 0
         return max(0, min(self.image_w - 1, ix)), max(0, min(self.image_h - 1, iy))
 
     def _image_to_screen(self, ix: int, iy: int) -> tuple[int, int]:
-        return self.viewer_x + int(ix * self.display_scale), int(iy * self.display_scale)
+        sx = self.viewer_x + int(ix * self.display_w / self.image_w)
+        sy = int(iy * self.display_h / self.image_h)
+        return sx, sy
 
     def _image_to_canvas(self, x: int, y: int) -> tuple[float, float]:
         scale = self.cfg.canvas_size / self.cfg.image_size
@@ -371,12 +426,18 @@ class InferUI:
         self.exclude_btn.label = "Add exclusion points"
 
     def _apply_viewer_image(self, output: Image.Image, status: str) -> None:
-        self.base_image = prepare_image(output, self.cfg.image_size)
+        if self.backbone == "sam":
+            runtime = self._ensure_sam_runtime()
+            self.base_image = runtime.fit_output(output)
+        else:
+            self.base_image = prepare_image(output, self.cfg.image_size)
         self.rooms.clear()
+        self.sam_entries.clear()
         self._reset_point_selection()
         self.last_prompt = ""
         self.last_raw = ""
         self.status = status
+        self._sync_image_size()
         self._rebuild_surface()
 
     def _on_unet(self) -> None:
@@ -399,16 +460,48 @@ class InferUI:
         except Exception as exc:
             self.status = f"VAE failed: {exc}"
 
+    def _florence_only_visible(self) -> bool:
+        return self.backbone == "florence"
+
+    def _sync_backbone_controls(self) -> None:
+        self.exclude_btn.visible = self._florence_only_visible() and self.mode == "multiple"
+        self.backbone_btn.label = f"Backbone: {self.backbone}"
+        pygame.display.set_caption(f"Infer UI — {self.backbone}")
+
+    def _toggle_backbone(self) -> None:
+        next_backbone: Backbone = "sam" if self.backbone == "florence" else "florence"
+        if next_backbone == "sam":
+            try:
+                self._ensure_sam_runtime()
+            except Exception:
+                self._draw()
+                return
+
+        self.backbone = next_backbone
+        self.rooms.clear()
+        self.sam_entries.clear()
+        self._reset_point_selection()
+        self.last_prompt = ""
+        self.last_raw = ""
+        self.base_image = self._viewer_image_for_path(self.test_images[self.selected_index])
+        self._sync_backbone_controls()
+        if self.mode == "single":
+            self.status = f"Switched to {self.backbone} — click the floor plan to infer."
+        else:
+            self._update_multi_status()
+        self._sync_image_size()
+        self._rebuild_surface()
+
     def _set_mode(self, mode: Literal["single", "multiple"]) -> None:
         self.mode = mode
         self.selected_points.clear()
         self.excluded_points.clear()
         self.placing_exclusion = False
         self.infer_btn.visible = mode == "multiple"
-        self.exclude_btn.visible = mode == "multiple"
+        self.exclude_btn.visible = self._florence_only_visible() and mode == "multiple"
         self.mode_btn.label = f"Mode: {mode}"
         if mode == "single":
-            self.status = "Single mode — click the floor plan to infer immediately."
+            self.status = f"Single mode ({self.backbone}) — click the floor plan to infer immediately."
         else:
             self._update_multi_status()
 
@@ -421,6 +514,9 @@ class InferUI:
 
     def _update_multi_status(self) -> None:
         positive = len(self.selected_points)
+        if self.backbone == "sam":
+            self.status = f"Placing points ({positive} set) — press Infer."
+            return
         excluded = len(self.excluded_points)
         if self.placing_exclusion:
             self.status = (
@@ -436,14 +532,25 @@ class InferUI:
 
     def _clear_all(self) -> None:
         self.rooms.clear()
+        self.sam_entries.clear()
         self._reset_point_selection()
         self.last_prompt = ""
         self.last_raw = ""
         if self.mode == "multiple":
             self._update_multi_status()
+        elif self.backbone == "sam":
+            self.status = "Cleared all masks."
         else:
             self.status = "Cleared all polygons."
         self._rebuild_surface()
+
+    def _append_sam_entry(
+        self,
+        mask: np.ndarray,
+        points: list[tuple[float, float]],
+        score: float,
+    ) -> None:
+        self.sam_entries.append(MaskEntry(mask=mask, points=points, score=score))
 
     def _apply_result(self, result: dict, image_x: int, image_y: int) -> bool:
         self.last_prompt = result["prompt"]
@@ -458,7 +565,49 @@ class InferUI:
         self.status = f"No valid polygon at ({image_x}, {image_y})"
         return False
 
+    def _on_sam_image_click(self, x: int, y: int) -> None:
+        runtime = self._ensure_sam_runtime()
+        if self.mode == "single":
+            self.status = f"Inferring point ({x}, {y})..."
+            self._draw()
+            pygame.display.flip()
+            mask, score = runtime.predict_point(self.base_image, (float(x), float(y)))
+            self._append_sam_entry(mask, [(float(x), float(y))], score)
+            self.status = (
+                f"Mask {len(self.sam_entries)} at ({x}, {y}) score={score:.3f} — click to add more."
+            )
+            self._rebuild_surface()
+            return
+
+        if (x, y) not in self.selected_points:
+            self.selected_points.append((x, y))
+        self._update_multi_status()
+
+    def _on_sam_infer_batch(self) -> None:
+        if not self.selected_points:
+            self.status = "No points selected."
+            return
+
+        runtime = self._ensure_sam_runtime()
+        count = len(self.selected_points)
+        self.status = f"Inferring {count} point(s)..."
+        self._draw()
+        pygame.display.flip()
+
+        canvas_points = [(float(x), float(y)) for x, y in self.selected_points]
+        mask, score = runtime.predict_points(self.base_image, canvas_points)
+        self._append_sam_entry(mask, canvas_points, score)
+        self._reset_point_selection()
+        self.status = (
+            f"Inferred mask from {count} point(s) score={score:.3f} — {len(self.sam_entries)} total."
+        )
+        self._rebuild_surface()
+
     def _on_image_click(self, x: int, y: int) -> None:
+        if self.backbone == "sam":
+            self._on_sam_image_click(x, y)
+            return
+
         if self.mode == "single":
             canvas_x, canvas_y = self._image_to_canvas(x, y)
             self.status = f"Inferring point ({x}, {y})..."
@@ -481,6 +630,10 @@ class InferUI:
         self._update_multi_status()
 
     def _on_infer_batch(self) -> None:
+        if self.backbone == "sam":
+            self._on_sam_infer_batch()
+            return
+
         if not self.selected_points:
             self.status = "No positive points selected."
             return
@@ -521,6 +674,9 @@ class InferUI:
             return
         if self.clear_btn.hit(pos):
             self._clear_all()
+            return
+        if self.backbone_btn.hit(pos):
+            self._toggle_backbone()
             return
         if self.unet_btn.hit(pos):
             self._on_unet()
@@ -584,7 +740,15 @@ class InferUI:
         )
 
         mouse = pygame.mouse.get_pos()
-        for btn in (self.clear_btn, self.unet_btn, self.vae_btn, self.mode_btn, self.exclude_btn, self.infer_btn):
+        for btn in (
+            self.clear_btn,
+            self.backbone_btn,
+            self.unet_btn,
+            self.vae_btn,
+            self.mode_btn,
+            self.exclude_btn,
+            self.infer_btn,
+        ):
             btn.draw(self.window, self.btn_font, hover=btn.hit(mouse))
 
         x = self.panel_x + 10
@@ -596,6 +760,27 @@ class InferUI:
             self.window.blit(status, (x, y))
             y += 18
         y += 8
+
+        if self.backbone == "sam":
+            label = self.label_font.render("MASKS:", True, LABEL_COLOR)
+            self.window.blit(label, (x, y))
+            y += 18
+            if not self.sam_entries:
+                line = self.font.render("(none)", True, TEXT_COLOR)
+                self.window.blit(line, (x, y))
+            else:
+                for index, entry in enumerate(self.sam_entries, start=1):
+                    if y > self.display_h - 16:
+                        break
+                    if len(entry.points) == 1:
+                        px, py = entry.points[0]
+                        text = f"{index}. ({px:.0f}, {py:.0f}) score={entry.score:.3f}"
+                    else:
+                        text = f"{index}. {len(entry.points)} pts score={entry.score:.3f}"
+                    line = self.font.render(text, True, TEXT_COLOR)
+                    self.window.blit(line, (x, y))
+                    y += 16
+            return
 
         for label, text in (("INPUT", self.last_prompt), ("OUTPUT", self.last_raw)):
             label_surface = self.label_font.render(f"{label}:", True, LABEL_COLOR)
@@ -653,8 +838,10 @@ class InferUI:
             clock.tick(60)
 
 
+_SAM_ROOT = _ROOT.parent / "sam_trainer"
 _UNET_ROOT = _ROOT.parent / "unet_trainer"
 _VAE_ROOT = _ROOT.parent / "vae_trainer"
+_DEFAULT_SAM_CONFIG = _SAM_ROOT / "config.yaml"
 _DEFAULT_UNET_CHECKPOINT = _UNET_ROOT / "training_session" / "last.pt"
 _DEFAULT_VAE_CHECKPOINT = _VAE_ROOT / "training_session" / "last.pt"
 
@@ -662,7 +849,13 @@ _DEFAULT_VAE_CHECKPOINT = _VAE_ROOT / "training_session" / "last.pt"
 def main() -> None:
     parser = argparse.ArgumentParser(description="Click floor-plan points to infer room polygons")
     parser.add_argument("--adapter", type=Path, default=None, help="LoRA adapter directory")
-    parser.add_argument("--config", type=Path, default=CONFIG_PATH, help="Config path")
+    parser.add_argument("--config", type=Path, default=CONFIG_PATH, help="Florence config path")
+    parser.add_argument(
+        "--sam-config",
+        type=Path,
+        default=_DEFAULT_SAM_CONFIG,
+        help="SAM config path (default: sam_trainer/config.yaml)",
+    )
     parser.add_argument(
         "--unet-checkpoint",
         type=Path,
@@ -693,14 +886,17 @@ def main() -> None:
         model.to("mps")
 
     print(f"Ready — {len(test_images)} test image(s), showing {test_images[0].name}.")
-    InferUI(
+    ui = InferUI(
         cfg,
         model,
         processor,
         test_images,
+        sam_config=args.sam_config,
         unet_checkpoint=args.unet_checkpoint,
         vae_checkpoint=args.vae_checkpoint,
-    ).run()
+    )
+    ui._sync_backbone_controls()
+    ui.run()
     pygame.quit()
 
 
