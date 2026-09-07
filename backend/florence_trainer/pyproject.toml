@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "florence-trainer"
-version = "0.1.5"
+version = "0.1.6"
 description = "LoRA fine-tune Florence-2 to emit room polygons from floor-plan images"
 requires-python = ">=3.11"
 dependencies = [
