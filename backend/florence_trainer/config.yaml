@@ -12,8 +12,8 @@ data:
   excluded_point_prob: 0.1
   inside_counts: [1, 1, 1, 1, 1, 2, 2, 2, 3, 4]
   excluded_counts: [1, 1, 2, 2, 3, 4]
-  room_slots: 3
-  per_room_variation: 8
+  room_slots: 2
+  per_room_variation: 12
   seed: 42
 
 lora:
