@@ -197,8 +197,9 @@ def load_model_and_processor(
 
     if for_training:
         if adapter is not None:
-            model = PeftModel.from_pretrained(model, str(adapter))
+            model = PeftModel.from_pretrained(model, str(adapter), is_trainable=True)
             load_trainable_projector(model, adapter)
+            _enable_projector(model)
             targets, _, _ = _build_lora_plan(cfg)
             _validate_training_setup(model, targets)
             model.config.use_cache = False
