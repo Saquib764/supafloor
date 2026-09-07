@@ -36,6 +36,7 @@ train:
   resume: false
   sample_region_size_path: sample_region_size.txt
   sample_region_refresh_steps: 100
+  num_workers: 4
 
 infer:
   num_points: 16

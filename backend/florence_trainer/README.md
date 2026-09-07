@@ -74,6 +74,7 @@ Edit `config.yaml` for model, Hub dataset, LoRA, and training knobs. Paths in th
 | `lora.*` | Rank, alpha, dropout; vision encoder is frozen |
 | `train.session_dir` | LoRA checkpoints (`training_session/`, gitignored) |
 | `train.save_steps` | Save LoRA checkpoint every N steps (default 1000) |
+| `train.num_workers` | DataLoader workers for parallel point sampling (default 4; set 0 to disable) |
 
 ## Execution
 

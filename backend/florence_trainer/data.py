@@ -354,6 +354,7 @@ class FloorplanFlorenceDataset(Dataset):
         image = prepare_image(row["image"], self._image_size)
         inside_sample_side = None
         if self._sample_region is not None:
+            self._sample_region.reload()
             inside_sample_side = self._sample_region.fraction * self._canvas_size
         variations = build_referring_variations(
             extraction,

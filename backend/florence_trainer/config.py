@@ -27,6 +27,7 @@ CONFIG_PATH = _project_dir() / "config.yaml"
 
 def _load_dotenv() -> None:
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     load_dotenv(_project_dir(), _DATASET_MANAGER_DIR, Path.cwd())
 
 
@@ -71,6 +72,7 @@ class TrainSettings:
     max_grad_norm: float
     sample_region_size_path: Path
     sample_region_refresh_steps: int
+    num_workers: int
 
 
 @dataclass(frozen=True)
@@ -188,6 +190,7 @@ def load_config(path: Path | None = None) -> Config:
             max_grad_norm=float(train["max_grad_norm"]),
             sample_region_size_path=_resolve(Path(train["sample_region_size_path"]), base),
             sample_region_refresh_steps=int(train["sample_region_refresh_steps"]),
+            num_workers=int(train.get("num_workers", 0)),
         ),
         infer=InferSettings(
             num_points=int(infer["num_points"]),

@@ -124,6 +124,7 @@ def _print_training_setup(
     print(f"max_grad_norm:    {cfg.train.max_grad_norm}")
     print(f"resume:           {cfg.train.resume}")
     print(f"save_steps:       {cfg.train.save_steps}")
+    print(f"num_workers:      {cfg.train.num_workers}")
     print(f"logging_steps:    {args.logging_steps}")
     print()
 
@@ -181,7 +182,9 @@ def run(cfg: Config) -> None:
         remove_unused_columns=False,
         label_names=["labels"],
         report_to="none",
-        dataloader_num_workers=0,
+        dataloader_num_workers=cfg.train.num_workers,
+        dataloader_pin_memory=torch.cuda.is_available(),
+        dataloader_persistent_workers=cfg.train.num_workers > 0,
     )
     callbacks = [SampleRegionCallback(sample_region, cfg.train.sample_region_refresh_steps)]
     trainer = FlorenceTrainer(
