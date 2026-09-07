@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -123,13 +124,26 @@ def _print_training_setup(
     print(f"weight_decay:     {cfg.train.weight_decay}")
     print(f"max_grad_norm:    {cfg.train.max_grad_norm}")
     print(f"resume:           {cfg.train.resume}")
+    print(f"from_adapter:     {cfg.train.from_adapter or '(none)'}")
     print(f"save_steps:       {cfg.train.save_steps}")
     print(f"num_workers:      {cfg.train.num_workers}")
     print(f"logging_steps:    {args.logging_steps}")
     print()
 
 
+def _resolve_from_adapter(path: Path | None) -> Path | None:
+    if path is None:
+        return None
+    adapter = path.resolve()
+    if not (adapter / "adapter_model.safetensors").is_file():
+        raise FileNotFoundError(f"LoRA adapter not found: {adapter}")
+    return adapter
+
+
 def run(cfg: Config) -> None:
+    from_adapter = _resolve_from_adapter(cfg.train.from_adapter)
+    if from_adapter is not None and cfg.train.resume:
+        raise ValueError("train.resume must be false when train.from_adapter is set")
     if cfg.train.resume:
         _allow_checkpoint_unpickle()
     rows = load_rows(
@@ -137,7 +151,11 @@ def run(cfg: Config) -> None:
         revision=cfg.data.revision,
         cache_dir=datasets_cache_dir(cfg),
     )
-    model, processor = load_model_and_processor(cfg, for_training=True)
+    model, processor = load_model_and_processor(
+        cfg,
+        adapter=from_adapter,
+        for_training=True,
+    )
     collator = FlorenceCollator(processor, cfg.data.max_label_tokens)
     sample_region = SampleRegionSize(cfg.train.sample_region_size_path)
     sample_region.reload()

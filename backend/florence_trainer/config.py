@@ -68,6 +68,7 @@ class TrainSettings:
     weight_decay: float
     bf16: bool
     resume: bool
+    from_adapter: Path | None
     save_steps: int
     max_grad_norm: float
     sample_region_size_path: Path
@@ -186,6 +187,11 @@ def load_config(path: Path | None = None) -> Config:
             weight_decay=float(train["weight_decay"]),
             bf16=bool(train["bf16"]),
             resume=bool(train["resume"]),
+            from_adapter=(
+                _resolve(Path(raw_from), base)
+                if (raw_from := train.get("from_adapter"))
+                else None
+            ),
             save_steps=int(train["save_steps"]),
             max_grad_norm=float(train["max_grad_norm"]),
             sample_region_size_path=_resolve(Path(train["sample_region_size_path"]), base),

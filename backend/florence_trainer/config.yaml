@@ -34,6 +34,7 @@ train:
   save_steps: 2000
   max_grad_norm: 1.0
   resume: false
+  from_adapter: null
   sample_region_size_path: sample_region_size.txt
   sample_region_refresh_steps: 100
   num_workers: 4

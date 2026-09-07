@@ -195,30 +195,35 @@ def load_model_and_processor(
         cache_dir=cache_dir,
     )
 
-    if adapter is not None:
+    if for_training:
+        if adapter is not None:
+            model = PeftModel.from_pretrained(model, str(adapter))
+            load_trainable_projector(model, adapter)
+            targets, _, _ = _build_lora_plan(cfg)
+            _validate_training_setup(model, targets)
+            model.config.use_cache = False
+        else:
+            _freeze_all(model)
+            targets, rank_pattern, alpha_pattern = _build_lora_plan(cfg)
+            _resolve_lora_modules(model, targets)
+            model = get_peft_model(
+                model,
+                LoraConfig(
+                    r=cfg.lora.decoder_rank,
+                    lora_alpha=2 * cfg.lora.decoder_rank,
+                    lora_dropout=cfg.lora.dropout,
+                    target_modules=targets,
+                    rank_pattern=rank_pattern,
+                    alpha_pattern=alpha_pattern,
+                    bias="none",
+                    task_type=TaskType.SEQ_2_SEQ_LM,
+                    modules_to_save=["image_proj_norm"],
+                ),
+            )
+            _enable_projector(model)
+            _validate_training_setup(model, targets)
+            model.config.use_cache = False
+    elif adapter is not None:
         model = PeftModel.from_pretrained(model, str(adapter))
         load_trainable_projector(model, adapter)
-        return model, processor
-
-    if for_training:
-        _freeze_all(model)
-        targets, rank_pattern, alpha_pattern = _build_lora_plan(cfg)
-        _resolve_lora_modules(model, targets)
-        model = get_peft_model(
-            model,
-            LoraConfig(
-                r=cfg.lora.decoder_rank,
-                lora_alpha=2 * cfg.lora.decoder_rank,
-                lora_dropout=cfg.lora.dropout,
-                target_modules=targets,
-                rank_pattern=rank_pattern,
-                alpha_pattern=alpha_pattern,
-                bias="none",
-                task_type=TaskType.SEQ_2_SEQ_LM,
-                modules_to_save=["image_proj_norm"],
-            ),
-        )
-        _enable_projector(model)
-        _validate_training_setup(model, targets)
-        model.config.use_cache = False
     return model, processor
