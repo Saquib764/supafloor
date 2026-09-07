@@ -20,7 +20,7 @@ finetune:
 train:
   session_dir: training_session
   precompute_backbone: true
-  epochs: 10
+  epochs: 2
   batch_size: 6
   grad_accum: 1
   learning_rate: 1.0e-4
@@ -31,7 +31,7 @@ train:
   resume: false
   fp16: true
   viz_steps: 100
-  viz_samples: 3
+  viz_samples: 6
 
 infer:
   multimask_output: false

@@ -299,6 +299,7 @@ def run(cfg: Config) -> None:
     args = TrainingArguments(
         output_dir=str(cfg.train.session_dir),
         num_train_epochs=cfg.train.epochs,
+        max_steps=total_steps,
         per_device_train_batch_size=cfg.train.batch_size,
         gradient_accumulation_steps=cfg.train.grad_accum,
         learning_rate=cfg.train.learning_rate,

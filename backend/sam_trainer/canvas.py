@@ -25,20 +25,8 @@ def load_viewer_image(path: Path, *, canvas_size: int, margin: int) -> Image.Ima
     return fit_to_canvas(Image.open(path), size=canvas_size, margin=margin).convert("RGB")
 
 
-def apply_masks(
-    image: Image.Image,
-    masks: list[np.ndarray],
-    points: list[tuple[float, float]],
-) -> Image.Image:
-    rgb = image.convert("RGB")
-    if not masks:
-        return rgb
-    composed = rgb.convert("RGBA")
-    for mask in masks:
-        color = np.zeros((*mask.shape, 4), dtype=np.uint8)
-        color[mask] = (0, 180, 60, 120)
-        composed = Image.alpha_composite(composed, Image.fromarray(color, mode="RGBA"))
-    draw = ImageDraw.Draw(composed)
+def _draw_points(image: Image.Image, points: list[tuple[float, float]]) -> None:
+    draw = ImageDraw.Draw(image)
     radius = 6
     for x, y in points:
         draw.ellipse(
@@ -47,4 +35,22 @@ def apply_masks(
             outline=(44, 44, 44, 255),
             width=2,
         )
+
+
+def apply_masks(
+    image: Image.Image,
+    masks: list[np.ndarray],
+    points: list[tuple[float, float]],
+) -> Image.Image:
+    rgb = image.convert("RGB")
+    if not masks and not points:
+        return rgb
+    composed = rgb.convert("RGBA")
+    for mask in masks:
+        active = np.asarray(mask) > 0
+        color = np.zeros((*active.shape, 4), dtype=np.uint8)
+        color[active] = (0, 180, 60, 120)
+        composed = Image.alpha_composite(composed, Image.fromarray(color, mode="RGBA"))
+    if points:
+        _draw_points(composed, points)
     return composed.convert("RGB")

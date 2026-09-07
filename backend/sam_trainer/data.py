@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import random
 from dataclasses import dataclass
 from typing import Any, Iterator
@@ -11,11 +12,13 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw
 from registry import hub_dataset_row_count, load_hub_rows_at, load_hub_stream
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Polygon
 from torch.utils.data import IterableDataset
 
 SAM_COLUMNS = ("stem", "image", "extraction")
-STREAM_SHUFFLE_BUFFER = 10_000
+STREAM_SHUFFLE_BUFFER = 256
+ROOM_WALL_THICK = 4.0
+BOUNDARY_WALL_THICK = 8.0
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,30 @@ def prepare_image(image: Image.Image, size: int) -> Image.Image:
     if image.size != (size, size):
         image = image.resize((size, size), Image.Resampling.LANCZOS)
     return image
+
+
+def load_sample_rows(
+    dataset: str,
+    *,
+    count: int,
+    seed: int | None = None,
+    revision: str | None = None,
+    cache_dir: Any = None,
+) -> tuple[list[dict[str, Any]], list[int], int]:
+    total = hub_dataset_row_count(dataset, revision=revision, cache_dir=cache_dir)
+    if total == 0:
+        raise ValueError(f"dataset {dataset!r} has no rows")
+    n = min(count, total)
+    rng = random.Random(seed)
+    indices = rng.sample(range(total), n)
+    rows = load_hub_rows_at(
+        dataset,
+        indices,
+        columns=SAM_COLUMNS,
+        revision=revision,
+        cache_dir=cache_dir,
+    )
+    return rows, indices, total
 
 
 def load_train_stream(
@@ -89,23 +116,77 @@ def _polygon_from_vertices(vertices: list[dict[str, Any]]) -> Polygon:
     return Polygon(ring)
 
 
-def sample_point(polygon: Polygon, rng: random.Random) -> tuple[float, float]:
-    if polygon.is_empty:
-        raise ValueError("cannot sample point from empty polygon")
-    minx, miny, maxx, maxy = polygon.bounds
-    while True:
-        x = rng.uniform(minx, maxx)
-        y = rng.uniform(miny, maxy)
-        if polygon.contains(Point(x, y)):
-            return (x, y)
+def _edge_key(a: tuple[float, float], b: tuple[float, float]) -> tuple[float, float, float, float]:
+    if a > b:
+        a, b = b, a
+    return (round(a[0], 1), round(a[1], 1), round(b[0], 1), round(b[1], 1))
 
 
-def rasterize_mask(polygon: Polygon, size: int) -> np.ndarray:
+def _wall_thickness_by_edge(walls: list[dict[str, Any]]) -> dict[tuple[float, float, float, float], float]:
+    lookup: dict[tuple[float, float, float, float], float] = {}
+    for wall in walls:
+        start = (float(wall["start"]["x"]), float(wall["start"]["y"]))
+        end = (float(wall["end"]["x"]), float(wall["end"]["y"]))
+        thick = BOUNDARY_WALL_THICK if wall.get("is_exterior") else ROOM_WALL_THICK
+        lookup[_edge_key(start, end)] = thick
+    return lookup
+
+
+def _wall_strip_polygon(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    thickness: float,
+) -> list[tuple[float, float]]:
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    length = math.hypot(dx, dy)
+    if length < 1e-6:
+        return []
+    offset_x = -dy / length * (thickness / 2.0)
+    offset_y = dx / length * (thickness / 2.0)
+    return [
+        (start[0] + offset_x, start[1] + offset_y),
+        (end[0] + offset_x, end[1] + offset_y),
+        (end[0] - offset_x, end[1] - offset_y),
+        (start[0] - offset_x, start[1] - offset_y),
+    ]
+
+
+def _open_ring(polygon: Polygon) -> list[tuple[float, float]]:
+    ring = [(float(x), float(y)) for x, y in polygon.exterior.coords]
+    if len(ring) >= 2 and ring[0] == ring[-1]:
+        return ring[:-1]
+    return ring
+
+
+def sample_point_from_mask(mask: np.ndarray, rng: random.Random) -> tuple[float, float]:
+    ys, xs = np.nonzero(mask > 0)
+    if len(xs) == 0:
+        raise ValueError("cannot sample point from empty mask")
+    index = rng.randrange(len(xs))
+    return (float(xs[index]), float(ys[index]))
+
+
+def rasterize_room_mask(room: dict[str, Any], walls: list[dict[str, Any]], size: int) -> np.ndarray:
+    polygon = _polygon_from_vertices(room["polygon"])
     mask = Image.new("L", (size, size), 0)
     if polygon.is_empty:
         return np.zeros((size, size), dtype=np.float32)
+
+    draw = ImageDraw.Draw(mask)
     exterior = [(float(x), float(y)) for x, y in polygon.exterior.coords]
-    ImageDraw.Draw(mask).polygon(exterior, outline=1, fill=1)
+    draw.polygon(exterior, fill=1)
+
+    thickness_by_edge = _wall_thickness_by_edge(walls)
+    ring = _open_ring(polygon)
+    for index in range(len(ring)):
+        start = ring[index]
+        end = ring[(index + 1) % len(ring)]
+        thickness = thickness_by_edge.get(_edge_key(start, end), ROOM_WALL_THICK)
+        strip = _wall_strip_polygon(start, end, thickness)
+        if strip:
+            draw.polygon(strip, fill=0)
+
     return np.asarray(mask, dtype=np.float32)
 
 
@@ -122,14 +203,14 @@ def build_room_samples(
     if not rooms:
         raise ValueError("extraction has no rooms")
 
+    walls = list(extraction.get("walls") or [])
     rng = random.Random((seed or 0) * 1_000_003 + index)
     samples: list[tuple[tuple[float, float], np.ndarray]] = []
     for _ in range(room_slots):
         room = rng.choice(rooms)
-        polygon = _polygon_from_vertices(room["polygon"])
-        mask = rasterize_mask(polygon, canvas_size)
+        mask = rasterize_room_mask(room, walls, canvas_size)
         for _ in range(per_room_variation):
-            point = sample_point(polygon, rng)
+            point = sample_point_from_mask(mask, rng)
             samples.append((point, mask))
     return samples
 
