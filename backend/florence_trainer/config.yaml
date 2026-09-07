@@ -7,12 +7,13 @@ loc_bins: 1000
 
 data:
   dataset: florence-rooms
-  max_label_tokens: 256
+  max_label_tokens: 512
   empty_polygon_prob: 0.05
   excluded_point_prob: 0.1
   inside_counts: [1, 1, 1, 1, 1, 2, 2, 2, 3, 4]
   excluded_counts: [1, 1, 2, 2, 3, 4]
-  variations_per_floorplan: 4
+  room_slots: 3
+  per_room_variation: 8
   seed: 42
 
 lora:
@@ -24,8 +25,8 @@ lora:
 train:
   session_dir: training_session
   epochs: 10
-  batch_size: 16
-  grad_accum: 1
+  batch_size: 24
+  grad_accum: 2
   learning_rate: 1.0e-4
   warmup_ratio: 0.03
   weight_decay: 0.01

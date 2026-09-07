@@ -38,9 +38,14 @@ class DataSettings:
     excluded_point_prob: float
     inside_counts: tuple[int, ...]
     excluded_counts: tuple[int, ...]
-    variations_per_floorplan: int
+    room_slots: int
+    per_room_variation: int
     revision: str | None = None
     seed: int | None = None
+
+    @property
+    def variations_per_floorplan(self) -> int:
+        return self.room_slots * self.per_room_variation
 
 
 @dataclass(frozen=True)
@@ -138,6 +143,12 @@ def load_config(path: Path | None = None) -> Config:
     dataset = str(data["dataset"]).strip()
     if not dataset:
         raise ValueError("data.dataset is required (dataset_manager registry name)")
+    room_slots = int(data["room_slots"])
+    per_room_variation = int(data["per_room_variation"])
+    if room_slots < 1:
+        raise ValueError("data.room_slots must be >= 1")
+    if per_room_variation < 1:
+        raise ValueError("data.per_room_variation must be >= 1")
     hf_cache = apply_hf_cache(_resolve(Path(raw["hf_cache"]), base))
     return Config(
         hf_cache=hf_cache,
@@ -152,7 +163,8 @@ def load_config(path: Path | None = None) -> Config:
             excluded_point_prob=float(data["excluded_point_prob"]),
             inside_counts=_int_list(data["inside_counts"], field="inside_counts"),
             excluded_counts=_int_list(data["excluded_counts"], field="excluded_counts"),
-            variations_per_floorplan=int(data["variations_per_floorplan"]),
+            room_slots=room_slots,
+            per_room_variation=per_room_variation,
             revision=str(data["revision"]).strip() if data.get("revision") else None,
             seed=int(data["seed"]) if data["seed"] is not None else None,
         ),

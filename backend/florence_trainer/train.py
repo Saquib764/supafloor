@@ -13,7 +13,6 @@ from data import (
     FlorenceCollator,
     FloorplanFlorenceDataset,
     SampleRegionSize,
-    _VARIATIONS_PER_ROOM,
     load_rows,
 )
 from model import load_model_and_processor, save_trainable_projector, use_bf16
@@ -114,7 +113,7 @@ def _print_training_setup(
     print("\n=== Training ===")
     print(f"output_dir:       {cfg.train.session_dir}")
     print(f"epochs:           {cfg.train.epochs}")
-    print(f"batch_size:       {cfg.train.batch_size} samples ({floorplans_per_batch} floorplans × {cfg.data.variations_per_floorplan})")
+    print(f"batch_size:       {cfg.train.batch_size} samples ({floorplans_per_batch} floorplans × {cfg.data.room_slots} rooms × {cfg.data.per_room_variation} per room)")
     print(f"grad_accum:       {cfg.train.grad_accum}")
     print(f"effective batch:  {effective_batch}")
     print(f"steps/epoch:      {steps_per_epoch:,}")
@@ -150,21 +149,19 @@ def run(cfg: Config) -> None:
         excluded_point_prob=cfg.data.excluded_point_prob,
         inside_counts=cfg.data.inside_counts,
         excluded_counts=cfg.data.excluded_counts,
-        variations_per_floorplan=cfg.data.variations_per_floorplan,
+        room_slots=cfg.data.room_slots,
+        per_room_variation=cfg.data.per_room_variation,
         seed=cfg.data.seed,
         sample_region=sample_region,
     )
-    if cfg.data.variations_per_floorplan % _VARIATIONS_PER_ROOM != 0:
-        raise ValueError(
-            f"data.variations_per_floorplan ({cfg.data.variations_per_floorplan}) must be divisible by "
-            f"{_VARIATIONS_PER_ROOM} (variations per room)"
-        )
-    if cfg.train.batch_size % cfg.data.variations_per_floorplan != 0:
+    variations = cfg.data.variations_per_floorplan
+    if cfg.train.batch_size % variations != 0:
         raise ValueError(
             f"train.batch_size ({cfg.train.batch_size}) must be divisible by "
-            f"{cfg.data.variations_per_floorplan} (variations per floorplan)"
+            f"room_slots × per_room_variation ({cfg.data.room_slots} × "
+            f"{cfg.data.per_room_variation} = {variations})"
         )
-    floorplans_per_batch = cfg.train.batch_size // cfg.data.variations_per_floorplan
+    floorplans_per_batch = cfg.train.batch_size // variations
 
     cfg.train.session_dir.mkdir(parents=True, exist_ok=True)
     args = TrainingArguments(

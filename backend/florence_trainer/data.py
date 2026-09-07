@@ -17,9 +17,6 @@ from loc import format_loc_point
 from registry import load_hub_dataset, load_hub_samples
 from torch.utils.data import Dataset
 
-_VARIATIONS_PER_ROOM = 2
-
-
 def prepare_image(image: Image.Image, size: int) -> Image.Image:
     if image.mode != "RGB":
         image = image.convert("RGB")
@@ -194,27 +191,21 @@ def build_referring_variations(
     excluded_point_prob: float,
     inside_counts: tuple[int, ...],
     excluded_counts: tuple[int, ...],
-    variations_per_floorplan: int,
+    room_slots: int,
+    per_room_variation: int,
     inside_sample_side: float | None = None,
 ) -> list[ReferringDatum]:
-    if variations_per_floorplan % _VARIATIONS_PER_ROOM != 0:
-        raise ValueError(
-            f"variations_per_floorplan ({variations_per_floorplan}) must be divisible by "
-            f"{_VARIATIONS_PER_ROOM} (variations per room)"
-        )
-
     rooms = list(extraction.get("rooms") or [])
     if not rooms:
         raise ValueError("extraction has no rooms")
 
-    room_slots = variations_per_floorplan // _VARIATIONS_PER_ROOM
     rooms_union = _rooms_union(rooms)
     rng = random.Random((seed or 0) * 1_000_003 + index)
     selected_rooms = rng.choices(rooms, k=room_slots)
 
     variations: list[ReferringDatum] = []
     for room in selected_rooms:
-        for _ in range(_VARIATIONS_PER_ROOM):
+        for _ in range(per_room_variation):
             excluded_count = rng.choice(excluded_counts) if rng.random() < excluded_point_prob else 0
             empty_polygon = rng.random() < empty_polygon_prob
 
@@ -336,7 +327,8 @@ class FloorplanFlorenceDataset(Dataset):
         excluded_point_prob: float,
         inside_counts: tuple[int, ...],
         excluded_counts: tuple[int, ...],
-        variations_per_floorplan: int,
+        room_slots: int,
+        per_room_variation: int,
         seed: int | None = None,
         sample_region: SampleRegionSize | None = None,
     ) -> None:
@@ -348,7 +340,8 @@ class FloorplanFlorenceDataset(Dataset):
         self._excluded_point_prob = excluded_point_prob
         self._inside_counts = inside_counts
         self._excluded_counts = excluded_counts
-        self._variations_per_floorplan = variations_per_floorplan
+        self._room_slots = room_slots
+        self._per_room_variation = per_room_variation
         self._seed = seed
         self._sample_region = sample_region
 
@@ -372,7 +365,8 @@ class FloorplanFlorenceDataset(Dataset):
             excluded_point_prob=self._excluded_point_prob,
             inside_counts=self._inside_counts,
             excluded_counts=self._excluded_counts,
-            variations_per_floorplan=self._variations_per_floorplan,
+            room_slots=self._room_slots,
+            per_room_variation=self._per_room_variation,
             inside_sample_side=inside_sample_side,
         )
         return [

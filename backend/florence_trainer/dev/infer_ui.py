@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""Interactive pygame UI: click a point to infer a room polygon.
+"""Interactive pygame UI: click points to infer room polygons.
+
+Left panel lists test/ images (sorted by name); first image loads by default.
+Single mode infers immediately on each click. Multiple mode places positive
+and optional exclusion points, then runs one inference when Infer is clicked.
+UNet runs the visible image through taef2 encode/decode + latest latent ViT;
+VAE runs the visible image through the floor-plan VAE (encode → decode);
+each click chains another pass on the current viewer image.
 
 Usage (from backend/florence_trainer):
 
     uv sync --group dev
-    uv run python dev/infer_ui.py --image test/fp1.jpg
+    uv run python dev/infer_ui.py
 """
 
 from __future__ import annotations
@@ -16,8 +23,13 @@ from pathlib import Path
 from typing import Literal
 
 _ROOT = Path(__file__).resolve().parents[1]
+_DEV = Path(__file__).resolve().parent
+TEST_DIR = _ROOT / "test"
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+if str(_DEV) not in sys.path:
+    sys.path.insert(0, str(_DEV))
 
 import pygame
 import torch
@@ -32,9 +44,10 @@ from loc import parse_referring_room, parse_rooms
 from model import load_model_and_processor
 from plot import draw_rooms
 from pre_clean import pre_clean
+from fit_test_canvas import fit_to_canvas
 
-MAX_POINTS_PER_PROMPT = 6
-
+from unet_infer import get_unet_runtime
+from vae_infer import get_vae_runtime
 
 def _generate_for_prompts(model, processor, cfg, image, prompts: list[str]) -> list[str]:
     gen_kwargs = {
@@ -103,40 +116,48 @@ def infer_point(model, processor, cfg, image, x: float, y: float) -> dict:
     return {"prompt": prompt, "raw": text, "room": room}
 
 
-def infer_points(model, processor, cfg, image, points: list[tuple[float, float]]) -> list[dict]:
+def infer_points(
+    model,
+    processor,
+    cfg,
+    image,
+    points: list[tuple[float, float]],
+    *,
+    excluded_points: list[tuple[float, float]] | None = None,
+) -> dict:
     if not points:
-        return []
+        return {"prompt": "", "raw": "", "rooms": []}
 
-    batches = [
-        points[i : i + MAX_POINTS_PER_PROMPT]
-        for i in range(0, len(points), MAX_POINTS_PER_PROMPT)
-    ]
-    prompts = [
-        format_prompt(
-            batch,
-            canvas_size=cfg.canvas_size,
-            bins=cfg.loc_bins,
-        )
-        for batch in batches
-    ]
-    texts = _generate_for_prompts(model, processor, cfg, image, prompts)
+    prompt = format_prompt(
+        points,
+        canvas_size=cfg.canvas_size,
+        bins=cfg.loc_bins,
+        excluded_points=excluded_points,
+    )
+    text = _generate_for_prompts(model, processor, cfg, image, [prompt])[0]
+    if text.startswith(prompt):
+        text = text[len(prompt) :]
+    parsed = parse_rooms(text, image_size=cfg.image_size, bins=cfg.loc_bins)
     point_scale = cfg.image_size / cfg.canvas_size
-    results: list[dict] = []
-    for batch, prompt, text in zip(batches, prompts, texts, strict=True):
-        if text.startswith(prompt):
-            text = text[len(prompt) :]
-        rooms = parse_rooms(text, image_size=cfg.image_size, bins=cfg.loc_bins)
-        for index, (x, y) in enumerate(batch):
-            room = rooms[index] if index < len(rooms) else None
-            if room is not None and len(room.get("polygon") or []) >= 3:
-                room["sample_point"] = [x * point_scale, y * point_scale]
-            else:
-                room = None
-            results.append({"prompt": prompt, "raw": text, "room": room})
-    return results
+    rooms: list[dict | None] = []
+    for index, (x, y) in enumerate(points):
+        room = parsed[index] if index < len(parsed) else None
+        if room is not None and len(room.get("polygon") or []) >= 3:
+            room["sample_point"] = [x * point_scale, y * point_scale]
+            rooms.append(room)
+        else:
+            rooms.append(None)
+    return {"prompt": prompt, "raw": text, "rooms": rooms}
 
 PANEL_WIDTH_RATIO = 0.6
+LIST_WIDTH = 200
+LIST_ITEM_HEIGHT = 22
+LIST_HEADER_HEIGHT = 24
 SIDE_BG = (28, 28, 28)
+LIST_BG = (22, 22, 22)
+LIST_HOVER = (45, 45, 45)
+LIST_SELECTED = (60, 80, 120)
+LIST_TEXT = (220, 220, 220)
 BTN_BG = (55, 55, 55)
 BTN_HOVER = (75, 75, 75)
 BTN_TEXT = (240, 240, 240)
@@ -144,7 +165,25 @@ LABEL_COLOR = (160, 160, 160)
 TEXT_COLOR = (235, 235, 235)
 STATUS_COLOR = (120, 180, 255)
 PENDING_COLOR = (255, 200, 0)
+EXCLUDED_COLOR = (255, 90, 90)
 DISPLAY_SCALE = 0.8
+
+
+def list_test_images(test_dir: Path = TEST_DIR) -> list[Path]:
+    if not test_dir.is_dir():
+        return []
+    return sorted(
+        path
+        for path in test_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in _IMAGE_EXTENSIONS
+    )
+
+
+def load_viewer_image(path: Path, cfg) -> Image.Image:
+    return prepare_image(
+        fit_to_canvas(pre_clean(Image.open(path)), size=cfg.canvas_size),
+        cfg.image_size,
+    )
 
 
 def _pil_to_surface(image: Image.Image) -> pygame.Surface:
@@ -193,23 +232,44 @@ class Button:
 
 
 class InferUI:
-    def __init__(self, cfg, model, processor, image: Image.Image) -> None:
+    def __init__(
+        self,
+        cfg,
+        model,
+        processor,
+        test_images: list[Path],
+        *,
+        unet_checkpoint: Path,
+        vae_checkpoint: Path,
+    ) -> None:
+        if not test_images:
+            raise ValueError(f"No images found in {TEST_DIR}")
         self.cfg = cfg
         self.model = model
         self.processor = processor
-        self.base_image = image
+        self.unet_checkpoint = unet_checkpoint
+        self.vae_checkpoint = vae_checkpoint
+        self.test_images = test_images
+        self.selected_index = 0
+        self.list_scroll = 0
+        self.base_image = load_viewer_image(test_images[0], cfg)
         self.rooms: list[dict] = []
-        self.pending_points: list[tuple[int, int]] = []
+        self.selected_points: list[tuple[int, int]] = []
+        self.excluded_points: list[tuple[int, int]] = []
+        self.placing_exclusion = False
         self.mode: Literal["single", "multiple"] = "single"
         self.last_prompt = ""
         self.last_raw = ""
-        self.status = "Single mode — click the floor plan to infer immediately."
+        self.status = f"Loaded {test_images[0].name} — single mode, click to infer."
         self.image_w, self.image_h = self.base_image.size
         self.display_scale = DISPLAY_SCALE
         self.display_w = int(self.image_w * self.display_scale)
         self.display_h = int(self.image_h * self.display_scale)
+        self.list_w = LIST_WIDTH
+        self.viewer_x = self.list_w
         self.panel_w = int(self.image_w * PANEL_WIDTH_RATIO)
-        self.window_w = self.display_w + self.panel_w
+        self.panel_x = self.viewer_x + self.display_w
+        self.window_w = self.panel_x + self.panel_w
         self.window = pygame.display.set_mode((self.window_w, self.display_h))
         pygame.display.set_caption("Florence infer UI")
         self.font = pygame.font.SysFont("monospace", 14)
@@ -219,19 +279,67 @@ class InferUI:
         self._rebuild_surface()
 
     def _layout_buttons(self) -> None:
-        x = self.display_w + 10
+        x = self.panel_x + 10
         btn_w = self.panel_w - 20
         y = 10
         self.clear_btn = Button(pygame.Rect(x, y, btn_w, 28), "Clear all")
         y += 34
+        self.unet_btn = Button(pygame.Rect(x, y, btn_w, 28), "UNet")
+        y += 34
+        self.vae_btn = Button(pygame.Rect(x, y, btn_w, 28), "VAE")
+        y += 34
         self.mode_btn = Button(pygame.Rect(x, y, btn_w, 28), "Mode: single")
+        y += 34
+        self.exclude_btn = Button(
+            pygame.Rect(x, y, btn_w, 28),
+            "Add exclusion points",
+            visible=False,
+        )
         y += 34
         self.infer_btn = Button(pygame.Rect(x, y, btn_w, 28), "Infer", visible=False)
         self.text_top = y + 42
 
+    def _list_visible_count(self) -> int:
+        return max(1, (self.display_h - LIST_HEADER_HEIGHT) // LIST_ITEM_HEIGHT)
+
+    def _max_list_scroll(self) -> int:
+        return max(0, len(self.test_images) - self._list_visible_count())
+
+    def _ensure_list_visible(self, index: int) -> None:
+        if index < self.list_scroll:
+            self.list_scroll = index
+        elif index >= self.list_scroll + self._list_visible_count():
+            self.list_scroll = index - self._list_visible_count() + 1
+        self.list_scroll = max(0, min(self._max_list_scroll(), self.list_scroll))
+
+    def _list_index_at(self, pos: tuple[int, int]) -> int | None:
+        mx, my = pos
+        if mx >= self.list_w or my < LIST_HEADER_HEIGHT:
+            return None
+        row = (my - LIST_HEADER_HEIGHT) // LIST_ITEM_HEIGHT
+        index = self.list_scroll + row
+        if index < 0 or index >= len(self.test_images):
+            return None
+        return index
+
+    def _load_test_image(self, index: int) -> None:
+        path = self.test_images[index]
+        self.selected_index = index
+        self._ensure_list_visible(index)
+        self.base_image = load_viewer_image(path, self.cfg)
+        self.rooms.clear()
+        self._reset_point_selection()
+        self.last_prompt = ""
+        self.last_raw = ""
+        if self.mode == "single":
+            self.status = f"Loaded {path.name} — click the floor plan to infer."
+        else:
+            self._update_multi_status()
+        self._rebuild_surface()
+
     def _in_image(self, pos: tuple[int, int]) -> bool:
         mx, my = pos
-        return mx < self.display_w and my < self.display_h
+        return self.viewer_x <= mx < self.panel_x and my < self.display_h
 
     def _rebuild_surface(self) -> None:
         overlay = draw_rooms(self.base_image.copy(), self.rooms)
@@ -242,36 +350,99 @@ class InferUI:
         )
 
     def _screen_to_image(self, sx: int, sy: int) -> tuple[int, int]:
-        ix = int(sx / self.display_scale)
+        ix = int((sx - self.viewer_x) / self.display_scale)
         iy = int(sy / self.display_scale)
         return max(0, min(self.image_w - 1, ix)), max(0, min(self.image_h - 1, iy))
 
     def _image_to_screen(self, ix: int, iy: int) -> tuple[int, int]:
-        return int(ix * self.display_scale), int(iy * self.display_scale)
+        return self.viewer_x + int(ix * self.display_scale), int(iy * self.display_scale)
 
     def _image_to_canvas(self, x: int, y: int) -> tuple[float, float]:
         scale = self.cfg.canvas_size / self.cfg.image_size
         return x * scale, y * scale
 
+    def _florence_image(self) -> Image.Image:
+        return self.base_image
+
+    def _reset_point_selection(self) -> None:
+        self.selected_points.clear()
+        self.excluded_points.clear()
+        self.placing_exclusion = False
+        self.exclude_btn.label = "Add exclusion points"
+
+    def _apply_viewer_image(self, output: Image.Image, status: str) -> None:
+        self.base_image = prepare_image(output, self.cfg.image_size)
+        self.rooms.clear()
+        self._reset_point_selection()
+        self.last_prompt = ""
+        self.last_raw = ""
+        self.status = status
+        self._rebuild_surface()
+
+    def _on_unet(self) -> None:
+        self.status = "Running UNet (taef2)..."
+        self._draw()
+        pygame.display.flip()
+        try:
+            runtime = get_unet_runtime(str(self.unet_checkpoint.resolve()))
+            self._apply_viewer_image(runtime.infer(self.base_image), "UNet pass complete — viewer image updated.")
+        except Exception as exc:
+            self.status = f"UNet failed: {exc}"
+
+    def _on_vae(self) -> None:
+        self.status = "Running VAE..."
+        self._draw()
+        pygame.display.flip()
+        try:
+            runtime = get_vae_runtime(str(self.vae_checkpoint.resolve()))
+            self._apply_viewer_image(runtime.infer(self.base_image), "VAE pass complete — viewer image updated.")
+        except Exception as exc:
+            self.status = f"VAE failed: {exc}"
+
     def _set_mode(self, mode: Literal["single", "multiple"]) -> None:
         self.mode = mode
-        self.pending_points.clear()
+        self.selected_points.clear()
+        self.excluded_points.clear()
+        self.placing_exclusion = False
         self.infer_btn.visible = mode == "multiple"
+        self.exclude_btn.visible = mode == "multiple"
         self.mode_btn.label = f"Mode: {mode}"
         if mode == "single":
             self.status = "Single mode — click the floor plan to infer immediately."
         else:
-            self.status = "Multiple mode — click up to 6 points per Infer batch."
+            self._update_multi_status()
+
+    def _toggle_exclusion_placement(self) -> None:
+        self.placing_exclusion = not self.placing_exclusion
+        self.exclude_btn.label = (
+            "Add positive points" if self.placing_exclusion else "Add exclusion points"
+        )
+        self._update_multi_status()
+
+    def _update_multi_status(self) -> None:
+        positive = len(self.selected_points)
+        excluded = len(self.excluded_points)
+        if self.placing_exclusion:
+            self.status = (
+                f"Placing exclusion points ({excluded} set, {positive} positive) — press Infer."
+            )
+        else:
+            self.status = (
+                f"Placing positive points ({positive} set, {excluded} excluded) — press Infer."
+            )
 
     def _toggle_mode(self) -> None:
         self._set_mode("multiple" if self.mode == "single" else "single")
 
     def _clear_all(self) -> None:
         self.rooms.clear()
-        self.pending_points.clear()
+        self._reset_point_selection()
         self.last_prompt = ""
         self.last_raw = ""
-        self.status = "Cleared all polygons."
+        if self.mode == "multiple":
+            self._update_multi_status()
+        else:
+            self.status = "Cleared all polygons."
         self._rebuild_surface()
 
     def _apply_result(self, result: dict, image_x: int, image_y: int) -> bool:
@@ -297,64 +468,71 @@ class InferUI:
                 self.model,
                 self.processor,
                 self.cfg,
-                self.base_image,
+                self._florence_image(),
                 canvas_x,
                 canvas_y,
             )
             self._apply_result(result, x, y)
             return
 
-        if (x, y) not in self.pending_points:
-            self.pending_points.append((x, y))
-        self.status = f"{len(self.pending_points)} point(s) queued — press Infer (up to 6 per batch)."
+        target = self.excluded_points if self.placing_exclusion else self.selected_points
+        if (x, y) not in target:
+            target.append((x, y))
+        self._update_multi_status()
 
     def _on_infer_batch(self) -> None:
-        if not self.pending_points:
-            self.status = "No points queued."
+        if not self.selected_points:
+            self.status = "No positive points selected."
             return
 
-        canvas_points = [self._image_to_canvas(x, y) for x, y in self.pending_points]
-        image_points = list(self.pending_points)
+        canvas_points = [self._image_to_canvas(x, y) for x, y in self.selected_points]
+        canvas_excluded = [self._image_to_canvas(x, y) for x, y in self.excluded_points]
         count = len(canvas_points)
         self.status = f"Inferring {count} point(s)..."
         self._draw()
         pygame.display.flip()
 
-        results = infer_points(
+        result = infer_points(
             self.model,
             self.processor,
             self.cfg,
-            self.base_image,
+            self._florence_image(),
             canvas_points,
+            excluded_points=canvas_excluded or None,
         )
-        self.pending_points.clear()
+        self._reset_point_selection()
 
-        prompts: list[str] = []
-        raws: list[str] = []
         ok = 0
-        seen_batches: set[tuple[str, str]] = set()
-        for (ix, iy), result in zip(image_points, results, strict=True):
-            batch_key = (result["prompt"], result["raw"])
-            if batch_key not in seen_batches:
-                prompts.append(result["prompt"])
-                raws.append(result["raw"])
-                seen_batches.add(batch_key)
-            room = result["room"]
-            if room is not None and len(room.get("polygon") or []) >= 3:
+        for room in result["rooms"]:
+            if room is not None:
                 self.rooms.append(room)
                 ok += 1
 
-        self.last_prompt = "\n---\n".join(prompts)
-        self.last_raw = "\n---\n".join(raws)
+        self.last_prompt = result["prompt"]
+        self.last_raw = result["raw"]
         self.status = f"Inferred {ok}/{count} polygon(s) — {len(self.rooms)} total shown"
         self._rebuild_surface()
 
     def _handle_click(self, pos: tuple[int, int]) -> None:
+        list_index = self._list_index_at(pos)
+        if list_index is not None:
+            if list_index != self.selected_index:
+                self._load_test_image(list_index)
+            return
         if self.clear_btn.hit(pos):
             self._clear_all()
             return
+        if self.unet_btn.hit(pos):
+            self._on_unet()
+            return
+        if self.vae_btn.hit(pos):
+            self._on_vae()
+            return
         if self.mode_btn.hit(pos):
             self._toggle_mode()
+            return
+        if self.exclude_btn.hit(pos):
+            self._toggle_exclusion_placement()
             return
         if self.infer_btn.hit(pos):
             self._on_infer_batch()
@@ -364,22 +542,52 @@ class InferUI:
         if self._in_image(pos):
             self._on_image_click(*self._screen_to_image(mx, my))
 
+    def _draw_file_list(self) -> None:
+        pygame.draw.rect(self.window, LIST_BG, (0, 0, self.list_w, self.display_h))
+        header = self.label_font.render("test/", True, LABEL_COLOR)
+        self.window.blit(header, (8, 4))
+        pygame.draw.line(
+            self.window,
+            (70, 70, 70),
+            (self.list_w - 1, 0),
+            (self.list_w - 1, self.display_h),
+            1,
+        )
+        mouse = pygame.mouse.get_pos()
+        for row in range(self._list_visible_count()):
+            index = self.list_scroll + row
+            if index >= len(self.test_images):
+                break
+            y = LIST_HEADER_HEIGHT + row * LIST_ITEM_HEIGHT
+            rect = pygame.Rect(0, y, self.list_w, LIST_ITEM_HEIGHT)
+            if index == self.selected_index:
+                pygame.draw.rect(self.window, LIST_SELECTED, rect)
+            elif rect.collidepoint(mouse):
+                pygame.draw.rect(self.window, LIST_HOVER, rect)
+            label = self.test_images[index].name
+            if self.font.size(label)[0] > self.list_w - 12:
+                while label and self.font.size(label + "…")[0] > self.list_w - 12:
+                    label = label[:-1]
+                label += "…"
+            text = self.font.render(label, True, LIST_TEXT)
+            self.window.blit(text, (8, y + 3))
+
     def _draw_side_panel(self) -> None:
-        panel_rect = pygame.Rect(self.display_w, 0, self.panel_w, self.display_h)
+        panel_rect = pygame.Rect(self.panel_x, 0, self.panel_w, self.display_h)
         pygame.draw.rect(self.window, SIDE_BG, panel_rect)
         pygame.draw.line(
             self.window,
             (70, 70, 70),
-            (self.display_w, 0),
-            (self.display_w, self.display_h),
+            (self.panel_x, 0),
+            (self.panel_x, self.display_h),
             1,
         )
 
         mouse = pygame.mouse.get_pos()
-        for btn in (self.clear_btn, self.mode_btn, self.infer_btn):
+        for btn in (self.clear_btn, self.unet_btn, self.vae_btn, self.mode_btn, self.exclude_btn, self.infer_btn):
             btn.draw(self.window, self.btn_font, hover=btn.hit(mouse))
 
-        x = self.display_w + 10
+        x = self.panel_x + 10
         y = self.text_top
         max_width = self.panel_w - 20
 
@@ -402,10 +610,23 @@ class InferUI:
             y += 8
 
     def _draw(self) -> None:
-        self.window.blit(self.display_surface, (0, 0))
-        for px, py in self.pending_points:
+        self.window.fill((18, 18, 18))
+        self._draw_file_list()
+        self.window.blit(self.display_surface, (self.viewer_x, 0))
+        pygame.draw.line(
+            self.window,
+            (70, 70, 70),
+            (self.panel_x, 0),
+            (self.panel_x, self.display_h),
+            1,
+        )
+        for px, py in self.selected_points:
             sx, sy = self._image_to_screen(px, py)
             pygame.draw.circle(self.window, PENDING_COLOR, (sx, sy), 5)
+            pygame.draw.circle(self.window, (44, 44, 44), (sx, sy), 5, 1)
+        for px, py in self.excluded_points:
+            sx, sy = self._image_to_screen(px, py)
+            pygame.draw.circle(self.window, EXCLUDED_COLOR, (sx, sy), 5)
             pygame.draw.circle(self.window, (44, 44, 44), (sx, sy), 5, 1)
         self._draw_side_panel()
 
@@ -418,6 +639,13 @@ class InferUI:
                     running = False
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     running = False
+                elif event.type == pygame.MOUSEWHEEL:
+                    mx, _my = pygame.mouse.get_pos()
+                    if mx < self.list_w:
+                        self.list_scroll = max(
+                            0,
+                            min(self._max_list_scroll(), self.list_scroll - event.y),
+                        )
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     self._handle_click(event.pos)
             self._draw()
@@ -425,16 +653,37 @@ class InferUI:
             clock.tick(60)
 
 
+_UNET_ROOT = _ROOT.parent / "unet_trainer"
+_VAE_ROOT = _ROOT.parent / "vae_trainer"
+_DEFAULT_UNET_CHECKPOINT = _UNET_ROOT / "training_session" / "last.pt"
+_DEFAULT_VAE_CHECKPOINT = _VAE_ROOT / "training_session" / "last.pt"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Click floor-plan points to infer room polygons")
-    parser.add_argument("--image", type=Path, required=True, help="Source floor-plan image")
     parser.add_argument("--adapter", type=Path, default=None, help="LoRA adapter directory")
     parser.add_argument("--config", type=Path, default=CONFIG_PATH, help="Config path")
+    parser.add_argument(
+        "--unet-checkpoint",
+        type=Path,
+        default=_DEFAULT_UNET_CHECKPOINT,
+        help="UNet trainable weights (default: unet_trainer/training_session/last.pt)",
+    )
+    parser.add_argument(
+        "--vae-checkpoint",
+        type=Path,
+        default=_DEFAULT_VAE_CHECKPOINT,
+        help="VAE weights (default: vae_trainer/training_session/last.pt)",
+    )
     args = parser.parse_args()
 
     pygame.init()
     cfg = load_config(args.config)
     adapter = args.adapter or cfg.train.session_dir
+
+    test_images = list_test_images()
+    if not test_images:
+        raise SystemExit(f"No images found in {TEST_DIR}")
 
     print(f"Loading model from {adapter}...")
     model, processor = load_model_and_processor(cfg, adapter=adapter)
@@ -443,9 +692,15 @@ def main() -> None:
     elif torch.backends.mps.is_available():
         model.to("mps")
 
-    image = prepare_image(pre_clean(Image.open(args.image)), cfg.image_size)
-    print("Ready — click on the floor plan to infer polygons.")
-    InferUI(cfg, model, processor, image).run()
+    print(f"Ready — {len(test_images)} test image(s), showing {test_images[0].name}.")
+    InferUI(
+        cfg,
+        model,
+        processor,
+        test_images,
+        unet_checkpoint=args.unet_checkpoint,
+        vae_checkpoint=args.vae_checkpoint,
+    ).run()
     pygame.quit()
 
 

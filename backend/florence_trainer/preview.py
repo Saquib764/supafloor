@@ -156,7 +156,8 @@ def _print_samples(cfg: Config, *, count: int, seed: int | None) -> None:
             excluded_point_prob=cfg.data.excluded_point_prob,
             inside_counts=cfg.data.inside_counts,
             excluded_counts=cfg.data.excluded_counts,
-            variations_per_floorplan=cfg.data.variations_per_floorplan,
+            room_slots=cfg.data.room_slots,
+            per_room_variation=cfg.data.per_room_variation,
         )
 
         print(f"\n--- sample {n} (index {index}) ---")
