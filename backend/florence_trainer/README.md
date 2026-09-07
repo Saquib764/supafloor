@@ -14,7 +14,7 @@ This package is separate from `backend/floorplan/` so PyTorch / PEFT stay out of
 
 ## Dataset
 
-Training loads Hub rows through `dataset_manager` (`data.dataset` in `config.yaml`, default `florence-rooms`). That view keeps `stem`, `plan_id`, `variant`, `image`, and `extraction` from `saquiboye/floorplan-to-json`. Loc-token labels are built from `extraction` at train time (not stored on the Hub). Room polygons in extraction JSON are canonicalized on export: clockwise winding, first vertex closest to the origin on the 1024 canvas.
+Training loads Hub rows through `dataset_manager` (`data.dataset` in `config.yaml`, default `floorplan-to-json`). Rows include `stem`, `plan_id`, `variant`, `image`, and `extraction` from `saquiboye/floorplan-to-json`. Loc-token labels are built from `extraction` at train time (not stored on the Hub). Room polygons in extraction JSON are canonicalized on export: clockwise winding, first vertex closest to the origin on the 1024 canvas.
 
 Each training step picks `room_slots` rooms (with replacement if only one exists), builds `per_room_variation` prompt/label pairs per room (default 2 × 2 = 4), and with 5% probability per slot samples a point outside all rooms with an empty `<poly></poly>` label.
 
@@ -69,7 +69,7 @@ Edit `config.yaml` for model, Hub dataset, LoRA, and training knobs. Paths in th
 | `data.room_slots` | Rooms sampled per floorplan row (default 2) |
 | `data.per_room_variation` | Referring-point samples per room (default 2) |
 | `data.seed` | RNG seed for room/point selection per row |
-| `data.dataset` | `dataset_manager` registry name (default `florence-rooms`) |
+| `data.dataset` | `dataset_manager` registry name (default `floorplan-to-json`) |
 | `data.revision` | Optional Hub revision override |
 | `lora.*` | Rank, alpha, dropout; vision encoder is frozen |
 | `train.session_dir` | LoRA checkpoints (`training_session/`, gitignored) |

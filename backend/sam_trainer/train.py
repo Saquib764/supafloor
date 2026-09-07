@@ -233,6 +233,7 @@ def _print_training_setup(
     print(f"max_grad_norm:    {cfg.train.max_grad_norm}")
     print(f"save_steps:       {cfg.train.save_steps}")
     print(f"viz_steps:        {cfg.train.viz_steps}")
+    print(f"viz_samples:      {cfg.train.viz_samples}")
     print(f"num_workers:      {cfg.data.num_workers}")
     print(f"resume:           {cfg.train.resume}")
     print(f"logging_steps:    {args.logging_steps}")
@@ -272,6 +273,7 @@ def run(cfg: Config) -> None:
         precompute_backbone=cfg.train.precompute_backbone,
         encode_backbone=_encode,
         prepare_pixel_values=_prepare,
+        max_samples=cfg.train.viz_samples,
     )
     viz_dir = cfg.train.session_dir / "viz"
 

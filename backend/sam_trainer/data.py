@@ -109,9 +109,11 @@ def build_viz_samples(
     precompute_backbone: bool,
     encode_backbone: Any,
     prepare_pixel_values: Any,
+    max_samples: int | None = None,
 ) -> list[VizSample]:
     samples: list[VizSample] = []
-    for index in range(len(rows)):
+    limit = len(rows) if max_samples is None else min(len(rows), max_samples)
+    for index in range(limit):
         row = rows[index]
         image = prepare_image(row["image"], canvas_size)
         extraction = json.loads(str(row["extraction"]))

@@ -71,6 +71,7 @@ class TrainSettings:
     resume: bool
     fp16: bool
     viz_steps: int
+    viz_samples: int
 
 
 @dataclass(frozen=True)
@@ -184,6 +185,7 @@ def load_config(path: Path | None = None) -> Config:
             resume=bool(train.get("resume", False)),
             fp16=bool(train.get("fp16", False)),
             viz_steps=int(train.get("viz_steps", 10)),
+            viz_samples=int(train.get("viz_samples", 3)),
         ),
         infer=InferSettings(
             multimask_output=bool(infer.get("multimask_output", False)),

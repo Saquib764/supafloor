@@ -12,7 +12,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="SAM 2.1 floor-plan segmentation")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_train = sub.add_parser("train", help="Fine-tune on florence-rooms point prompts")
+    p_train = sub.add_parser("train", help="Fine-tune on floorplan-to-json point prompts")
     p_train.add_argument("--config", type=Path, default=CONFIG_PATH)
 
     p_inspect = sub.add_parser("inspect", help="Print model architecture and parameter counts")

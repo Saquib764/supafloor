@@ -15,7 +15,7 @@ Auth with `huggingface-cli login`, `HF_TOKEN`, or a `.env` in this folder. Weigh
 
 ## Training
 
-Training loads `florence-rooms` from `dataset_manager` (Hub view over `saquiboye/floorplan-to-json`). Each row uses the realistic `image` at 1024×1024. For every floor plan the dataset picks random rooms, samples a random point inside each room polygon, and rasterizes that room as the mask target.
+Training loads `floorplan-to-json` from `dataset_manager` (`saquiboye/floorplan-to-json`). Each row uses the realistic `image` at 1024×1024. For every floor plan the dataset picks random rooms, samples a random point inside each room polygon, and rasterizes that room as the mask target.
 
 Rows are split into train/test via `data.test_fraction`. Every `train.viz_steps` steps the model runs on the held-out test rows and saves predicted mask overlays under `training_session/viz/step-XXXXXX/`.
 
@@ -28,7 +28,7 @@ uv run sam-train inspect
 
 | Key | Meaning |
 |---|---|
-| `data.dataset` | `dataset_manager` registry name (default `florence-rooms`) |
+| `data.dataset` | `dataset_manager` registry name (default `floorplan-to-json`) |
 | `data.test_fraction` | Held-out test row fraction for viz (default `0.2`) |
 | `data.room_slots` | Rooms sampled per floor plan row |
 | `data.per_room_variation` | Point/mask pairs per room |
@@ -38,6 +38,7 @@ uv run sam-train inspect
 | `train.precompute_backbone` | Run frozen backbone in data loader (requires `num_workers: 0`) |
 | `train.session_dir` | Checkpoints (`training_session/`, gitignored) |
 | `train.viz_steps` | Save test-set mask overlays every N steps (default `10`) |
+| `train.viz_samples` | Test rows to visualize each time (default `3`) |
 
 Interactive click-to-segment inference lives in `backend/florence_trainer/dev/infer_ui.py` (toggle **Backbone: sam**).
 

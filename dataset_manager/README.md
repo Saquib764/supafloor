@@ -19,9 +19,8 @@ Registered today:
 
 | Name | Role | Local folder | Hub repo |
 |---|---|---|---|
-| `floorplan-to-json` | Synthetic export publish/download | `image-to-floorplan/basic_5000` | `saquiboye/floorplan-to-json` |
+| `floorplan-to-json` | Synthetic export publish/download + Florence/SAM training | `image-to-floorplan/basic_5000` | `saquiboye/floorplan-to-json` |
 | `floorplan-manual` | Manual annotation publish/download + Florence training | `floorplan-manual` | `saquiboye/floorplan-manual` |
-| `florence-rooms` | Synthetic Florence training view | — | reads `floorplan-to-json` |
 | `floorplan-vae` | VAE view (`stem`, `plan_id`, `variant`, `image`, `simple_image`) | — | reads `floorplan-to-json` |
 
 Both uploadable datasets share the same local folder layout:
@@ -67,4 +66,4 @@ uv run python cli.py download floorplan-manual
 
 Equivalent entry point: `uv run dataset-mgr upload floorplan-manual`.
 
-Auth: `HF_TOKEN` in `.env` (gitignored). Load-only Hub views: `florence-rooms` (`backend/florence_trainer`, synthetic), `floorplan-vae` (`backend/vae_trainer`). For manual Florence training set `data.dataset: floorplan-manual` in `backend/florence_trainer/config.yaml`.
+Auth: `HF_TOKEN` in `.env` (gitignored). Load-only Hub view: `floorplan-vae` (`backend/vae_trainer`). For manual Florence/SAM training set `data.dataset: floorplan-manual` in the trainer `config.yaml`.

@@ -4,33 +4,34 @@ margin: 10
 hf_cache: ../hf_cache
 
 data:
-  dataset: floorplan-manual
+  dataset: floorplan-to-json
   revision: null
   seed: 42
   test_fraction: 0.2
-  room_slots: 1
-  per_room_variation: 4
+  room_slots: 2
+  per_room_variation: 3
   num_workers: 0
 
 finetune:
   neck: true
   prompt_encoder: false
-  mask_decoder: false
+  mask_decoder: true
 
 train:
   session_dir: training_session
   precompute_backbone: true
   epochs: 10
-  batch_size: 4
+  batch_size: 6
   grad_accum: 1
   learning_rate: 1.0e-4
   warmup_ratio: 0.01
   weight_decay: 0.01
   max_grad_norm: 1.0
-  save_steps: 500
+  save_steps: 1000
   resume: false
   fp16: true
-  viz_steps: 10
+  viz_steps: 100
+  viz_samples: 3
 
 infer:
   multimask_output: false

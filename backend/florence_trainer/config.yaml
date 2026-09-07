@@ -6,7 +6,7 @@ canvas_size: 1024
 loc_bins: 1000
 
 data:
-  dataset: florence-rooms
+  dataset: floorplan-to-json
   max_label_tokens: 512
   empty_polygon_prob: 0.05
   excluded_point_prob: 0.1
