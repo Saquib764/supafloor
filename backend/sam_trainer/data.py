@@ -25,8 +25,9 @@ BOUNDARY_WALL_THICK = 8.0
 class VizSample:
     stem: str
     image: Image.Image
-    points: list[tuple[float, float]]
     pixel_values: torch.Tensor
+    extraction: dict[str, Any]
+    row_index: int
 
 
 def prepare_image(image: Image.Image, size: int) -> Image.Image:
@@ -186,21 +187,6 @@ def sample_point_from_mask(
     return (float(xs[index]), float(ys[index]))
 
 
-def sample_points_from_mask(
-    mask: np.ndarray,
-    rng: random.Random,
-    *,
-    count: int,
-    alpha: float,
-    distance: np.ndarray | None = None,
-) -> list[tuple[float, float]]:
-    dist = distance if distance is not None else _mask_distance_transform(mask)
-    return [
-        sample_point_from_mask(mask, rng, alpha=alpha, distance=dist)
-        for _ in range(count)
-    ]
-
-
 def rasterize_room_mask(room: dict[str, Any], walls: list[dict[str, Any]], size: int) -> np.ndarray:
     polygon = _polygon_from_vertices(room["polygon"])
     mask = Image.new("L", (size, size), 0)
@@ -231,65 +217,74 @@ def build_room_samples(
     canvas_size: int,
     room_slots: int,
     per_room_variation: int,
-    query_counts: tuple[int, ...],
     point_distance_alpha: float,
     seed: int | None,
-) -> list[tuple[list[tuple[float, float]], np.ndarray]]:
+) -> list[tuple[tuple[float, float], np.ndarray]]:
     rooms = list(extraction.get("rooms") or [])
     if not rooms:
         raise ValueError("extraction has no rooms")
 
     walls = list(extraction.get("walls") or [])
     rng = random.Random((seed or 0) * 1_000_003 + index)
-    samples: list[tuple[list[tuple[float, float]], np.ndarray]] = []
+    samples: list[tuple[tuple[float, float], np.ndarray]] = []
     for _ in range(room_slots):
         room = rng.choice(rooms)
         room_mask = rasterize_room_mask(room, walls, canvas_size)
         distance = _mask_distance_transform(room_mask)
         for _ in range(per_room_variation):
-            query_count = rng.choice(query_counts)
-            points = sample_points_from_mask(
+            point = sample_point_from_mask(
                 room_mask,
                 rng,
-                count=query_count,
                 alpha=point_distance_alpha,
                 distance=distance,
             )
-            samples.append((points, room_mask))
+            samples.append((point, room_mask))
     return samples
+
+
+def sample_viz_point(
+    extraction: dict[str, Any],
+    row_index: int,
+    step: int,
+    *,
+    canvas_size: int,
+    point_distance_alpha: float,
+    seed: int | None,
+) -> tuple[float, float]:
+    rooms = list(extraction.get("rooms") or [])
+    if not rooms:
+        raise ValueError("extraction has no rooms")
+
+    walls = list(extraction.get("walls") or [])
+    rng = random.Random((seed or 0) * 1_000_003 + row_index + step * 9973)
+    room = rng.choice(rooms)
+    room_mask = rasterize_room_mask(room, walls, canvas_size)
+    distance = _mask_distance_transform(room_mask)
+    return sample_point_from_mask(
+        room_mask,
+        rng,
+        alpha=point_distance_alpha,
+        distance=distance,
+    )
 
 
 def build_viz_samples(
     rows: list[dict[str, Any]],
     canvas_size: int,
     *,
-    room_slots: int,
-    per_room_variation: int,
-    query_counts: tuple[int, ...],
-    point_distance_alpha: float,
-    seed: int | None,
     prepare_pixel_values: Any,
 ) -> list[VizSample]:
     samples: list[VizSample] = []
     for index, row in enumerate(rows):
         image = prepare_image(row["image"], canvas_size)
         extraction = json.loads(str(row["extraction"]))
-        points, _mask = build_room_samples(
-            extraction,
-            index,
-            canvas_size=canvas_size,
-            room_slots=room_slots,
-            per_room_variation=per_room_variation,
-            query_counts=query_counts,
-            point_distance_alpha=point_distance_alpha,
-            seed=seed,
-        )[0]
         samples.append(
             VizSample(
                 stem=str(row["stem"]),
                 image=image,
-                points=points,
                 pixel_values=prepare_pixel_values(image),
+                extraction=extraction,
+                row_index=index,
             )
         )
     return samples
@@ -304,7 +299,6 @@ class FloorplanSamDataset(IterableDataset):
         num_rows: int,
         room_slots: int,
         per_room_variation: int,
-        query_counts: tuple[int, ...],
         point_distance_alpha: float,
         seed: int | None,
         prepare_pixel_values: Any,
@@ -314,7 +308,6 @@ class FloorplanSamDataset(IterableDataset):
         self._num_rows = num_rows
         self._room_slots = room_slots
         self._per_room_variation = per_room_variation
-        self._query_counts = query_counts
         self._point_distance_alpha = point_distance_alpha
         self._seed = seed or 0
         self._prepare_pixel_values = prepare_pixel_values
@@ -337,40 +330,32 @@ class FloorplanSamDataset(IterableDataset):
                 canvas_size=self._canvas_size,
                 room_slots=self._room_slots,
                 per_room_variation=self._per_room_variation,
-                query_counts=self._query_counts,
                 point_distance_alpha=self._point_distance_alpha,
                 seed=self._seed,
             )
 
             shared = {"pixel_values": self._prepare_pixel_values(image)}
 
-            for points, mask in samples:
+            for point, mask in samples:
                 yield {
                     **shared,
-                    "points": points,
+                    "point": point,
                     "mask": mask,
                 }
 
 
 class SamCollator:
-    def __init__(self, *, max_query_count: int) -> None:
-        self._max_query_count = max_query_count
-
     def __call__(self, batch: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
-        points_batch: list[list[list[tuple[float, float]]]] = []
-        labels_batch: list[list[list[int]]] = []
-        for item in batch:
-            points = list(item["points"])
-            query_count = len(points)
-            pad = self._max_query_count - query_count
-            points_batch.append([points + [(0.0, 0.0)] * pad])
-            labels_batch.append([[1] * query_count + [0] * pad])
-
+        points = torch.tensor(
+            [[[[item["point"][0], item["point"][1]]]] for item in batch],
+            dtype=torch.float32,
+        )
+        labels_pts = torch.ones((len(batch), 1, 1), dtype=torch.int64)
         masks = torch.from_numpy(np.stack([item["mask"] for item in batch])).float()
 
         return {
-            "input_points": torch.tensor(points_batch, dtype=torch.float32),
-            "input_labels": torch.tensor(labels_batch, dtype=torch.int64),
+            "input_points": points,
+            "input_labels": labels_pts,
             "labels": masks,
             "pixel_values": torch.cat([item["pixel_values"] for item in batch], dim=0),
         }

@@ -32,7 +32,6 @@ uv run sam-train inspect
 | `data.test_fraction` | Held-out test row fraction for viz (default `0.2`) |
 | `data.room_slots` | Rooms sampled per floor plan row |
 | `data.per_room_variation` | Point/mask pairs per room |
-| `data.query_counts` | Possible query-point counts; one value is chosen per variation (e.g. `[1, 2, 3, 4]`) |
 | `data.point_distance_alpha` | Inside-room point sampling weight ∝ distance-to-boundary^α (default `1.5`; `0` = uniform) |
 | `finetune.neck` | Train FPN neck (~370K params) |
 | `finetune.prompt_encoder` | Train point/mask prompt encoder |

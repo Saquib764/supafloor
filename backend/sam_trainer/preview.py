@@ -131,7 +131,6 @@ def save_data_samples(cfg: Config, *, count: int, seed: int | None) -> None:
             canvas_size=cfg.canvas_size,
             room_slots=cfg.data.room_slots,
             per_room_variation=cfg.data.per_room_variation,
-            query_counts=cfg.data.query_counts,
             point_distance_alpha=cfg.data.point_distance_alpha,
             seed=cfg.data.seed,
         )
@@ -139,11 +138,10 @@ def save_data_samples(cfg: Config, *, count: int, seed: int | None) -> None:
         print(f"\n--- sample {n} (index {index}) ---")
         print(f"stem:         {stem}")
         print(f"image:        {image_path}")
-        for v, (points, mask) in enumerate(samples, start=1):
+        for v, (point, mask) in enumerate(samples, start=1):
             gt_path = _PREVIEW_DIR / f"{stem}_v{v}_gt.jpg"
-            apply_masks(image, [mask.astype(bool)], points).save(gt_path, format="JPEG", quality=95)
-            pts = ", ".join(f"({x:.1f},{y:.1f})" for x, y in points)
-            print(f"  variation {v}: queries={len(points)} points=[{pts}] gt={gt_path.name}")
+            apply_masks(image, [mask.astype(bool)], [point]).save(gt_path, format="JPEG", quality=95)
+            print(f"  variation {v}: point=({point[0]:.1f},{point[1]:.1f}) gt={gt_path.name}")
 
 
 def run(cfg: Config, *, count: int = 1, seed: int | None = None) -> None:

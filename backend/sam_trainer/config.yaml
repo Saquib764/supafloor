@@ -4,13 +4,12 @@ margin: 10
 hf_cache: ../hf_cache
 
 data:
-  dataset: floorplan-to-json
+  dataset: floorplan-manual
   revision: null
   seed: 42
   test_fraction: 0.2
   room_slots: 1
   per_room_variation: 1
-  query_counts: [1, 1, 1, 1, 1, 2, 2, 3, 3, 4]
   point_distance_alpha: 1.5
   num_workers: 0
 
@@ -26,9 +25,9 @@ lora:
   stage4: true
 
 train:
-  session_dir: training_session
-  from_checkpoint: null
-  epochs: 1
+  session_dir: training_session_2
+  from_checkpoint: training_session/checkpoint-2000
+  epochs: 150
   batch_size: 1
   grad_accum: 1
   learning_rate: 1.0e-4
@@ -43,4 +42,4 @@ train:
 
 infer:
   multimask_output: false
-  checkpoint: null
+  checkpoint: training_session_2/checkpoint-1000

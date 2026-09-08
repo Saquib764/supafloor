@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sam-trainer"
-version = "0.1.11"
+version = "0.2.01"
 description = "SAM 2.1 point-prompt room segmentation for floor plans"
 requires-python = ">=3.11"
 dependencies = [

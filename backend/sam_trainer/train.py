@@ -22,6 +22,7 @@ from data import (
     build_viz_samples,
     load_train_stream,
     load_viz_rows,
+    sample_viz_point,
 )
 from model import (
     Sam2TrainingWrapper,
@@ -39,20 +40,32 @@ class SamProgressCallback(ProgressCallback):
         super().__init__()
         self._trainer = trainer
 
+    def _postfix(self, *, loss: float | None = None, lr: float | None = None, step: int | None = None) -> dict[str, str]:
+        postfix: dict[str, str] = {}
+        if loss is not None:
+            postfix["loss"] = f"{loss:.4f}"
+        if lr is not None:
+            postfix["lr"] = f"{lr:.2e}"
+        elif self._trainer.optimizer is not None:
+            postfix["lr"] = f"{self._trainer.optimizer.param_groups[0]['lr']:.2e}"
+        if step is not None:
+            postfix["step"] = str(step)
+        return postfix
+
     def on_step_end(self, args: TrainingArguments, state: Any, control: Any, **kwargs: Any) -> None:
         super().on_step_end(args, state, control, **kwargs)
         if state.is_world_process_zero and self.training_bar is not None:
             loss = self._trainer._last_batch_loss
             if loss is not None:
-                self.training_bar.set_postfix(loss=f"{loss:.4f}", step=int(state.global_step))
+                self.training_bar.set_postfix(
+                    self._postfix(loss=loss, step=int(state.global_step)),
+                )
 
     def on_log(self, args: TrainingArguments, state: Any, control: Any, logs: dict | None = None, **kwargs: Any) -> None:
         if state.is_world_process_zero and self.training_bar is not None and logs:
-            postfix: dict[str, str] = {}
-            if "loss" in logs:
-                postfix["loss"] = f"{float(logs['loss']):.4f}"
-            if "learning_rate" in logs:
-                postfix["lr"] = f"{float(logs['learning_rate']):.2e}"
+            loss = float(logs["loss"]) if "loss" in logs else None
+            lr = float(logs["learning_rate"]) if "learning_rate" in logs else None
+            postfix = self._postfix(loss=loss, lr=lr)
             if postfix:
                 self.training_bar.set_postfix(postfix)
 
@@ -84,7 +97,7 @@ class VizCallback(TrainerCallback):
         processor: object,
         samples: list[VizSample],
         *,
-        canvas_size: int,
+        cfg: Config,
         device: torch.device,
         out_dir: Path,
         every: int,
@@ -92,7 +105,7 @@ class VizCallback(TrainerCallback):
         self._wrapper = wrapper
         self._processor = processor
         self._samples = samples
-        self._canvas_size = canvas_size
+        self._cfg = cfg
         self._device = device
         self._out_dir = out_dir
         self._every = every
@@ -105,7 +118,7 @@ class VizCallback(TrainerCallback):
             self._wrapper,
             self._processor,
             self._samples,
-            canvas_size=self._canvas_size,
+            cfg=self._cfg,
             device=self._device,
             out_dir=self._out_dir,
             step=step,
@@ -116,23 +129,24 @@ def _predict_mask(
     wrapper: Sam2TrainingWrapper,
     processor: object,
     sample: VizSample,
+    point: tuple[float, float],
     *,
     canvas_size: int,
     device: torch.device,
 ) -> np.ndarray:
-    points = torch.tensor(
-        [[[[x, y] for x, y in sample.points]]],
+    points_tensor = torch.tensor(
+        [[[[point[0], point[1]]]]],
         dtype=torch.float32,
         device=device,
     )
     labels = torch.tensor(
-        [[[1] * len(sample.points)]],
+        [[[1]]],
         dtype=torch.int64,
         device=device,
     )
     outputs = wrapper(
         pixel_values=sample.pixel_values.to(device),
-        input_points=points,
+        input_points=points_tensor,
         input_labels=labels,
     )
     original_sizes = torch.tensor([[canvas_size, canvas_size]])
@@ -145,7 +159,7 @@ def save_training_viz(
     processor: object,
     samples: list[VizSample],
     *,
-    canvas_size: int,
+    cfg: Config,
     device: torch.device,
     out_dir: Path,
     step: int,
@@ -157,14 +171,23 @@ def save_training_viz(
     step_dir = out_dir / f"step-{step:06d}"
     step_dir.mkdir(parents=True, exist_ok=True)
     for sample in samples:
+        point = sample_viz_point(
+            sample.extraction,
+            sample.row_index,
+            step,
+            canvas_size=cfg.canvas_size,
+            point_distance_alpha=cfg.data.point_distance_alpha,
+            seed=cfg.data.seed,
+        )
         pred_mask = _predict_mask(
             wrapper,
             processor,
             sample,
-            canvas_size=canvas_size,
+            point,
+            canvas_size=cfg.canvas_size,
             device=device,
         )
-        pred_overlay = apply_masks(sample.image, [pred_mask], sample.points)
+        pred_overlay = apply_masks(sample.image, [pred_mask], [point])
         pred_overlay.save(step_dir / f"{sample.stem}.jpg", format="JPEG", quality=95)
     if was_training:
         wrapper.train()
@@ -207,7 +230,6 @@ def _print_training_setup(
     print(f"canvas_size:      {cfg.canvas_size}")
     print(f"room_slots:       {cfg.data.room_slots}")
     print(f"per_room_var:     {cfg.data.per_room_variation}")
-    print(f"query_counts:     {list(cfg.data.query_counts)}")
     print(f"point_dist_alpha: {cfg.data.point_distance_alpha}")
     print(f"samples/row:      {cfg.data.variations_per_floorplan}")
     print(f"train samples:    {len(train_ds):,}")
@@ -302,11 +324,6 @@ def run(cfg: Config) -> None:
     viz_samples = build_viz_samples(
         viz_rows,
         cfg.canvas_size,
-        room_slots=cfg.data.room_slots,
-        per_room_variation=cfg.data.per_room_variation,
-        query_counts=cfg.data.query_counts,
-        point_distance_alpha=cfg.data.point_distance_alpha,
-        seed=cfg.data.seed,
         prepare_pixel_values=_prepare,
     )
     viz_dir = cfg.train.session_dir / "viz"
@@ -317,12 +334,11 @@ def run(cfg: Config) -> None:
         num_rows=train_count,
         room_slots=cfg.data.room_slots,
         per_room_variation=cfg.data.per_room_variation,
-        query_counts=cfg.data.query_counts,
         point_distance_alpha=cfg.data.point_distance_alpha,
         seed=cfg.data.seed,
         prepare_pixel_values=_prepare,
     )
-    collator = SamCollator(max_query_count=max(cfg.data.query_counts))
+    collator = SamCollator()
 
     steps_per_epoch = math.ceil(len(train_ds) / cfg.train.batch_size / cfg.train.grad_accum)
     total_steps = steps_per_epoch * cfg.train.epochs
@@ -355,7 +371,7 @@ def run(cfg: Config) -> None:
             model,
             predictor.processor,
             viz_samples,
-            canvas_size=cfg.canvas_size,
+            cfg=cfg,
             device=device,
             out_dir=viz_dir,
             every=cfg.train.viz_steps,
