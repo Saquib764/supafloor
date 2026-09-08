@@ -120,8 +120,16 @@ def _predict_mask(
     canvas_size: int,
     device: torch.device,
 ) -> np.ndarray:
-    points = torch.tensor([[[[sample.point[0], sample.point[1]]]]], dtype=torch.float32, device=device)
-    labels = torch.tensor([[[1]]], dtype=torch.int64, device=device)
+    points = torch.tensor(
+        [[[[x, y] for x, y in sample.points]]],
+        dtype=torch.float32,
+        device=device,
+    )
+    labels = torch.tensor(
+        [[[1] * len(sample.points)]],
+        dtype=torch.int64,
+        device=device,
+    )
     outputs = wrapper(
         pixel_values=sample.pixel_values.to(device),
         input_points=points,
@@ -156,7 +164,7 @@ def save_training_viz(
             canvas_size=canvas_size,
             device=device,
         )
-        pred_overlay = apply_masks(sample.image, [pred_mask], [sample.point])
+        pred_overlay = apply_masks(sample.image, [pred_mask], sample.points)
         pred_overlay.save(step_dir / f"{sample.stem}.jpg", format="JPEG", quality=95)
     if was_training:
         wrapper.train()
@@ -199,7 +207,7 @@ def _print_training_setup(
     print(f"canvas_size:      {cfg.canvas_size}")
     print(f"room_slots:       {cfg.data.room_slots}")
     print(f"per_room_var:     {cfg.data.per_room_variation}")
-    print(f"empty_mask_prob:  {cfg.data.empty_mask_prob}")
+    print(f"query_counts:     {list(cfg.data.query_counts)}")
     print(f"point_dist_alpha: {cfg.data.point_distance_alpha}")
     print(f"samples/row:      {cfg.data.variations_per_floorplan}")
     print(f"train samples:    {len(train_ds):,}")
@@ -296,7 +304,7 @@ def run(cfg: Config) -> None:
         cfg.canvas_size,
         room_slots=cfg.data.room_slots,
         per_room_variation=cfg.data.per_room_variation,
-        empty_mask_prob=cfg.data.empty_mask_prob,
+        query_counts=cfg.data.query_counts,
         point_distance_alpha=cfg.data.point_distance_alpha,
         seed=cfg.data.seed,
         prepare_pixel_values=_prepare,
@@ -309,12 +317,12 @@ def run(cfg: Config) -> None:
         num_rows=train_count,
         room_slots=cfg.data.room_slots,
         per_room_variation=cfg.data.per_room_variation,
-        empty_mask_prob=cfg.data.empty_mask_prob,
+        query_counts=cfg.data.query_counts,
         point_distance_alpha=cfg.data.point_distance_alpha,
         seed=cfg.data.seed,
         prepare_pixel_values=_prepare,
     )
-    collator = SamCollator()
+    collator = SamCollator(max_query_count=max(cfg.data.query_counts))
 
     steps_per_epoch = math.ceil(len(train_ds) / cfg.train.batch_size / cfg.train.grad_accum)
     total_steps = steps_per_epoch * cfg.train.epochs

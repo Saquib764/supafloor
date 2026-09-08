@@ -39,7 +39,7 @@ class DataSettings:
     dataset: str
     room_slots: int
     per_room_variation: int
-    empty_mask_prob: float
+    query_counts: tuple[int, ...]
     point_distance_alpha: float
     test_fraction: float
     revision: str | None = None
@@ -126,6 +126,15 @@ def apply_hf_cache(path: Path) -> Path:
     return cache
 
 
+def _int_list(raw_value: Any, *, field: str) -> tuple[int, ...]:
+    if not isinstance(raw_value, list) or not raw_value:
+        raise ValueError(f"data.{field} must be a non-empty list of integers")
+    values = tuple(int(value) for value in raw_value)
+    if any(value < 1 for value in values):
+        raise ValueError(f"data.{field} values must be >= 1")
+    return values
+
+
 def datasets_cache_dir(cfg: Config) -> Path:
     return cfg.hf_cache / "datasets"
 
@@ -147,15 +156,13 @@ def load_config(path: Path | None = None) -> Config:
 
     room_slots = int(data.get("room_slots", 1))
     per_room_variation = int(data.get("per_room_variation", 1))
-    empty_mask_prob = float(data.get("empty_mask_prob", 0.05))
+    query_counts = _int_list(data.get("query_counts", [1]), field="query_counts")
     point_distance_alpha = float(data.get("point_distance_alpha", 1.5))
     test_fraction = float(data.get("test_fraction", 0.2))
     if room_slots < 1:
         raise ValueError("data.room_slots must be >= 1")
     if per_room_variation < 1:
         raise ValueError("data.per_room_variation must be >= 1")
-    if not 0.0 <= empty_mask_prob <= 1.0:
-        raise ValueError("data.empty_mask_prob must be between 0 and 1")
     if point_distance_alpha < 0.0:
         raise ValueError("data.point_distance_alpha must be >= 0")
 
@@ -187,7 +194,7 @@ def load_config(path: Path | None = None) -> Config:
             dataset=dataset,
             room_slots=room_slots,
             per_room_variation=per_room_variation,
-            empty_mask_prob=empty_mask_prob,
+            query_counts=query_counts,
             point_distance_alpha=point_distance_alpha,
             test_fraction=test_fraction,
             revision=str(data["revision"]).strip() if data.get("revision") else None,

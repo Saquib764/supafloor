@@ -19,7 +19,7 @@ Training loads `floorplan-to-json` from `dataset_manager` (`saquiboye/floorplan-
 
 Rows are split into train/test via `data.test_fraction`. Every `train.viz_steps` steps the model runs on the held-out test rows and saves predicted mask overlays under `training_session/viz/step-XXXXXX/`.
 
-Training always runs the live Hiera backbone with LoRA adapters on stages 3 and/or 4, plus any modules enabled in `finetune` (neck, prompt_encoder, mask_decoder). With `data.empty_mask_prob` (default `0.05`), each room slot variation may instead sample a point outside all rooms and target an empty mask.
+Training always runs the live Hiera backbone with LoRA adapters on stages 3 and/or 4, plus any modules enabled in `finetune` (neck, prompt_encoder, mask_decoder).
 
 ```bash
 uv run sam-train train
@@ -32,7 +32,7 @@ uv run sam-train inspect
 | `data.test_fraction` | Held-out test row fraction for viz (default `0.2`) |
 | `data.room_slots` | Rooms sampled per floor plan row |
 | `data.per_room_variation` | Point/mask pairs per room |
-| `data.empty_mask_prob` | Per-variation chance of an outside-all-rooms point with empty mask (default `0.05`) |
+| `data.query_counts` | Possible query-point counts; one value is chosen per variation (e.g. `[1, 2, 3, 4]`) |
 | `data.point_distance_alpha` | Inside-room point sampling weight ∝ distance-to-boundary^α (default `1.5`; `0` = uniform) |
 | `finetune.neck` | Train FPN neck (~370K params) |
 | `finetune.prompt_encoder` | Train point/mask prompt encoder |
