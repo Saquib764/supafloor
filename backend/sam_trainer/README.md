@@ -19,7 +19,7 @@ Training loads `floorplan-to-json` from `dataset_manager` (`saquiboye/floorplan-
 
 Rows are split into train/test via `data.test_fraction`. Every `train.viz_steps` steps the model runs on the held-out test rows and saves predicted mask overlays under `training_session/viz/step-XXXXXX/`.
 
-The frozen Hiera backbone runs once per floor plan in `data.py` (`train.precompute_backbone: true`). The training step only backprops through the modules enabled in `finetune` (neck, prompt_encoder, mask_decoder).
+Training always runs the live Hiera backbone with LoRA adapters on stages 3 and/or 4, plus any modules enabled in `finetune` (neck, prompt_encoder, mask_decoder). With `data.empty_mask_prob` (default `0.05`), each room slot variation may instead sample a point outside all rooms and target an empty mask.
 
 ```bash
 uv run sam-train train
@@ -32,11 +32,18 @@ uv run sam-train inspect
 | `data.test_fraction` | Held-out test row fraction for viz (default `0.2`) |
 | `data.room_slots` | Rooms sampled per floor plan row |
 | `data.per_room_variation` | Point/mask pairs per room |
+| `data.empty_mask_prob` | Per-variation chance of an outside-all-rooms point with empty mask (default `0.05`) |
+| `data.point_distance_alpha` | Inside-room point sampling weight ∝ distance-to-boundary^α (default `1.5`; `0` = uniform) |
 | `finetune.neck` | Train FPN neck (~370K params) |
 | `finetune.prompt_encoder` | Train point/mask prompt encoder |
 | `finetune.mask_decoder` | Train mask decoder (~4.2M params) |
-| `train.precompute_backbone` | Run frozen backbone in data loader (requires `num_workers: 0`) |
+| `lora.rank` | LoRA rank for backbone adapters (alpha = 2× rank) |
+| `lora.dropout` | LoRA dropout |
+| `lora.stage3` | LoRA on Hiera stage 3 attention (`qkv`, `proj`) |
+| `lora.stage4` | LoRA on Hiera stage 4 attention (`qkv`, `proj`) |
 | `train.session_dir` | Checkpoints (`training_session/`, gitignored) |
+| `train.resume` | Continue the same session (optimizer + step state) |
+| `train.from_checkpoint` | Start a new session from a prior LoRA checkpoint; use a different `session_dir` |
 | `train.viz_steps` | Save test-set mask overlays every N steps (default `10`) |
 | `train.viz_samples` | Test rows to visualize each time (default `3`) |
 
@@ -48,7 +55,7 @@ Interactive click-to-segment inference lives in `backend/florence_trainer/dev/in
 |---|---|
 | `sam_cli.py` | `train` / `inspect` entry (`uv run sam-train …`) |
 | `config.yaml` / `config.py` | Model, data, finetune, and train settings |
-| `data.py` | Hub rows, room point sampling, mask rasterization, backbone precompute |
+| `data.py` | Hub rows, room point sampling, mask rasterization |
 | `canvas.py` | Fit images to canvas; mask overlay rendering (used by florence infer UI) |
 | `model.py` | Load SAM 2.1, finetune flags, training forward, infer helpers |
 | `train.py` | HuggingFace `Trainer` loop |

@@ -39,6 +39,8 @@ class DataSettings:
     dataset: str
     room_slots: int
     per_room_variation: int
+    empty_mask_prob: float
+    point_distance_alpha: float
     test_fraction: float
     revision: str | None = None
     seed: int | None = None
@@ -57,9 +59,20 @@ class FinetuneSettings:
 
 
 @dataclass(frozen=True)
+class LoraSettings:
+    rank: int
+    dropout: float
+    stage3: bool
+    stage4: bool
+
+    @property
+    def enabled(self) -> bool:
+        return self.stage3 or self.stage4
+
+
+@dataclass(frozen=True)
 class TrainSettings:
     session_dir: Path
-    precompute_backbone: bool
     epochs: int
     batch_size: int
     grad_accum: int
@@ -69,6 +82,7 @@ class TrainSettings:
     max_grad_norm: float
     save_steps: int
     resume: bool
+    from_checkpoint: Path | None
     fp16: bool
     viz_steps: int
     viz_samples: int
@@ -77,6 +91,7 @@ class TrainSettings:
 @dataclass(frozen=True)
 class InferSettings:
     multimask_output: bool
+    checkpoint: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -87,6 +102,7 @@ class Config:
     hf_cache: Path
     data: DataSettings
     finetune: FinetuneSettings
+    lora: LoraSettings
     train: TrainSettings
     infer: InferSettings
 
@@ -121,6 +137,7 @@ def load_config(path: Path | None = None) -> Config:
     base = config_path.parent
     data = raw.get("data") or {}
     finetune = raw.get("finetune") or {}
+    lora = raw.get("lora") or {}
     train = raw.get("train") or {}
     infer = raw.get("infer") or {}
 
@@ -130,30 +147,35 @@ def load_config(path: Path | None = None) -> Config:
 
     room_slots = int(data.get("room_slots", 1))
     per_room_variation = int(data.get("per_room_variation", 1))
+    empty_mask_prob = float(data.get("empty_mask_prob", 0.05))
+    point_distance_alpha = float(data.get("point_distance_alpha", 1.5))
     test_fraction = float(data.get("test_fraction", 0.2))
     if room_slots < 1:
         raise ValueError("data.room_slots must be >= 1")
     if per_room_variation < 1:
         raise ValueError("data.per_room_variation must be >= 1")
+    if not 0.0 <= empty_mask_prob <= 1.0:
+        raise ValueError("data.empty_mask_prob must be between 0 and 1")
+    if point_distance_alpha < 0.0:
+        raise ValueError("data.point_distance_alpha must be >= 0")
 
     finetune_settings = FinetuneSettings(
         neck=bool(finetune.get("neck", False)),
         prompt_encoder=bool(finetune.get("prompt_encoder", False)),
         mask_decoder=bool(finetune.get("mask_decoder", False)),
     )
-    if not any(
-        (
-            finetune_settings.neck,
-            finetune_settings.prompt_encoder,
-            finetune_settings.mask_decoder,
-        )
-    ):
-        raise ValueError("finetune: enable at least one of neck, prompt_encoder, mask_decoder")
+    lora_settings = LoraSettings(
+        rank=int(lora.get("rank", 8)),
+        dropout=float(lora.get("dropout", 0.05)),
+        stage3=bool(lora.get("stage3", False)),
+        stage4=bool(lora.get("stage4", False)),
+    )
+    if not lora_settings.enabled:
+        raise ValueError("lora: enable at least one of stage3, stage4")
+    if lora_settings.rank < 1:
+        raise ValueError("lora.rank must be >= 1")
 
-    precompute_backbone = bool(train.get("precompute_backbone", True))
     num_workers = int(data.get("num_workers", 0))
-    if precompute_backbone and num_workers > 0:
-        raise ValueError("data.num_workers must be 0 when train.precompute_backbone is true")
 
     hf_cache = apply_hf_cache(_resolve(Path(raw["hf_cache"]), base))
     return Config(
@@ -165,15 +187,17 @@ def load_config(path: Path | None = None) -> Config:
             dataset=dataset,
             room_slots=room_slots,
             per_room_variation=per_room_variation,
+            empty_mask_prob=empty_mask_prob,
+            point_distance_alpha=point_distance_alpha,
             test_fraction=test_fraction,
             revision=str(data["revision"]).strip() if data.get("revision") else None,
             seed=int(data["seed"]) if data.get("seed") is not None else None,
             num_workers=num_workers,
         ),
         finetune=finetune_settings,
+        lora=lora_settings,
         train=TrainSettings(
             session_dir=_resolve(Path(train["session_dir"]), base),
-            precompute_backbone=precompute_backbone,
             epochs=int(train["epochs"]),
             batch_size=int(train["batch_size"]),
             grad_accum=int(train["grad_accum"]),
@@ -183,12 +207,22 @@ def load_config(path: Path | None = None) -> Config:
             max_grad_norm=float(train["max_grad_norm"]),
             save_steps=int(train["save_steps"]),
             resume=bool(train.get("resume", False)),
+            from_checkpoint=(
+                _resolve(Path(raw_from), base)
+                if (raw_from := train.get("from_checkpoint"))
+                else None
+            ),
             fp16=bool(train.get("fp16", False)),
             viz_steps=int(train.get("viz_steps", 10)),
             viz_samples=int(train.get("viz_samples", 3)),
         ),
         infer=InferSettings(
             multimask_output=bool(infer.get("multimask_output", False)),
+            checkpoint=(
+                _resolve(Path(infer["checkpoint"]), base)
+                if infer.get("checkpoint")
+                else None
+            ),
         ),
     )
 

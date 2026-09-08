@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -10,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 
-from config import Config, FinetuneSettings
+from config import Config, FinetuneSettings, LoraSettings
 
 
 @dataclass
@@ -29,9 +30,6 @@ def pick_device() -> torch.device:
 
 
 def apply_finetune(model: torch.nn.Module, finetune: FinetuneSettings) -> None:
-    for param in model.parameters():
-        param.requires_grad = False
-
     if finetune.neck:
         for param in model.vision_encoder.neck.parameters():
             param.requires_grad = True
@@ -41,6 +39,73 @@ def apply_finetune(model: torch.nn.Module, finetune: FinetuneSettings) -> None:
     if finetune.mask_decoder:
         for param in model.mask_decoder.parameters():
             param.requires_grad = True
+
+
+def _backbone_blocks_per_stage(model: torch.nn.Module) -> list[int]:
+    blocks_per_stage = model.vision_encoder.backbone.config.blocks_per_stage
+    if not blocks_per_stage:
+        raise ValueError("backbone blocks_per_stage is missing")
+    return list(blocks_per_stage)
+
+
+def _stage_block_range(blocks_per_stage: list[int], stage: int) -> range:
+    if stage < 1 or stage > len(blocks_per_stage):
+        raise ValueError(f"invalid Hiera stage {stage}")
+    start = sum(blocks_per_stage[: stage - 1])
+    return range(start, start + blocks_per_stage[stage - 1])
+
+
+def _backbone_lora_targets(model: torch.nn.Module, lora: LoraSettings) -> list[str]:
+    blocks_per_stage = _backbone_blocks_per_stage(model)
+    block_indices: list[int] = []
+    if lora.stage3:
+        block_indices.extend(_stage_block_range(blocks_per_stage, 3))
+    if lora.stage4:
+        block_indices.extend(_stage_block_range(blocks_per_stage, 4))
+
+    targets: list[str] = []
+    for block_idx in block_indices:
+        prefix = f"vision_encoder.backbone.blocks.{block_idx}.attn"
+        targets.extend((f"{prefix}.qkv", f"{prefix}.proj"))
+    return targets
+
+
+def _resolve_lora_modules(model: torch.nn.Module, targets: list[str]) -> None:
+    module_names = {name for name, _module in model.named_modules()}
+    missing = [name for name in targets if name not in module_names]
+    if missing:
+        raise ValueError(
+            "Missing LoRA target modules in SAM 2.1: "
+            + ", ".join(missing[:5])
+            + (" …" if len(missing) > 5 else "")
+        )
+
+
+def apply_lora(model: torch.nn.Module, lora: LoraSettings) -> torch.nn.Module:
+    from peft import LoraConfig, get_peft_model
+
+    targets = _backbone_lora_targets(model, lora)
+    if not targets:
+        raise ValueError("lora: enable at least one of stage3, stage4")
+    _resolve_lora_modules(model, targets)
+    return get_peft_model(
+        model,
+        LoraConfig(
+            r=lora.rank,
+            lora_alpha=2 * lora.rank,
+            lora_dropout=lora.dropout,
+            target_modules=targets,
+            bias="none",
+        ),
+    )
+
+
+def lora_param_count(model: torch.nn.Module) -> int:
+    return sum(
+        param.numel()
+        for name, param in model.named_parameters()
+        if param.requires_grad and "lora_" in name
+    )
 
 
 def trainable_param_count(model: torch.nn.Module) -> int:
@@ -63,12 +128,46 @@ def post_process_pred_masks(
     return processor.post_process_masks(pred_masks, original_sizes)[0]
 
 
-def load_model_and_processor(cfg: Config, *, for_training: bool = False) -> Sam2Predictor:
+def _checkpoint_key_candidates(key: str) -> list[str]:
+    key = key.removeprefix("model.").removeprefix("base_model.model.")
+    candidates = [f"base_model.model.{key}"]
+    for suffix in (".weight", ".bias"):
+        if key.endswith(suffix):
+            stem = key[: -len(suffix)]
+            candidates.append(f"base_model.model.{stem}.base_layer{suffix}")
+    return candidates
+
+
+def _normalize_checkpoint_keys(
+    state: dict[str, torch.Tensor],
+    model: torch.nn.Module,
+) -> dict[str, torch.Tensor]:
+    model_keys = set(model.state_dict().keys())
+    normalized: dict[str, torch.Tensor] = {}
+    for raw_key, value in state.items():
+        matched = next(
+            (candidate for candidate in _checkpoint_key_candidates(raw_key) if candidate in model_keys),
+            None,
+        )
+        if matched is not None:
+            normalized[matched] = value
+    return normalized
+
+
+def load_model_and_processor(
+    cfg: Config,
+    *,
+    for_training: bool = False,
+    checkpoint: Path | None = None,
+) -> Sam2Predictor:
     from transformers import Sam2VideoModel, Sam2VideoProcessor
 
     device = pick_device()
     model = Sam2VideoModel.from_pretrained(cfg.model_id).to(device)
     processor = Sam2VideoProcessor.from_pretrained(cfg.model_id)
+    model = apply_lora(model, cfg.lora)
+    if checkpoint is not None:
+        load_finetuned_weights(model, checkpoint)
     if for_training:
         apply_finetune(model, cfg.finetune)
         model.train()
@@ -77,37 +176,31 @@ def load_model_and_processor(cfg: Config, *, for_training: bool = False) -> Sam2
     return Sam2Predictor(model=model, processor=processor, device=device)
 
 
+def load_finetuned_weights(model: torch.nn.Module, checkpoint_dir: Path) -> None:
+    weights_file = checkpoint_dir / "model.safetensors"
+    if not weights_file.is_file():
+        raise FileNotFoundError(f"SAM checkpoint not found: {weights_file}")
+
+    from safetensors.torch import load_file
+
+    raw_state = load_file(str(weights_file))
+    if not any("lora_" in key for key in raw_state):
+        raise ValueError(f"Checkpoint has no LoRA weights (unsupported format): {weights_file}")
+    state = _normalize_checkpoint_keys(raw_state, model)
+    _missing, unexpected = model.load_state_dict(state, strict=False)
+    if unexpected:
+        raise RuntimeError(f"Unexpected SAM checkpoint keys: {unexpected[:5]}")
+
+
 def load_predictor(cfg: Config) -> Sam2Predictor:
-    return load_model_and_processor(cfg, for_training=False)
+    checkpoint = cfg.infer.checkpoint
+    predictor = load_model_and_processor(cfg, for_training=False, checkpoint=checkpoint)
+    return predictor
 
 
 def prepare_pixel_values(processor: object, image: Image.Image, device: torch.device) -> torch.Tensor:
     inputs = processor(images=image, return_tensors="pt")
     return inputs["pixel_values"].to(device)
-
-
-@torch.no_grad()
-def encode_backbone(model: torch.nn.Module, pixel_values: torch.Tensor) -> tuple[torch.Tensor, ...]:
-    backbone_output = model.vision_encoder.backbone(pixel_values)
-    return tuple(layer.detach().cpu().squeeze(0) for layer in backbone_output.intermediate_hidden_states)
-
-
-def build_image_embeddings(
-    model: torch.nn.Module,
-    intermediate_hidden_states: tuple[torch.Tensor, ...],
-    batch_size: int,
-) -> list[torch.Tensor]:
-    fpn_hidden_states, _fpn_position_encoding = model.vision_encoder.neck(intermediate_hidden_states)
-    levels = model.num_feature_levels
-    feature_maps = list(fpn_hidden_states[-levels:][::-1])
-    feature_maps[0] = model.mask_decoder.conv_s0(feature_maps[0])
-    feature_maps[1] = model.mask_decoder.conv_s1(feature_maps[1])
-    feature_maps = [feature_map.flatten(2).permute(2, 0, 1) for feature_map in feature_maps]
-    feature_maps[-1] = feature_maps[-1] + model.no_memory_embedding
-    return [
-        feature_map.permute(1, 2, 0).view(batch_size, -1, *feature_size)
-        for feature_map, feature_size in zip(feature_maps, model.backbone_feature_sizes)
-    ]
 
 
 class Sam2TrainingWrapper(nn.Module):
@@ -119,30 +212,10 @@ class Sam2TrainingWrapper(nn.Module):
         self,
         input_points: torch.Tensor,
         input_labels: torch.Tensor,
-        intermediate_hidden_states: tuple[torch.Tensor, ...] | None = None,
-        pixel_values: torch.Tensor | None = None,
+        pixel_values: torch.Tensor,
         **kwargs: object,
     ):
         del kwargs
-        if intermediate_hidden_states is not None:
-            batch_size = input_points.shape[0]
-            device = input_points.device
-            ihs = tuple(layer.to(device) for layer in intermediate_hidden_states)
-            image_embeddings = build_image_embeddings(
-                self.model,
-                ihs,
-                batch_size,
-            )
-            return _segment(
-                self.model,
-                input_points=input_points,
-                input_labels=input_labels,
-                image_embeddings=image_embeddings,
-                multimask_output=False,
-            )
-
-        if pixel_values is None:
-            raise ValueError("intermediate_hidden_states or pixel_values required")
         return _segment(
             self.model,
             pixel_values=pixel_values,

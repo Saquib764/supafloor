@@ -10,6 +10,10 @@ import json
 import sys
 from pathlib import Path
 
+_SAM_ROOT = Path(__file__).resolve().parents[2] / "sam_trainer"
+if str(_SAM_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SAM_ROOT))
+
 import numpy as np
 from PIL import Image
 
@@ -40,7 +44,13 @@ def main() -> None:
 
     cfg = load_config(args.config)
     predictor = load_predictor(cfg)
-    _send({"ok": True, "ready": True})
+    _send(
+        {
+            "ok": True,
+            "ready": True,
+            "checkpoint": str(cfg.infer.checkpoint) if cfg.infer.checkpoint else None,
+        }
+    )
 
     for line in sys.stdin:
         line = line.strip()

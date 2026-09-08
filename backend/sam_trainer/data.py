@@ -12,7 +12,9 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw
 from registry import hub_dataset_row_count, load_hub_rows_at, load_hub_stream
-from shapely.geometry import Polygon
+from shapely.geometry import Point, Polygon
+from shapely.geometry.base import BaseGeometry
+from shapely.ops import unary_union
 from torch.utils.data import IterableDataset
 
 SAM_COLUMNS = ("stem", "image", "extraction")
@@ -26,8 +28,7 @@ class VizSample:
     stem: str
     image: Image.Image
     point: tuple[float, float]
-    intermediate_hidden_states: tuple[torch.Tensor, ...] | None = None
-    pixel_values: torch.Tensor | None = None
+    pixel_values: torch.Tensor
 
 
 def prepare_image(image: Image.Image, size: int) -> Image.Image:
@@ -159,12 +160,46 @@ def _open_ring(polygon: Polygon) -> list[tuple[float, float]]:
     return ring
 
 
-def sample_point_from_mask(mask: np.ndarray, rng: random.Random) -> tuple[float, float]:
+def _rooms_union(rooms: list[dict[str, Any]]) -> BaseGeometry:
+    polygons = [_polygon_from_vertices(room["polygon"]) for room in rooms]
+    return unary_union(polygons)
+
+
+def _mask_distance_transform(mask: np.ndarray) -> np.ndarray:
+    from scipy.ndimage import distance_transform_edt
+
+    return distance_transform_edt(mask > 0)
+
+
+def sample_point_from_mask(
+    mask: np.ndarray,
+    rng: random.Random,
+    *,
+    alpha: float,
+    distance: np.ndarray | None = None,
+) -> tuple[float, float]:
     ys, xs = np.nonzero(mask > 0)
     if len(xs) == 0:
         raise ValueError("cannot sample point from empty mask")
-    index = rng.randrange(len(xs))
+
+    dist = distance if distance is not None else _mask_distance_transform(mask)
+    weights = dist[ys, xs] ** alpha
+    total = float(weights.sum())
+    if total <= 0.0:
+        index = rng.randrange(len(xs))
+        return (float(xs[index]), float(ys[index]))
+
+    index = rng.choices(range(len(xs)), weights=(weights / total).tolist(), k=1)[0]
     return (float(xs[index]), float(ys[index]))
+
+
+def sample_point_outside(geometry: BaseGeometry, rng: random.Random, canvas_size: int) -> tuple[float, float]:
+    limit = float(canvas_size)
+    while True:
+        x = rng.uniform(0.0, limit)
+        y = rng.uniform(0.0, limit)
+        if not geometry.contains(Point(x, y)):
+            return (x, y)
 
 
 def rasterize_room_mask(room: dict[str, Any], walls: list[dict[str, Any]], size: int) -> np.ndarray:
@@ -197,6 +232,8 @@ def build_room_samples(
     canvas_size: int,
     room_slots: int,
     per_room_variation: int,
+    empty_mask_prob: float,
+    point_distance_alpha: float,
     seed: int | None,
 ) -> list[tuple[tuple[float, float], np.ndarray]]:
     rooms = list(extraction.get("rooms") or [])
@@ -204,13 +241,25 @@ def build_room_samples(
         raise ValueError("extraction has no rooms")
 
     walls = list(extraction.get("walls") or [])
+    rooms_union = _rooms_union(rooms)
     rng = random.Random((seed or 0) * 1_000_003 + index)
     samples: list[tuple[tuple[float, float], np.ndarray]] = []
     for _ in range(room_slots):
         room = rng.choice(rooms)
-        mask = rasterize_room_mask(room, walls, canvas_size)
+        room_mask = rasterize_room_mask(room, walls, canvas_size)
+        distance = _mask_distance_transform(room_mask)
         for _ in range(per_room_variation):
-            point = sample_point_from_mask(mask, rng)
+            if rng.random() < empty_mask_prob:
+                point = sample_point_outside(rooms_union, rng, canvas_size)
+                mask = np.zeros((canvas_size, canvas_size), dtype=np.float32)
+            else:
+                point = sample_point_from_mask(
+                    room_mask,
+                    rng,
+                    alpha=point_distance_alpha,
+                    distance=distance,
+                )
+                mask = room_mask
             samples.append((point, mask))
     return samples
 
@@ -221,9 +270,9 @@ def build_viz_samples(
     *,
     room_slots: int,
     per_room_variation: int,
+    empty_mask_prob: float,
+    point_distance_alpha: float,
     seed: int | None,
-    precompute_backbone: bool,
-    encode_backbone: Any,
     prepare_pixel_values: Any,
 ) -> list[VizSample]:
     samples: list[VizSample] = []
@@ -236,20 +285,16 @@ def build_viz_samples(
             canvas_size=canvas_size,
             room_slots=room_slots,
             per_room_variation=per_room_variation,
+            empty_mask_prob=empty_mask_prob,
+            point_distance_alpha=point_distance_alpha,
             seed=seed,
         )[0]
-        shared: dict[str, Any] = {}
-        if precompute_backbone:
-            pixel_values = prepare_pixel_values(image)
-            shared["intermediate_hidden_states"] = encode_backbone(pixel_values)
-        else:
-            shared["pixel_values"] = prepare_pixel_values(image)
         samples.append(
             VizSample(
                 stem=str(row["stem"]),
                 image=image,
                 point=point,
-                **shared,
+                pixel_values=prepare_pixel_values(image),
             )
         )
     return samples
@@ -264,9 +309,9 @@ class FloorplanSamDataset(IterableDataset):
         num_rows: int,
         room_slots: int,
         per_room_variation: int,
+        empty_mask_prob: float,
+        point_distance_alpha: float,
         seed: int | None,
-        precompute_backbone: bool,
-        encode_backbone: Any,
         prepare_pixel_values: Any,
     ) -> None:
         self._rows = rows
@@ -274,9 +319,9 @@ class FloorplanSamDataset(IterableDataset):
         self._num_rows = num_rows
         self._room_slots = room_slots
         self._per_room_variation = per_room_variation
+        self._empty_mask_prob = empty_mask_prob
+        self._point_distance_alpha = point_distance_alpha
         self._seed = seed or 0
-        self._precompute_backbone = precompute_backbone
-        self._encode_backbone = encode_backbone
         self._prepare_pixel_values = prepare_pixel_values
         self.epoch = 0
 
@@ -297,15 +342,12 @@ class FloorplanSamDataset(IterableDataset):
                 canvas_size=self._canvas_size,
                 room_slots=self._room_slots,
                 per_room_variation=self._per_room_variation,
+                empty_mask_prob=self._empty_mask_prob,
+                point_distance_alpha=self._point_distance_alpha,
                 seed=self._seed,
             )
 
-            shared: dict[str, Any] = {}
-            if self._precompute_backbone:
-                pixel_values = self._prepare_pixel_values(image)
-                shared["intermediate_hidden_states"] = self._encode_backbone(pixel_values)
-            else:
-                shared["pixel_values"] = self._prepare_pixel_values(image)
+            shared = {"pixel_values": self._prepare_pixel_values(image)}
 
             for point, mask in samples:
                 yield {
@@ -316,9 +358,6 @@ class FloorplanSamDataset(IterableDataset):
 
 
 class SamCollator:
-    def __init__(self, *, precompute_backbone: bool) -> None:
-        self._precompute_backbone = precompute_backbone
-
     def __call__(self, batch: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
         points = torch.tensor(
             [[[[x, y] for x, y in (item["point"],)]] for item in batch],
@@ -327,18 +366,9 @@ class SamCollator:
         labels_pts = torch.ones((len(batch), 1, 1), dtype=torch.int64)
         masks = torch.from_numpy(np.stack([item["mask"] for item in batch])).float()
 
-        out: dict[str, torch.Tensor | tuple[torch.Tensor, ...]] = {
+        return {
             "input_points": points,
             "input_labels": labels_pts,
             "labels": masks,
+            "pixel_values": torch.cat([item["pixel_values"] for item in batch], dim=0),
         }
-
-        if self._precompute_backbone:
-            ihs_layers = zip(*(item["intermediate_hidden_states"] for item in batch))
-            out["intermediate_hidden_states"] = tuple(
-                torch.stack(list(layer_tensors), dim=0) for layer_tensors in ihs_layers
-            )
-        else:
-            out["pixel_values"] = torch.cat([item["pixel_values"] for item in batch], dim=0)
-
-        return out

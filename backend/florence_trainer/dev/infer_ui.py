@@ -352,7 +352,7 @@ class InferUI:
 
     def _ensure_sam_runtime(self):
         if self.sam_runtime is None:
-            self.status = "Loading SAM 2.1..."
+            self.status = "Loading finetuned SAM..."
             self._draw()
             pygame.display.flip()
             try:

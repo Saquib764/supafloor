@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 import torch
+from PIL import Image
 from tqdm.auto import tqdm
 from transformers import Trainer, TrainerCallback, TrainingArguments
 from transformers.trainer_callback import PrinterCallback, ProgressCallback
@@ -25,8 +26,8 @@ from data import (
 from model import (
     Sam2TrainingWrapper,
     compute_segmentation_loss,
-    encode_backbone,
     load_model_and_processor,
+    lora_param_count,
     post_process_pred_masks,
     prepare_pixel_values,
     trainable_param_count,
@@ -121,21 +122,11 @@ def _predict_mask(
 ) -> np.ndarray:
     points = torch.tensor([[[[sample.point[0], sample.point[1]]]]], dtype=torch.float32, device=device)
     labels = torch.tensor([[[1]]], dtype=torch.int64, device=device)
-    if sample.intermediate_hidden_states is not None:
-        ihs = tuple(layer.unsqueeze(0).to(device) for layer in sample.intermediate_hidden_states)
-        outputs = wrapper(
-            intermediate_hidden_states=ihs,
-            input_points=points,
-            input_labels=labels,
-        )
-    else:
-        if sample.pixel_values is None:
-            raise ValueError("viz sample needs intermediate_hidden_states or pixel_values")
-        outputs = wrapper(
-            pixel_values=sample.pixel_values.to(device),
-            input_points=points,
-            input_labels=labels,
-        )
+    outputs = wrapper(
+        pixel_values=sample.pixel_values.to(device),
+        input_points=points,
+        input_labels=labels,
+    )
     original_sizes = torch.tensor([[canvas_size, canvas_size]])
     masks = post_process_pred_masks(processor, outputs.pred_masks.cpu(), original_sizes)
     return masks[0, 0].numpy().astype(bool)
@@ -208,6 +199,8 @@ def _print_training_setup(
     print(f"canvas_size:      {cfg.canvas_size}")
     print(f"room_slots:       {cfg.data.room_slots}")
     print(f"per_room_var:     {cfg.data.per_room_variation}")
+    print(f"empty_mask_prob:  {cfg.data.empty_mask_prob}")
+    print(f"point_dist_alpha: {cfg.data.point_distance_alpha}")
     print(f"samples/row:      {cfg.data.variations_per_floorplan}")
     print(f"train samples:    {len(train_ds):,}")
     print(f"data seed:        {cfg.data.seed}")
@@ -216,11 +209,16 @@ def _print_training_setup(
     print(f"neck:             {cfg.finetune.neck}")
     print(f"prompt_encoder:   {cfg.finetune.prompt_encoder}")
     print(f"mask_decoder:     {cfg.finetune.mask_decoder}")
+    print("\n=== LoRA ===")
+    print(f"rank:             {cfg.lora.rank} (alpha {2 * cfg.lora.rank})")
+    print(f"dropout:          {cfg.lora.dropout}")
+    print(f"stage3:           {cfg.lora.stage3}")
+    print(f"stage4:           {cfg.lora.stage4}")
+    print(f"lora params:      {lora_param_count(model):,}")
     print(f"trainable params: {trainable_param_count(model):,}")
 
     print("\n=== Training ===")
     print(f"output_dir:       {cfg.train.session_dir}")
-    print(f"precompute_backbone:{cfg.train.precompute_backbone}")
     print(f"epochs:           {cfg.train.epochs}")
     print(f"batch_size:       {cfg.train.batch_size}")
     print(f"grad_accum:       {cfg.train.grad_accum}")
@@ -236,11 +234,37 @@ def _print_training_setup(
     print(f"viz_samples:      {cfg.train.viz_samples}")
     print(f"num_workers:      {cfg.data.num_workers}")
     print(f"resume:           {cfg.train.resume}")
+    print(f"from_checkpoint:  {cfg.train.from_checkpoint or '(none)'}")
     print(f"logging_steps:    {args.logging_steps}")
     print()
 
 
+def _allow_checkpoint_unpickle() -> None:
+    """HF Trainer checkpoints include numpy RNG state; PyTorch 2.6+ defaults weights_only=True."""
+    _load = torch.load
+
+    def load(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return _load(*args, **kwargs)
+
+    torch.load = load  # type: ignore[method-assign]
+
+
+def _resolve_from_checkpoint(path: Path | None) -> Path | None:
+    if path is None:
+        return None
+    checkpoint = path.resolve()
+    if not (checkpoint / "model.safetensors").is_file():
+        raise FileNotFoundError(f"SAM checkpoint not found: {checkpoint}")
+    return checkpoint
+
+
 def run(cfg: Config) -> None:
+    from_checkpoint = _resolve_from_checkpoint(cfg.train.from_checkpoint)
+    if from_checkpoint is not None and cfg.train.resume:
+        raise ValueError("train.resume must be false when train.from_checkpoint is set")
+    if cfg.train.resume:
+        _allow_checkpoint_unpickle()
     cache_dir = datasets_cache_dir(cfg)
     train_rows, train_count, test_count = load_train_stream(
         cfg.data.dataset,
@@ -256,12 +280,13 @@ def run(cfg: Config) -> None:
         cache_dir=cache_dir,
     )
 
-    predictor = load_model_and_processor(cfg, for_training=True)
+    predictor = load_model_and_processor(
+        cfg,
+        for_training=True,
+        checkpoint=from_checkpoint,
+    )
     device = predictor.device
     model = Sam2TrainingWrapper(predictor.model)
-
-    def _encode(pixel_values: torch.Tensor) -> tuple[torch.Tensor, ...]:
-        return encode_backbone(predictor.model, pixel_values)
 
     def _prepare(image: Image.Image) -> torch.Tensor:
         return prepare_pixel_values(predictor.processor, image, device)
@@ -271,9 +296,9 @@ def run(cfg: Config) -> None:
         cfg.canvas_size,
         room_slots=cfg.data.room_slots,
         per_room_variation=cfg.data.per_room_variation,
+        empty_mask_prob=cfg.data.empty_mask_prob,
+        point_distance_alpha=cfg.data.point_distance_alpha,
         seed=cfg.data.seed,
-        precompute_backbone=cfg.train.precompute_backbone,
-        encode_backbone=_encode,
         prepare_pixel_values=_prepare,
     )
     viz_dir = cfg.train.session_dir / "viz"
@@ -284,12 +309,12 @@ def run(cfg: Config) -> None:
         num_rows=train_count,
         room_slots=cfg.data.room_slots,
         per_room_variation=cfg.data.per_room_variation,
+        empty_mask_prob=cfg.data.empty_mask_prob,
+        point_distance_alpha=cfg.data.point_distance_alpha,
         seed=cfg.data.seed,
-        precompute_backbone=cfg.train.precompute_backbone,
-        encode_backbone=_encode,
         prepare_pixel_values=_prepare,
     )
-    collator = SamCollator(precompute_backbone=cfg.train.precompute_backbone)
+    collator = SamCollator()
 
     steps_per_epoch = math.ceil(len(train_ds) / cfg.train.batch_size / cfg.train.grad_accum)
     total_steps = steps_per_epoch * cfg.train.epochs

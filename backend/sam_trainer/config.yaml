@@ -4,12 +4,14 @@ margin: 10
 hf_cache: ../hf_cache
 
 data:
-  dataset: floorplan-to-json
+  dataset: floorplan-manual
   revision: null
   seed: 42
   test_fraction: 0.2
-  room_slots: 2
-  per_room_variation: 3
+  room_slots: 1
+  per_room_variation: 1
+  empty_mask_prob: 0.05
+  point_distance_alpha: 1.5
   num_workers: 0
 
 finetune:
@@ -17,11 +19,17 @@ finetune:
   prompt_encoder: false
   mask_decoder: true
 
+lora:
+  rank: 8
+  dropout: 0.05
+  stage3: true
+  stage4: true
+
 train:
   session_dir: training_session
-  precompute_backbone: true
-  epochs: 2
-  batch_size: 6
+  from_checkpoint: null
+  epochs: 50
+  batch_size: 1
   grad_accum: 1
   learning_rate: 1.0e-4
   warmup_ratio: 0.01
@@ -35,3 +43,4 @@ train:
 
 infer:
   multimask_output: false
+  checkpoint: null

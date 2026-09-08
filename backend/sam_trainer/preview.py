@@ -12,7 +12,7 @@ import torch
 from canvas import apply_masks
 from config import CONFIG_PATH, Config, datasets_cache_dir, load_config
 from data import build_room_samples, load_sample_rows, prepare_image
-from model import load_predictor, pick_device
+from model import load_predictor, lora_param_count, pick_device, trainable_param_count
 
 _PREVIEW_DIR = CONFIG_PATH.parent / "_preview"
 _MODULES = ("vision_encoder", "prompt_encoder", "mask_decoder", "shared_image_embedding")
@@ -85,6 +85,13 @@ def print_model(cfg: Config) -> torch.nn.Module:
     print(f"canvas_size:        {cfg.canvas_size}")
     print(f"multimask_output:   {cfg.infer.multimask_output}")
     print(f"hf_cache:           {cfg.hf_cache}")
+    print(f"lora rank:          {cfg.lora.rank}")
+    print(f"lora stage3:        {cfg.lora.stage3}")
+    print(f"lora stage4:        {cfg.lora.stage4}")
+    if cfg.infer.checkpoint is not None:
+        print(f"infer checkpoint:   {cfg.infer.checkpoint}")
+    print(f"lora trainable:     {lora_param_count(model):,}")
+    print(f"finetune trainable: {trainable_param_count(model):,}")
     print(flush=True)
     return model
 
@@ -124,6 +131,8 @@ def save_data_samples(cfg: Config, *, count: int, seed: int | None) -> None:
             canvas_size=cfg.canvas_size,
             room_slots=cfg.data.room_slots,
             per_room_variation=cfg.data.per_room_variation,
+            empty_mask_prob=cfg.data.empty_mask_prob,
+            point_distance_alpha=cfg.data.point_distance_alpha,
             seed=cfg.data.seed,
         )
 
@@ -132,8 +141,9 @@ def save_data_samples(cfg: Config, *, count: int, seed: int | None) -> None:
         print(f"image:        {image_path}")
         for v, (point, mask) in enumerate(samples, start=1):
             gt_path = _PREVIEW_DIR / f"{stem}_v{v}_gt.jpg"
-            apply_masks(image, [mask], [point]).save(gt_path, format="JPEG", quality=95)
-            print(f"  variation {v}: point=({point[0]:.1f}, {point[1]:.1f}) gt={gt_path.name}")
+            apply_masks(image, [mask.astype(bool)], [point]).save(gt_path, format="JPEG", quality=95)
+            empty = " (empty mask)" if not mask.any() else ""
+            print(f"  variation {v}: point=({point[0]:.1f}, {point[1]:.1f}) gt={gt_path.name}{empty}")
 
 
 def run(cfg: Config, *, count: int = 1, seed: int | None = None) -> None:
