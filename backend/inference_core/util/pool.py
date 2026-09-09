@@ -53,6 +53,31 @@ def remove_grid_points_inside_polygon(
     return len(inside)
 
 
+def grid_points_inside_mask(
+    grid_points: list[tuple[float, float]],
+    mask: np.ndarray,
+) -> list[tuple[float, float]]:
+    active = np.asarray(mask, dtype=bool)
+    height, width = active.shape
+    return [
+        point
+        for point in grid_points
+        if 0 <= int(point[0]) < width
+        and 0 <= int(point[1]) < height
+        and active[int(point[1]), int(point[0])]
+    ]
+
+
+def remove_grid_points_inside_mask(
+    grid_points: list[tuple[float, float]],
+    mask: np.ndarray,
+) -> int:
+    inside = grid_points_inside_mask(grid_points, mask)
+    if inside:
+        remove_from_grid_pool(grid_points, inside)
+    return len(inside)
+
+
 def _arm_is_full_white(arm: np.ndarray) -> bool:
     return arm.size > 0 and float(arm.mean()) >= 250.0
 

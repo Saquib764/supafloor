@@ -5,7 +5,7 @@ Left panel lists test/ images (sorted by name); first image loads by default.
 Toggle backbone between Florence (room polygons) and SAM 2.1 (segmentation masks).
 Single mode infers immediately on each click. Multiple mode places points first,
 then runs one inference when Infer is clicked. Multiple mode supports optional
-exclusion points (Florence prompt + SAM negative points). UNet/VAE buttons apply only in Florence mode.
+exclusion points (Florence prompt + SAM negative points). UNet/VAE/FPN buttons apply only in Florence mode.
 
 Usage (from backend/florence_trainer):
 
@@ -47,6 +47,7 @@ from pre_clean import pre_clean
 from fit_test_canvas import fit_to_canvas
 
 from sam_infer import get_sam_runtime
+from fpn_infer import get_fpn_runtime
 from unet_infer import get_unet_runtime
 from vae_infer import get_vae_runtime
 
@@ -253,6 +254,7 @@ class InferUI:
         sam_config: Path,
         unet_checkpoint: Path,
         vae_checkpoint: Path,
+        fpn_checkpoint: Path,
     ) -> None:
         if not test_images:
             raise ValueError(f"No images found in {TEST_DIR}")
@@ -263,6 +265,7 @@ class InferUI:
         self.sam_runtime = None
         self.unet_checkpoint = unet_checkpoint
         self.vae_checkpoint = vae_checkpoint
+        self.fpn_checkpoint = fpn_checkpoint
         self.test_images = test_images
         self.selected_index = 0
         self.list_scroll = 0
@@ -308,6 +311,8 @@ class InferUI:
         self.backbone_btn = Button(pygame.Rect(x, y, btn_w, 28), "Backbone: florence")
         y += 34
         self.unet_btn = Button(pygame.Rect(x, y, btn_w, 28), "UNet")
+        y += 34
+        self.fpn_btn = Button(pygame.Rect(x, y, btn_w, 28), "FPN")
         y += 34
         self.vae_btn = Button(pygame.Rect(x, y, btn_w, 28), "VAE")
         y += 34
@@ -457,6 +462,19 @@ class InferUI:
             self._apply_viewer_image(runtime.infer(self.base_image), "UNet pass complete — viewer image updated.")
         except Exception as exc:
             self.status = f"UNet failed: {exc}"
+
+    def _on_fpn(self) -> None:
+        self.status = "Running FPN (walls/doors/windows)..."
+        self._draw()
+        pygame.display.flip()
+        try:
+            runtime = get_fpn_runtime(str(self.fpn_checkpoint.resolve()))
+            self._apply_viewer_image(
+                runtime.infer_structure(self.base_image),
+                "FPN structure detected — viewer updated.",
+            )
+        except Exception as exc:
+            self.status = f"FPN failed: {exc}"
 
     def _on_vae(self) -> None:
         self.status = "Running VAE..."
@@ -707,6 +725,9 @@ class InferUI:
         if self.unet_btn.hit(pos):
             self._on_unet()
             return
+        if self.fpn_btn.hit(pos):
+            self._on_fpn()
+            return
         if self.vae_btn.hit(pos):
             self._on_vae()
             return
@@ -770,6 +791,7 @@ class InferUI:
             self.clear_btn,
             self.backbone_btn,
             self.unet_btn,
+            self.fpn_btn,
             self.vae_btn,
             self.mode_btn,
             self.exclude_btn,
@@ -868,9 +890,11 @@ class InferUI:
 
 _SAM_ROOT = _ROOT.parent / "sam_trainer"
 _UNET_ROOT = _ROOT.parent / "unet_trainer"
+_FPN_ROOT = _ROOT.parent / "fpn_trainer"
 _VAE_ROOT = _ROOT.parent / "vae_trainer"
 _DEFAULT_SAM_CONFIG = _SAM_ROOT / "config.yaml"
 _DEFAULT_UNET_CHECKPOINT = _UNET_ROOT / "training_session" / "last.pt"
+_DEFAULT_FPN_CHECKPOINT = _FPN_ROOT / "training_session" / "last.pt"
 _DEFAULT_VAE_CHECKPOINT = _VAE_ROOT / "training_session" / "last.pt"
 
 
@@ -889,6 +913,12 @@ def main() -> None:
         type=Path,
         default=_DEFAULT_UNET_CHECKPOINT,
         help="UNet trainable weights (default: unet_trainer/training_session/last.pt)",
+    )
+    parser.add_argument(
+        "--fpn-checkpoint",
+        type=Path,
+        default=_DEFAULT_FPN_CHECKPOINT,
+        help="FPN weights (default: fpn_trainer/training_session/last.pt)",
     )
     parser.add_argument(
         "--vae-checkpoint",
@@ -922,6 +952,7 @@ def main() -> None:
         sam_config=args.sam_config,
         unet_checkpoint=args.unet_checkpoint,
         vae_checkpoint=args.vae_checkpoint,
+        fpn_checkpoint=args.fpn_checkpoint,
     )
     ui._sync_backbone_controls()
     ui.run()

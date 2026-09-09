@@ -50,18 +50,39 @@ def _save_fit_overlay(
     print(f"wrote {out_path}")
 
 
+def _should_continue(
+    *,
+    auto_continue: bool,
+    wait_continue_or_esc: Callable[[], bool] | None,
+) -> bool:
+    if auto_continue:
+        return True
+    if wait_continue_or_esc is not None:
+        return wait_continue_or_esc()
+    return True
+
+
 def run_fit_loop(
     cfg: Config,
-    image_path: Path,
+    image_path: Path | None = None,
     *,
-    wait_continue_or_esc: Callable[[], bool],
+    source_image: Image.Image | None = None,
+    skip_pre_clean: bool = False,
+    auto_continue: bool = False,
+    wait_continue_or_esc: Callable[[], bool] | None = None,
 ) -> None:
+    if source_image is None and image_path is None:
+        raise ValueError("provide image_path or source_image")
+
     predictor, sam_cfg, encode_image, predict_point_encoded = load_sam_predictor(cfg.sam_config)
-    image = load_viewer_image(
-        image_path,
-        canvas_size=cfg.canvas_size,
-        margin=cfg.margin,
-    )
+    if source_image is not None:
+        image = source_image.convert("RGB")
+    else:
+        image = load_viewer_image(
+            image_path,
+            canvas_size=cfg.canvas_size,
+            margin=cfg.margin,
+        )
     sobel_img = sobel_edges(image)
     sobel = np.array(sobel_img, dtype=np.uint8)
     sobel_path = cfg.output / "sobel.png"
@@ -71,7 +92,9 @@ def run_fit_loop(
     corners = find_corners(image)
     save_corners_overlay(image, cfg.output / "corners.png", corners=corners)
     width, height = image.size
-    working_image = pre_clean(image).convert("L")
+    working_image = (
+        image.convert("L") if skip_pre_clean else pre_clean(image).convert("L")
+    )
     working_gray = np.array(working_image, dtype=np.uint8)
     filter_gray = point_filter_gray(working_gray, dilate_px=cfg.point_filter.dilate_px)
 
@@ -118,14 +141,14 @@ def run_fit_loop(
         )
         if not mask.any():
             print("empty mask — skipping")
-            if not wait_continue_or_esc():
+            if not _should_continue(auto_continue=auto_continue, wait_continue_or_esc=wait_continue_or_esc):
                 break
             continue
 
         fit_mask = morph_erode_dilate(mask, 3)
         if not fit_mask.any():
             print("empty mask after morph — skipping")
-            if not wait_continue_or_esc():
+            if not _should_continue(auto_continue=auto_continue, wait_continue_or_esc=wait_continue_or_esc):
                 break
             continue
 
@@ -138,7 +161,7 @@ def run_fit_loop(
         )
         if not variants:
             print("no polygon fits — skipping")
-            if not wait_continue_or_esc():
+            if not _should_continue(auto_continue=auto_continue, wait_continue_or_esc=wait_continue_or_esc):
                 break
             continue
 
@@ -176,7 +199,7 @@ def run_fit_loop(
             out_dir=out_dir,
             attempt=attempt,
         )
-        if not wait_continue_or_esc():
+        if not _should_continue(auto_continue=auto_continue, wait_continue_or_esc=wait_continue_or_esc):
             break
 
         _clean_working_gray(working_gray, mask)

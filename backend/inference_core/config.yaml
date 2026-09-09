@@ -4,6 +4,41 @@ hf_cache: ../hf_cache
 
 sam_config: ../sam_trainer/config.yaml
 
+replicate_token: r8_Hnnnf9EqN0DUijMj7IOKAyfAPsQdJ6I15HdxX
+
+image_edit:
+  model: openai/gpt-image-2.5-flare
+  quality: medium
+  aspect_ratio: "1:1"
+  output_format: png
+  background: auto
+  moderation: auto
+  number_of_images: 1
+  output_dir: output/image_edit
+  prompts:
+    clean: >
+      Change only this: convert the floorplan to CAD-style with filled black walls on a white background.
+      Keep walls, doors, windows, and room labels. Remove measurements, legends, scale bars, and other annotations.
+      Keep the output aligned with the input — same position, scale, rotation, and canvas framing.
+      Do not shift, crop, re-center, rescale, or rotate the plan. Do not change layout, room shapes, wall positions,
+      door/window locations, or label text. Do not add or remove rooms, furniture, or decorative elements.
+    openings: >
+      Change only this: close door gaps with a green line matching wall thickness. Remove door swing arcs and the
+      perpendicular line attached to each door arc (the door-panel line from hinge to swing). Close window gaps with
+      a blue line matching wall thickness.
+      Do not change walls, room labels, background, layout, alignment, scale, rotation, or canvas framing.
+      Do not move, resize, add, or remove doors/windows beyond closing their gaps. Do not remove furniture or restyle the drawing.
+    furniture: >
+      Change only this: remove furniture and appliances from the floorplan. Remove excess or redundant wall segments —
+      duplicate lines, overlapping walls, and stray wall fragments — while keeping the intended room boundary walls intact.
+      Do not change doors, windows, room labels, green door lines, blue window lines, background, layout, alignment,
+      scale, rotation, or canvas framing. Do not add rooms, furniture, or restyle the drawing.
+
+room_masks:
+  white_threshold: 250
+  min_area_px: 1000
+  exclude_largest: true
+
 grid:
   size: 100
   tries_per_cell: 5

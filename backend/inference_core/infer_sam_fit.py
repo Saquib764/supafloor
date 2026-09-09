@@ -43,7 +43,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    run_fit_loop(load_config(args.config), args.image, wait_continue_or_esc=_wait_continue_or_esc)
+    run_fit_loop(
+        load_config(args.config),
+        args.image,
+        wait_continue_or_esc=_wait_continue_or_esc,
+    )
 
 
 if __name__ == "__main__":

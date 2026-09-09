@@ -13,15 +13,6 @@ from data import image_to_tensor, prepare_image
 from net.model import FloorplanFPN, build_model
 
 
-def _device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    mps = getattr(torch.backends, "mps", None)
-    if mps is not None and mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
-
-
 def load_model(cfg: Config, checkpoint: Path, device: torch.device) -> FloorplanFPN:
     model = build_model(cfg)
     state = torch.load(checkpoint, map_location=device, weights_only=False)

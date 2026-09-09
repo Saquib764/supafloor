@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -39,11 +40,41 @@ class MaskSmoothSettings:
 
 
 @dataclass(frozen=True)
+class ImageEditPrompts:
+    clean: str
+    openings: str
+    furniture: str
+
+
+@dataclass(frozen=True)
+class RoomMaskSettings:
+    white_threshold: int
+    min_area_px: int
+    exclude_largest: bool
+
+
+@dataclass(frozen=True)
+class ImageEditSettings:
+    model: str
+    quality: str
+    aspect_ratio: str
+    output_format: str
+    background: str
+    moderation: str
+    number_of_images: int
+    output_dir: Path
+    prompts: ImageEditPrompts
+
+
+@dataclass(frozen=True)
 class Config:
     canvas_size: int
     margin: int
     hf_cache: Path
     sam_config: Path
+    replicate_token: str
+    image_edit: ImageEditSettings
+    room_masks: RoomMaskSettings
     grid: GridSettings
     point_filter: PointFilterSettings
     fit: FitSettings
@@ -81,12 +112,69 @@ def load_config(path: Path | None = None) -> Config:
     point_filter = raw.get("point_filter") or {}
     fit = raw.get("fit") or {}
     mask_smooth = raw.get("mask_smooth") or {}
+    image_edit = raw.get("image_edit") or {}
+    room_masks = raw.get("room_masks") or {}
+    prompts = image_edit.get("prompts") or {}
+    inference_root = _find_inference_core_root()
     sam_config = backend_root / "sam_trainer" / "config.yaml"
+    replicate_token = os.environ.get("REPLICATE_API_TOKEN") or str(raw.get("replicate_token") or "")
     return Config(
         canvas_size=int(raw["canvas_size"]),
         margin=int(raw["margin"]),
         hf_cache=_resolve(Path(raw["hf_cache"]), backend_root),
         sam_config=sam_config,
+        replicate_token=replicate_token,
+        image_edit=ImageEditSettings(
+            model=str(image_edit.get("model", "openai/gpt-image-2.5-flare")),
+            quality=str(image_edit.get("quality", "medium")),
+            aspect_ratio=str(image_edit.get("aspect_ratio", "1:1")),
+            output_format=str(image_edit.get("output_format", "png")),
+            background=str(image_edit.get("background", "auto")),
+            moderation=str(image_edit.get("moderation", "auto")),
+            number_of_images=int(image_edit.get("number_of_images", 1)),
+            output_dir=_resolve(
+                Path(image_edit.get("output_dir", "output/image_edit")),
+                inference_root,
+            ),
+            prompts=ImageEditPrompts(
+                clean=str(
+                    prompts.get(
+                        "clean",
+                        "Change only this: convert the floorplan to CAD-style with filled black walls on a white background. "
+                        "Keep walls, doors, windows, and room labels. Remove measurements, legends, scale bars, and other annotations. "
+                        "Keep the output aligned with the input — same position, scale, rotation, and canvas framing. "
+                        "Do not shift, crop, re-center, rescale, or rotate the plan. Do not change layout, room shapes, wall positions, "
+                        "door/window locations, or label text. Do not add or remove rooms, furniture, or decorative elements.",
+                    )
+                ),
+                openings=str(
+                    prompts.get(
+                        "openings",
+                        "Change only this: close door gaps with a green line matching wall thickness. "
+                        "Remove door swing arcs and the perpendicular line attached to each door arc (the door-panel line from hinge to swing). "
+                        "Close window gaps with a blue line matching wall thickness. "
+                        "Do not change walls, room labels, background, layout, alignment, scale, rotation, or canvas framing. "
+                        "Do not move, resize, add, or remove doors/windows beyond closing their gaps. "
+                        "Do not remove furniture or restyle the drawing.",
+                    )
+                ),
+                furniture=str(
+                    prompts.get(
+                        "furniture",
+                        "Change only this: remove furniture and appliances from the floorplan. "
+                        "Remove excess or redundant wall segments — duplicate lines, overlapping walls, and stray wall fragments — "
+                        "while keeping the intended room boundary walls intact. "
+                        "Do not change doors, windows, room labels, green door lines, blue window lines, background, layout, alignment, "
+                        "scale, rotation, or canvas framing. Do not add rooms, furniture, or restyle the drawing.",
+                    )
+                ),
+            ),
+        ),
+        room_masks=RoomMaskSettings(
+            white_threshold=int(room_masks.get("white_threshold", 250)),
+            min_area_px=int(room_masks.get("min_area_px", 1000)),
+            exclude_largest=bool(room_masks.get("exclude_largest", True)),
+        ),
         grid=GridSettings(
             size=int(grid.get("size", grid.get("grid_size", 100))),
             tries_per_cell=int(grid.get("tries_per_cell", grid.get("grid_tries_per_cell", 5))),
@@ -100,7 +188,7 @@ def load_config(path: Path | None = None) -> Config:
             max_sides=int(fit.get("max_sides", 10)),
             output_dir=_resolve(
                 Path(fit.get("output_dir", "output/fit")),
-                _find_inference_core_root(),
+                inference_root,
             ),
         ),
         mask_smooth=MaskSmoothSettings(
@@ -110,6 +198,6 @@ def load_config(path: Path | None = None) -> Config:
         ),
         output=_resolve(
             Path(raw.get("output", "output")),
-            _find_inference_core_root(),
+            inference_root,
         ),
     )

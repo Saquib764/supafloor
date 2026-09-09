@@ -21,7 +21,7 @@ mask logits (3×512×512) → sigmoid → 3-channel structure mask
     B = all window segments
 ```
 
-**Ground truth:** `build_floorplan_targets()` → `(3, H, W)`. Ch0 = all extraction walls as strips (4px interior / 8px exterior). Ch1/ch2 = all doors/windows with the same thickness lookup. Viz combines channels as RGB via `masks_to_rgb()`.
+**Ground truth:** `build_floorplan_targets()` → `(3, H, W)`. Ch0 = uncut wall edges from room polygons, rendered like export (thick strips + junction extension, no opening cuts). Ch1/ch2 = all doors/windows.
 
 ---
 
@@ -33,8 +33,8 @@ mask logits (3×512×512) → sigmoid → 3-channel structure mask
 |---|---|
 | `prepare_image()` | Grayscale → resize → invert |
 | `scale_extraction()` | Scale room/wall polygon coords to `input_size` |
-| `rasterize_room_wall_mask()` | Wall strips along one room polygon edge |
-| `rasterize_segment_wall_mask()` | Wall strips for line segments (walls/doors/windows) |
+| `rasterize_wall_mask()` | Uncut wall strips with junction extension → ch0 |
+| `rasterize_opening_mask()` | Door/window wall strips on host edge → ch1/ch2 |
 | `build_floorplan_targets()` | Stack all walls + doors + windows → `(3, H, W)` |
 | `FloorplanDataset` | Hub rows → `(grayscale, targets)` pairs |
 | `load_train_split()` | Cached Hub dataset (no streaming) |
@@ -144,7 +144,7 @@ Per-channel dice + focal, summed (`multi_mask_loss`). Optional `loss.channel_wei
 
 ### `canvas.py` — viz
 
-`masks_to_rgb()`: R=boundary, G=doors, B=windows. `overlay_masks()` blends over the starred input.
+`masks_to_rgb()` and `side_by_side_mask()` for preview/viz panels.
 
 ### `net/model.py` — `FloorplanFPN`
 

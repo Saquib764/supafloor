@@ -216,16 +216,24 @@ def _extract_openings(document: dict[str, Any]) -> dict[str, list[dict[str, Any]
 def _extract_walls(
     room_polygons: list[list[Coord]],
     openings: dict[str, list[dict[str, Any]]],
+    *,
+    cut_openings: bool = True,
 ) -> list[dict[str, Any]]:
     edge_counts = _collect_edges(room_polygons)
-    opening_items = _opening_lines(openings["doors"]) + _opening_lines(openings["windows"])
-    edge_gaps = _match_openings_to_edges(edge_counts, opening_items)
+    edge_gaps: dict[tuple[float, float, float, float], list[Gap]] = {}
+    if cut_openings:
+        opening_items = _opening_lines(openings["doors"]) + _opening_lines(openings["windows"])
+        edge_gaps = _match_openings_to_edges(edge_counts, opening_items)
 
     walls: list[dict[str, Any]] = []
     for key, count in edge_counts.items():
         a, b = _edge_from_key(key)
         is_exterior = count < 2
-        for p0, p1 in _split_edge(a, b, edge_gaps.get(key, [])):
+        if cut_openings:
+            pieces = _split_edge(a, b, edge_gaps.get(key, []))
+        else:
+            pieces = [(a, b)]
+        for p0, p1 in pieces:
             walls.append(_wall_segment(p0, p1, is_exterior=is_exterior))
     return walls
 
@@ -235,6 +243,7 @@ def extract_walls(
     *,
     doors: list[dict[str, Any]] | None = None,
     windows: list[dict[str, Any]] | None = None,
+    cut_openings: bool = True,
 ) -> list[dict[str, Any]]:
     """Build wall segments from room polygons and openings."""
     room_polygons = [
@@ -242,7 +251,7 @@ def extract_walls(
         for room in rooms
     ]
     openings = {"doors": list(doors or []), "windows": list(windows or [])}
-    return _extract_walls(room_polygons, openings)
+    return _extract_walls(room_polygons, openings, cut_openings=cut_openings)
 
 
 def _plan_id(document: dict[str, Any], source: Path | None = None) -> str:

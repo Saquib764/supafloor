@@ -43,10 +43,11 @@ def main(argv: list[str] | None = None) -> None:
 
     from PIL import Image
 
-    from canvas import merge_panels, overlay_masks
-    from infer import _device, infer_mask, load_model
+    from canvas import side_by_side_mask
+    from device import training_device
+    from infer import infer_mask, load_model
 
-    device = _device()
+    device = training_device()
     checkpoint = args.checkpoint or cfg.infer.checkpoint
     model = load_model(cfg, checkpoint, device)
     image = Path(args.image)
@@ -57,7 +58,7 @@ def main(argv: list[str] | None = None) -> None:
         device=device,
     )
     input_view = prepared.convert("RGB")
-    panel = merge_panels([input_view, overlay_masks(input_view, mask)])
+    panel = side_by_side_mask(input_view, mask)
     out = args.output or cfg.train.session_dir / "infer" / f"{image.stem}_fpn.jpg"
     out.parent.mkdir(parents=True, exist_ok=True)
     panel.save(out, format="JPEG", quality=95)

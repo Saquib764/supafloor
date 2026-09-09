@@ -11,9 +11,10 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from canvas import merge_panels, overlay_masks
+from canvas import side_by_side_mask
 from config import load_config
-from infer import _device, infer_mask, load_model
+from device import training_device
+from infer import infer_mask, load_model
 
 _TEST_DIR = _ROOT / "test_image"
 _OUT_DIR = _ROOT / "training_session" / "test_infer"
@@ -21,7 +22,7 @@ _OUT_DIR = _ROOT / "training_session" / "test_infer"
 
 def main() -> None:
     cfg = load_config()
-    device = _device()
+    device = training_device()
     checkpoint = cfg.infer.checkpoint
     if not checkpoint.is_file():
         raise FileNotFoundError(f"checkpoint not found: {checkpoint}")
@@ -40,7 +41,7 @@ def main() -> None:
             device=device,
         )
         input_view = prepared.convert("RGB")
-        panel = merge_panels([input_view, overlay_masks(input_view, mask)])
+        panel = side_by_side_mask(input_view, mask)
         out = _OUT_DIR / f"{path.stem}_fpn.jpg"
         panel.save(out, format="JPEG", quality=95)
         print(f"{path.name} → {out}")

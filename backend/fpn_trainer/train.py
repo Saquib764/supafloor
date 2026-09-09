@@ -11,7 +11,7 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from canvas import merge_panels, overlay_masks
+from canvas import masks_to_rgb, merge_panels
 from config import Config, datasets_cache_dir, load_config
 from data import (
     FloorplanCollator,
@@ -24,20 +24,12 @@ from data import (
     prepare_image,
     scale_extraction,
 )
+from device import training_device
 from net.loss import multi_mask_loss
 from net.model import FloorplanFPN
 from preview import print_model
 
 CHECKPOINT_NAME = "last.pt"
-
-
-def _device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    mps = getattr(torch.backends, "mps", None)
-    if mps is not None and mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
 
 
 def use_bf16(cfg: Config) -> bool:
@@ -85,8 +77,8 @@ def _viz_row(
     return merge_panels(
         [
             input_view,
-            overlay_masks(input_view, pred),
-            overlay_masks(input_view, targets),
+            masks_to_rgb(pred),
+            masks_to_rgb(targets),
         ]
     )
 
@@ -103,6 +95,7 @@ def _save_viz(
         cfg.data.dataset,
         train_count,
         count=cfg.train.viz_samples,
+        seed=(cfg.data.seed or 0) + step,
         revision=cfg.data.revision,
         cache_dir=datasets_cache_dir(cfg),
     )
@@ -169,7 +162,7 @@ def _print_setup(
 
 
 def run(cfg: Config) -> None:
-    device = _device()
+    device = training_device()
     train_rows, train_count, _test_count = load_train_split(
         cfg.data.dataset,
         test_fraction=cfg.data.test_fraction,

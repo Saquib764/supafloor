@@ -1,5 +1,5 @@
 hf_cache: ../hf_cache
-input_size: 512
+input_size: 256
 
 data:
   dataset: floorplan-to-json
@@ -27,17 +27,17 @@ loss:
   channel_weights: [1.0, 1.0, 1.0]
 
 train:
-  session_dir: training_session
+  session_dir: training_session_2
   epochs: 10
   batch_size: 8
   grad_accum: 1
   learning_rate: 1.0e-4
   weight_decay: 0.01
   bf16: true
-  resume: false
+  resume: true
   save_steps: 1000
   viz_steps: 100
-  viz_samples: 4
+  viz_samples: 10
   max_grad_norm: 1.0
 
 infer:

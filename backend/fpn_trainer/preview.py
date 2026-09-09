@@ -9,7 +9,7 @@ from pathlib import Path
 
 import torch
 
-from canvas import masks_to_rgb, merge_panels, overlay_masks
+from canvas import merge_panels, side_by_side_mask, side_by_side_mask_channel
 from config import CONFIG_PATH, Config, datasets_cache_dir, load_config
 from data import (
     build_floorplan_targets,
@@ -19,10 +19,11 @@ from data import (
     prepare_image,
     scale_extraction,
 )
-from infer import _device
+from device import training_device
 from net.model import FloorplanFPN, build_model
 
 _PREVIEW_DIR = CONFIG_PATH.parent / "_preview"
+_MASK_NAMES = ("walls", "doors", "windows")
 
 
 def _fmt_params(n: int) -> str:
@@ -188,7 +189,7 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
         revision=cfg.data.revision,
         cache_dir=cache_dir,
     )
-    row = train_rows[1]
+    row = train_rows[50]
     stem = str(row["stem"])
     image = prepare_image(row["image"], cfg.input_size)
     extraction = scale_extraction(
@@ -197,16 +198,15 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     )
     gt_targets = build_floorplan_targets(extraction, cfg.input_size)
 
-    device = _device()
+    device = training_device()
     model.to(device)
     with torch.no_grad():
         logits = model(image_to_tensor(image).unsqueeze(0).to(device)).mask_logits
     pred = (torch.sigmoid(logits[0]) > 0.5).cpu().numpy()
     input_view = image.convert("RGB")
-    pred_view = overlay_masks(input_view, pred)
-    gt_rgb = masks_to_rgb(gt_targets)
-    gt_view = overlay_masks(input_view, gt_targets)
-    panel = merge_panels([input_view, pred_view, gt_view])
+    pred_view = side_by_side_mask(input_view, pred)
+    gt_view = side_by_side_mask(input_view, gt_targets)
+    panel = merge_panels([pred_view, gt_view])
 
     if _PREVIEW_DIR.exists():
         shutil.rmtree(_PREVIEW_DIR)
@@ -217,8 +217,21 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     panel_path = _PREVIEW_DIR / "preview.jpg"
     input_view.save(input_path, format="JPEG", quality=95)
     pred_view.save(output_path, format="JPEG", quality=95)
-    gt_rgb.save(gt_path, format="JPEG", quality=95)
+    gt_view.save(gt_path, format="JPEG", quality=95)
     panel.save(panel_path, format="JPEG", quality=95)
+
+    channel_paths: list[tuple[str, Path]] = []
+    for channel, name in enumerate(_MASK_NAMES):
+        pred_channel_path = _PREVIEW_DIR / f"pred_{name}.jpg"
+        gt_channel_path = _PREVIEW_DIR / f"gt_{name}.jpg"
+        side_by_side_mask_channel(input_view, pred, channel).save(
+            pred_channel_path, format="JPEG", quality=95
+        )
+        side_by_side_mask_channel(input_view, gt_targets, channel).save(
+            gt_channel_path, format="JPEG", quality=95
+        )
+        channel_paths.append((f"pred_{name}", pred_channel_path))
+        channel_paths.append((f"gt_{name}", gt_channel_path))
 
     print("\n=== Sample I/O ===")
     print(f"dataset:      {cfg.data.dataset}")
@@ -228,6 +241,8 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     print(f"output:       {output_path}")
     print(f"gt:           {gt_path}")
     print(f"panel:        {panel_path}")
+    for label, path in channel_paths:
+        print(f"{label + ':':<14} {path}")
 
 
 def run(cfg: Config, *, export_sample: bool = True) -> None:

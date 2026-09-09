@@ -22,12 +22,60 @@ def draw_polygon_outline(
     return overlay
 
 
-def draw_mask(image: Image.Image, mask: np.ndarray, *, alpha: int = 120) -> Image.Image:
+_MASK_COLORS = (
+    (0, 180, 60),
+    (220, 50, 50),
+    (50, 120, 220),
+    (230, 160, 40),
+    (160, 60, 220),
+    (40, 180, 180),
+)
+
+
+def draw_mask(
+    image: Image.Image,
+    mask: np.ndarray,
+    *,
+    alpha: int = 120,
+    color: tuple[int, int, int] = (0, 180, 60),
+) -> Image.Image:
     composed = image.convert("RGBA")
     active = np.asarray(mask) > 0
-    color = np.zeros((*active.shape, 4), dtype=np.uint8)
-    color[active] = (0, 180, 60, alpha)
-    return Image.alpha_composite(composed, Image.fromarray(color, mode="RGBA")).convert("RGB")
+    layer = np.zeros((*active.shape, 4), dtype=np.uint8)
+    layer[active] = (*color, alpha)
+    return Image.alpha_composite(composed, Image.fromarray(layer, mode="RGBA")).convert("RGB")
+
+
+def draw_masks(
+    image: Image.Image,
+    masks: list[np.ndarray],
+    *,
+    alpha: int = 120,
+) -> Image.Image:
+    composed = image.convert("RGBA")
+    for index, mask in enumerate(masks):
+        active = np.asarray(mask) > 0
+        color = _MASK_COLORS[index % len(_MASK_COLORS)]
+        layer = np.zeros((*active.shape, 4), dtype=np.uint8)
+        layer[active] = (*color, alpha)
+        composed = Image.alpha_composite(composed, Image.fromarray(layer, mode="RGBA"))
+    return composed.convert("RGB")
+
+
+def render_image_diff(before: Image.Image, after: Image.Image) -> Image.Image:
+    """Absolute per-pixel RGB difference, scaled for visibility."""
+    before_rgb = before.convert("RGB")
+    after_rgb = after.convert("RGB")
+    if after_rgb.size != before_rgb.size:
+        after_rgb = after_rgb.resize(before_rgb.size, Image.Resampling.LANCZOS)
+
+    diff = np.abs(
+        np.asarray(after_rgb, dtype=np.int16) - np.asarray(before_rgb, dtype=np.int16)
+    ).astype(np.uint8)
+    peak = int(diff.max())
+    if 0 < peak < 64:
+        diff = np.clip(diff * (255 // peak), 0, 255).astype(np.uint8)
+    return Image.fromarray(diff, mode="RGB")
 
 
 def draw_points(
