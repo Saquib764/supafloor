@@ -14,7 +14,7 @@ data:
   room_slots: 2
   per_room_variation: 2
   point_distance_alpha: 1.5
-  num_workers: 0
+  num_workers: 4
   door_line_width: 3.0
   window_line_width: 3.0
 
@@ -46,8 +46,8 @@ train:
   weight_decay: 0.01
   bf16: true
   resume: true
-  save_steps: 500
-  viz_steps: 50
+  save_steps: 1000
+  viz_steps: 100
   viz_samples: 4
   max_grad_norm: 1.0
 

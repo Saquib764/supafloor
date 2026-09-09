@@ -10,6 +10,7 @@ import torch
 from PIL import Image
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from canvas import merge_panels, overlay_masks
 from config import Config, datasets_cache_dir, load_config
@@ -125,15 +126,38 @@ def _save_viz(
     )
     if not rows:
         return
-    out_dir.mkdir(parents=True, exist_ok=True)
+    step_dir = out_dir / f"step-{step:06d}"
+    step_dir.mkdir(parents=True, exist_ok=True)
     for index, row in enumerate(rows):
         panel = _viz_row(model, row, cfg, device, index=index, step=step)
-        path = out_dir / f"step-{step:06d}-{row['stem']}.jpg"
+        path = step_dir / f"{row['stem']}.jpg"
         panel.save(path, format="JPEG", quality=95)
-        print(f"viz → {path}")
+    tqdm.write(f"viz → {step_dir} ({len(rows)} test image(s))")
 
 
-def _print_setup(cfg: Config, dataset_len: int, steps_per_epoch: int, device: torch.device) -> None:
+def _progress_postfix(
+    *,
+    loss: float,
+    lr: float,
+    step: int,
+    epoch: int,
+    epochs: int,
+) -> dict[str, str]:
+    return {
+        "loss": f"{loss:.4f}",
+        "lr": f"{lr:.2e}",
+        "step": str(step),
+        "epoch": f"{epoch + 1}/{epochs}",
+    }
+
+
+def _print_setup(
+    cfg: Config,
+    dataset_len: int,
+    steps_per_epoch: int,
+    total_steps: int,
+    device: torch.device,
+) -> None:
     print("\n=== Device ===")
     print(f"device:         {device}")
     print(f"cuda available: {torch.cuda.is_available()}")
@@ -154,6 +178,7 @@ def _print_setup(cfg: Config, dataset_len: int, steps_per_epoch: int, device: to
     print(f"batch_size:     {cfg.train.batch_size}")
     print(f"grad_accum:     {cfg.train.grad_accum}")
     print(f"steps/epoch:    {steps_per_epoch:,}")
+    print(f"total steps:    {total_steps:,}")
     print(f"learning_rate:  {cfg.train.learning_rate}")
     print(f"resume:         {cfg.train.resume}")
     print(f"save_steps:     {cfg.train.save_steps}")
@@ -181,6 +206,7 @@ def run(cfg: Config) -> None:
     )
     micro_per_epoch = max(1, (len(dataset) + cfg.train.batch_size - 1) // cfg.train.batch_size)
     steps_per_epoch = max(1, (micro_per_epoch + cfg.train.grad_accum - 1) // cfg.train.grad_accum)
+    total_steps = steps_per_epoch * cfg.train.epochs
 
     print("\n=== Model ===")
     model = print_model(cfg, dummy_forward=False)
@@ -197,15 +223,22 @@ def run(cfg: Config) -> None:
         optimizer.load_state_dict(state["optimizer"])
         step = int(state["step"])
         start_epoch = int(state["epoch"])
-        print(f"Resumed step {step} epoch {start_epoch} ← {checkpoint_path}")
+        tqdm.write(f"Resumed step {step} epoch {start_epoch} ← {checkpoint_path}")
 
-    _print_setup(cfg, len(dataset), steps_per_epoch, device)
+    _print_setup(cfg, len(dataset), steps_per_epoch, total_steps, device)
     cfg.train.session_dir.mkdir(parents=True, exist_ok=True)
     viz_dir = cfg.train.session_dir / "viz"
     amp = use_bf16(cfg)
     accum = cfg.train.grad_accum
     optimizer.zero_grad(set_to_none=True)
     micro = 0
+    progress = tqdm(
+        total=total_steps,
+        initial=step,
+        desc="Training",
+        unit="step",
+        dynamic_ncols=True,
+    )
 
     for epoch in range(start_epoch, cfg.train.epochs):
         dataset.epoch = epoch
@@ -229,26 +262,37 @@ def run(cfg: Config) -> None:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
             step += 1
-            print(f"step {step}  loss={loss.item():.4f}")
+            progress.update(1)
+            progress.set_postfix(
+                _progress_postfix(
+                    loss=loss.item(),
+                    lr=float(optimizer.param_groups[0]["lr"]),
+                    step=step,
+                    epoch=epoch,
+                    epochs=cfg.train.epochs,
+                )
+            )
             if step % cfg.train.viz_steps == 0:
                 _save_viz(model, cfg, device, train_count, viz_dir, step)
             if step % cfg.train.save_steps == 0:
                 _save_checkpoint(
                     checkpoint_path, model=model, optimizer=optimizer, step=step, epoch=epoch
                 )
-                print(f"saved → {checkpoint_path}")
+                tqdm.write(f"saved → {checkpoint_path}")
 
     if micro % accum != 0:
         torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.max_grad_norm)
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
         step += 1
+        progress.update(1)
 
+    progress.close()
     _save_checkpoint(
         checkpoint_path, model=model, optimizer=optimizer, step=step, epoch=cfg.train.epochs
     )
-    print(f"Saved → {checkpoint_path}")
-    print(f"train={len(dataset)} steps={step}")
+    tqdm.write(f"Saved → {checkpoint_path}")
+    tqdm.write(f"train={len(dataset)} steps={step}")
 
 
 if __name__ == "__main__":

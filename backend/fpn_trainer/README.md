@@ -39,7 +39,7 @@ uv run fpn-train train
 uv run fpn-train infer --image test_image/001.jpeg --cx 400 --cy 300 --radius 10
 ```
 
-Checkpoints write `training_session/last.pt`. Every `viz_steps`, test-set overlays land in `training_session/viz/step-NNNNNN-<stem>.jpg`: `input | pred | target`.
+Checkpoints write `training_session/last.pt`. Every `viz_steps`, test-set overlays land in `training_session/viz/step-NNNNNN/<stem>.jpg`: `input | pred | target`.
 
 ## Loss
 

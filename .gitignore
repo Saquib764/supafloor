@@ -34,6 +34,7 @@ backend/unet_trainer/training_session_2
 backend/sam_trainer/training_session/
 backend/sam_trainer/training_session_2/
 backend/sam_trainer/_preview/
+backend/fpn_trainer/training_session/
 backend/fpn_trainer/_preview/
 
 checkpoints/
