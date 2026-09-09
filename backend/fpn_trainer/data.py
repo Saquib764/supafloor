@@ -516,12 +516,14 @@ class FloorplanDataset(IterableDataset):
         self,
         dataset: Any,
         *,
-        input_size: int,
+        input_sizes: tuple[int, ...],
+        batch_size: int,
         num_rows: int,
         seed: int | None = None,
     ) -> None:
         self._dataset = dataset
-        self._input_size = input_size
+        self._input_sizes = input_sizes
+        self._batch_size = max(1, batch_size)
         self._num_rows = num_rows
         self._seed = seed
         self.epoch = 0
@@ -533,13 +535,19 @@ class FloorplanDataset(IterableDataset):
         indices = list(range(self._num_rows))
         rng = random.Random((self._seed or 0) + self.epoch)
         rng.shuffle(indices)
-        scale = extraction_scale(self._input_size)
+        current_size: int | None = None
+        yields_in_batch = 0
         for dataset_index in indices:
             row = self._dataset[dataset_index]
-            extraction = scale_extraction(json.loads(str(row["extraction"])), scale)
-            targets = torch.from_numpy(build_floorplan_targets(extraction, self._input_size))
+            raw_extraction = json.loads(str(row["extraction"]))
             for key in ("image", "simple_image"):
-                image = prepare_image(row[key], self._input_size)
+                if yields_in_batch % self._batch_size == 0:
+                    current_size = rng.choice(self._input_sizes)
+                scale = extraction_scale(current_size)
+                extraction = scale_extraction(raw_extraction, scale)
+                targets = torch.from_numpy(build_floorplan_targets(extraction, current_size))
+                image = prepare_image(row[key], current_size)
+                yields_in_batch += 1
                 yield image_to_tensor(image), targets
 
 

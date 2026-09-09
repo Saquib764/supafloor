@@ -95,7 +95,7 @@ class InferSettings:
 @dataclass(frozen=True)
 class Config:
     hf_cache: Path
-    input_size: int
+    input_sizes: tuple[int, ...]
     data: DataSettings
     net: NetSettings
     loss: LossSettings
@@ -151,6 +151,19 @@ def _load_l5_transformer(raw: dict[str, Any] | None) -> L5TransformerSettings | 
     )
 
 
+def _parse_input_sizes(raw: Any) -> tuple[int, ...]:
+    if isinstance(raw, list):
+        sizes = tuple(int(size) for size in raw)
+    else:
+        sizes = (int(raw),)
+    if not sizes:
+        raise ValueError("input_size must not be empty")
+    for size in sizes:
+        if size < 64 or size % 32 != 0:
+            raise ValueError(f"input_size ({size}) must be ≥ 64 and divisible by 32")
+    return sizes
+
+
 def _validate_l5_grid_side(input_size: int, l5_transformer: L5TransformerSettings | None) -> None:
     if l5_transformer is None:
         return
@@ -191,12 +204,11 @@ def load_config(path: Path | None = None) -> Config:
     dataset = str(data.get("dataset") or "").strip()
     if not dataset:
         raise ValueError("data.dataset is required (dataset_manager registry name)")
-    input_size = int(raw["input_size"])
-    if input_size < 64 or input_size % 32 != 0:
-        raise ValueError(f"input_size ({input_size}) must be ≥ 64 and divisible by 32")
+    input_sizes = _parse_input_sizes(raw["input_size"])
     hf_cache = apply_hf_cache(_resolve(Path(raw["hf_cache"]), base))
     net_settings = _load_net_settings(net)
-    _validate_l5_grid_side(input_size, net_settings.l5_transformer)
+    for input_size in input_sizes:
+        _validate_l5_grid_side(input_size, net_settings.l5_transformer)
     channel_weights = tuple(float(w) for w in loss.get("channel_weights") or [1.0, 1.0, 1.0])
     if len(channel_weights) != net_settings.out_channels:
         raise ValueError(
@@ -205,7 +217,7 @@ def load_config(path: Path | None = None) -> Config:
         )
     return Config(
         hf_cache=hf_cache,
-        input_size=input_size,
+        input_sizes=input_sizes,
         data=DataSettings(
             dataset=dataset,
             test_fraction=float(data["test_fraction"]),
@@ -235,7 +247,7 @@ def load_config(path: Path | None = None) -> Config:
             max_grad_norm=float(train["max_grad_norm"]),
         ),
         infer=InferSettings(
-            size=int(infer.get("size") or input_size),
+            size=int(infer.get("size") or max(input_sizes)),
             checkpoint=_resolve(Path(infer.get("checkpoint") or "training_session/last.pt"), base),
         ),
     )

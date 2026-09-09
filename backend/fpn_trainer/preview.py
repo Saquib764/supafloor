@@ -66,7 +66,7 @@ def _spatial_sizes(input_size: int) -> dict[str, int]:
 
 
 def _print_architecture_summary(cfg: Config) -> None:
-    h = cfg.input_size
+    h = max(cfg.input_sizes)
     sizes = _spatial_sizes(h)
     c2, c3, c4, c5 = cfg.net.backbone_channels
     stem = cfg.net.stem_channels
@@ -157,7 +157,7 @@ def print_model(cfg: Config, *, dummy_forward: bool = True) -> FloorplanFPN:
     print(f"{'total:':<22} {_fmt_line(total, total_bytes)}", flush=True)
 
     if dummy_forward:
-        size = cfg.input_size
+        size = max(cfg.input_sizes)
         with torch.no_grad():
             x = torch.zeros(1, 1, size, size)
             features = model.backbone(x)
@@ -173,7 +173,7 @@ def print_model(cfg: Config, *, dummy_forward: bool = True) -> FloorplanFPN:
         print(f"mask_logits: {tuple(out.mask_logits.shape)}")
 
     print("\n=== Config ===")
-    print(f"input_size:   {cfg.input_size}")
+    print(f"input_sizes:  {list(cfg.input_sizes)}")
     print(f"fpn_width:    {cfg.net.fpn_width}")
     print(f"depth:        {cfg.net.depth}")
     print(flush=True)
@@ -191,12 +191,13 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     )
     row = train_rows[50]
     stem = str(row["stem"])
-    image = prepare_image(row["image"], cfg.input_size)
+    size = max(cfg.input_sizes)
+    image = prepare_image(row["image"], size)
     extraction = scale_extraction(
         json.loads(str(row["extraction"])),
-        extraction_scale(cfg.input_size),
+        extraction_scale(size),
     )
-    gt_targets = build_floorplan_targets(extraction, cfg.input_size)
+    gt_targets = build_floorplan_targets(extraction, size)
 
     device = training_device()
     model.to(device)

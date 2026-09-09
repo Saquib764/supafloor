@@ -77,12 +77,13 @@ def _viz_row(
     cfg: Config,
     device: torch.device,
 ) -> Image.Image:
-    image = prepare_image(row["image"], cfg.input_size)
+    size = max(cfg.input_sizes)
+    image = prepare_image(row["image"], size)
     extraction = scale_extraction(
         json.loads(str(row["extraction"])),
-        extraction_scale(cfg.input_size),
+        extraction_scale(size),
     )
-    targets = build_floorplan_targets(extraction, cfg.input_size)
+    targets = build_floorplan_targets(extraction, size)
     batch = image_to_tensor(image).unsqueeze(0).to(device)
     model.eval()
     with torch.no_grad():
@@ -161,7 +162,7 @@ def _print_setup(
     print(f"revision:       {cfg.data.revision or '(default)'}")
     print(f"cache_dir:      {datasets_cache_dir(cfg)}")
     print(f"train rows:     {dataset_len:,}")
-    print(f"input_size:     {cfg.input_size}")
+    print(f"input_sizes:    {list(cfg.input_sizes)}")
 
     print("\n=== Training ===")
     print(f"output_dir:     {cfg.train.session_dir}")
@@ -189,7 +190,8 @@ def run(cfg: Config) -> None:
     )
     dataset = FloorplanDataset(
         train_rows,
-        input_size=cfg.input_size,
+        input_sizes=cfg.input_sizes,
+        batch_size=cfg.train.batch_size,
         num_rows=train_count,
         seed=cfg.data.seed,
     )
