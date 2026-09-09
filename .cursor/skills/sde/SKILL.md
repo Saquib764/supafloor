@@ -135,13 +135,23 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │   │   ├── model.py
 │   │   ├── train.py
 │   │   └── preview.py
-│   └── sam_trainer/              # SAM 2.1 point-prompt room segmentation
+│   ├── sam_trainer/              # SAM 2.1 point-prompt room segmentation
+│   │   ├── pyproject.toml
+│   │   ├── README.md
+│   │   ├── config.yaml
+│   │   ├── sam_cli.py            # uv run sam-train train|inspect
+│   │   ├── model.py
+│   │   ├── canvas.py
+│   │   └── test_image/
+│   └── fpn_trainer/              # Star-prompted room seg (CNN + FPN)
 │       ├── pyproject.toml
 │       ├── README.md
 │       ├── config.yaml
-│       ├── sam_cli.py            # uv run sam-train train|inspect
-│       ├── model.py
-│       ├── canvas.py
+│       ├── fpn_cli.py            # uv run fpn-train train|inspect|infer
+│       ├── star.py
+│       ├── data.py
+│       ├── train.py
+│       ├── net/                  # backbone, fpn, mask_head, model, loss
 │       └── test_image/
 │
 └── frontend/                     # Viewer / debug UI
@@ -178,6 +188,7 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 | VAE (image → simple_image latent) | `backend/vae_trainer/` |
 | Frozen taef2 + ViT (image → simple_image) | `backend/unet_trainer/` |
 | SAM 2.1 point-prompt room segmentation | `backend/sam_trainer/` |
+| Star-prompted room segmentation (CNN + FPN) | `backend/fpn_trainer/` |
 | Viewer UI | `frontend/app/` |
 
 ## Tooling
@@ -187,5 +198,6 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 - VAE trainer: **uv** from `backend/vae_trainer/` (`uv sync`, `uv run vae-train train`)
 - UNet trainer: **uv** from `backend/unet_trainer/` (`uv sync`, `uv run unet-train train`)
 - SAM trainer: **uv** from `backend/sam_trainer/` (`uv sync`, `uv run sam-train train`)
+- FPN trainer: **uv** from `backend/fpn_trainer/` (`uv sync`, `uv run fpn-train train`)
 - Tests: `uv run pytest -q` from `backend/floorplan/`
 - Dev checks: `dev/generate_floorplans.py`, `dev/score_floorplans.py`, `dev/export_training.py` (from `backend/floorplan/`)

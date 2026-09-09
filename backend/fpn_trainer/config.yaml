@@ -1,0 +1,55 @@
+hf_cache: ../hf_cache
+input_size: 512
+
+star:
+  min_radius: 4
+  max_radius: 14
+  color: [255, 0, 0]
+  inner_ratio: 0.4
+
+data:
+  dataset: floorplan-to-json
+  seed: 42
+  test_fraction: 0.1
+  room_slots: 2
+  per_room_variation: 2
+  point_distance_alpha: 1.5
+  num_workers: 0
+  door_line_width: 3.0
+  window_line_width: 3.0
+
+net:
+  stem_channels: 16
+  backbone_channels: [32, 48, 64, 64]
+  depth: 1
+  fpn_width: 64
+  out_channels: 3
+  l5_transformer:
+    depth: 2
+    dim: 48
+    heads: 4
+    mlp_ratio: 4.0
+    level: 4
+    max_l5_grid_side: 64
+
+loss:
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+  channel_weights: [1.0, 1.0, 1.0]
+
+train:
+  session_dir: training_session
+  epochs: 10
+  batch_size: 8
+  grad_accum: 1
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  bf16: true
+  resume: true
+  save_steps: 500
+  viz_steps: 50
+  viz_samples: 4
+  max_grad_norm: 1.0
+
+infer:
+  checkpoint: training_session/last.pt
