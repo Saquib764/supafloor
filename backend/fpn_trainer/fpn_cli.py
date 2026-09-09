@@ -10,7 +10,7 @@ from config import CONFIG_PATH, load_config
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Train star-prompted room segmentation (CNN + FPN)"
+        description="Train floor-plan structure segmentation (CNN + FPN)"
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -20,12 +20,9 @@ def main(argv: list[str] | None = None) -> None:
     p_inspect = sub.add_parser("inspect", help="Print model architecture and dummy-forward shapes")
     p_inspect.add_argument("--config", type=Path, default=CONFIG_PATH)
 
-    p_infer = sub.add_parser("infer", help="Segment the room marked by a star")
+    p_infer = sub.add_parser("infer", help="Predict walls, doors, and windows for one image")
     p_infer.add_argument("--config", type=Path, default=CONFIG_PATH)
     p_infer.add_argument("--image", type=Path, required=True)
-    p_infer.add_argument("--cx", type=float, required=True)
-    p_infer.add_argument("--cy", type=float, required=True)
-    p_infer.add_argument("--radius", type=float, default=None)
     p_infer.add_argument("--checkpoint", type=Path, default=None)
     p_infer.add_argument("--output", type=Path, default=None)
 
@@ -53,17 +50,14 @@ def main(argv: list[str] | None = None) -> None:
     checkpoint = args.checkpoint or cfg.infer.checkpoint
     model = load_model(cfg, checkpoint, device)
     image = Path(args.image)
-    radius = args.radius if args.radius is not None else (cfg.star.min_radius + cfg.star.max_radius) / 2
-    starred, mask = infer_mask(
+    prepared, mask = infer_mask(
         model,
         Image.open(image),
-        cx=args.cx,
-        cy=args.cy,
-        radius=radius,
         cfg=cfg,
         device=device,
     )
-    panel = merge_panels([starred, overlay_masks(starred, mask)])
+    input_view = prepared.convert("RGB")
+    panel = merge_panels([input_view, overlay_masks(input_view, mask)])
     out = args.output or cfg.train.session_dir / "infer" / f"{image.stem}_fpn.jpg"
     out.parent.mkdir(parents=True, exist_ok=True)
     panel.save(out, format="JPEG", quality=95)

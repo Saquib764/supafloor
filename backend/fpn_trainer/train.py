@@ -1,9 +1,8 @@
-"""Train star-prompted room segmentation (CNN + FPN)."""
+"""Train floor-plan structure segmentation (CNN + FPN)."""
 
 from __future__ import annotations
 
 import json
-import random
 from pathlib import Path
 
 import torch
@@ -15,9 +14,9 @@ from tqdm.auto import tqdm
 from canvas import merge_panels, overlay_masks
 from config import Config, datasets_cache_dir, load_config
 from data import (
-    FloorplanStarDataset,
-    StarCollator,
-    build_star_samples,
+    FloorplanCollator,
+    FloorplanDataset,
+    build_floorplan_targets,
     extraction_scale,
     image_to_tensor,
     load_train_split,
@@ -26,9 +25,8 @@ from data import (
     scale_extraction,
 )
 from net.loss import multi_mask_loss
-from net.model import StarRoomFPN
+from net.model import FloorplanFPN
 from preview import print_model
-from star import draw_filled_star
 
 CHECKPOINT_NAME = "last.pt"
 
@@ -49,7 +47,7 @@ def use_bf16(cfg: Config) -> bool:
 def _save_checkpoint(
     path: Path,
     *,
-    model: StarRoomFPN,
+    model: FloorplanFPN,
     optimizer: AdamW,
     step: int,
     epoch: int,
@@ -66,51 +64,35 @@ def _save_checkpoint(
 
 
 def _viz_row(
-    model: StarRoomFPN,
+    model: FloorplanFPN,
     row: dict[str, object],
     cfg: Config,
     device: torch.device,
-    *,
-    index: int,
-    step: int,
 ) -> Image.Image:
-    base = prepare_image(row["image"], cfg.input_size)
+    image = prepare_image(row["image"], cfg.input_size)
     extraction = scale_extraction(
         json.loads(str(row["extraction"])),
         extraction_scale(cfg.input_size),
     )
-    samples = build_star_samples(extraction, index + step * 9973, cfg)
-    if not samples:
-        raise ValueError("no star samples for viz row")
-    rng = random.Random((cfg.data.seed or 0) + index + step)
-    (cx, cy, radius), targets = samples[rng.randrange(len(samples))]
-    starred = base.copy()
-    draw_filled_star(
-        starred,
-        cx,
-        cy,
-        radius,
-        color=cfg.star.color,
-        inner_ratio=cfg.star.inner_ratio,
-    )
-    batch = image_to_tensor(starred).unsqueeze(0)
-    batch = batch.to(device)
+    targets = build_floorplan_targets(extraction, cfg.input_size)
+    batch = image_to_tensor(image).unsqueeze(0).to(device)
     model.eval()
     with torch.no_grad():
         logits = model(batch).mask_logits
     pred = (torch.sigmoid(logits[0]) > 0.5).cpu().numpy()
     model.train()
+    input_view = image.convert("RGB")
     return merge_panels(
         [
-            starred,
-            overlay_masks(starred, pred),
-            overlay_masks(starred, targets),
+            input_view,
+            overlay_masks(input_view, pred),
+            overlay_masks(input_view, targets),
         ]
     )
 
 
 def _save_viz(
-    model: StarRoomFPN,
+    model: FloorplanFPN,
     cfg: Config,
     device: torch.device,
     train_count: int,
@@ -128,8 +110,8 @@ def _save_viz(
         return
     step_dir = out_dir / f"step-{step:06d}"
     step_dir.mkdir(parents=True, exist_ok=True)
-    for index, row in enumerate(rows):
-        panel = _viz_row(model, row, cfg, device, index=index, step=step)
+    for row in rows:
+        panel = _viz_row(model, row, cfg, device)
         path = step_dir / f"{row['stem']}.jpg"
         panel.save(path, format="JPEG", quality=95)
     tqdm.write(f"viz → {step_dir} ({len(rows)} test image(s))")
@@ -169,7 +151,7 @@ def _print_setup(
     print(f"dataset:        {cfg.data.dataset}")
     print(f"revision:       {cfg.data.revision or '(default)'}")
     print(f"cache_dir:      {datasets_cache_dir(cfg)}")
-    print(f"train samples:  {dataset_len:,}")
+    print(f"train rows:     {dataset_len:,}")
     print(f"input_size:     {cfg.input_size}")
 
     print("\n=== Training ===")
@@ -194,14 +176,19 @@ def run(cfg: Config) -> None:
         revision=cfg.data.revision,
         cache_dir=datasets_cache_dir(cfg),
     )
-    dataset = FloorplanStarDataset(train_rows, cfg, num_rows=train_count)
+    dataset = FloorplanDataset(
+        train_rows,
+        input_size=cfg.input_size,
+        num_rows=train_count,
+        seed=cfg.data.seed,
+    )
     loader = DataLoader(
         dataset,
         batch_size=cfg.train.batch_size,
         shuffle=False,
         num_workers=cfg.data.num_workers,
         pin_memory=device.type == "cuda",
-        collate_fn=StarCollator(),
+        collate_fn=FloorplanCollator(),
         drop_last=False,
     )
     micro_per_epoch = max(1, (len(dataset) + cfg.train.batch_size - 1) // cfg.train.batch_size)

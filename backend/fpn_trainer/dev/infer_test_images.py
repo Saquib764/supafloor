@@ -1,4 +1,4 @@
-"""Run fpn_trainer inference on test_image/ with a random star per image."""
+"""Run fpn_trainer inference on test_image/."""
 
 from __future__ import annotations
 
@@ -33,18 +33,14 @@ def main() -> None:
         if path.suffix.lower() in {".jpg", ".jpeg", ".png"}
     )
     for path in paths:
-        image = Image.open(path)
-        center = cfg.input_size / 2
-        starred, mask = infer_mask(
+        prepared, mask = infer_mask(
             model,
-            image,
-            cx=center,
-            cy=center,
-            radius=(cfg.star.min_radius + cfg.star.max_radius) / 2,
+            Image.open(path),
             cfg=cfg,
             device=device,
         )
-        panel = merge_panels([starred, overlay_masks(starred, mask)])
+        input_view = prepared.convert("RGB")
+        panel = merge_panels([input_view, overlay_masks(input_view, mask)])
         out = _OUT_DIR / f"{path.stem}_fpn.jpg"
         panel.save(out, format="JPEG", quality=95)
         print(f"{path.name} → {out}")

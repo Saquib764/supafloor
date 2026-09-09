@@ -12,7 +12,7 @@ import torch
 from canvas import masks_to_rgb, merge_panels, overlay_masks
 from config import CONFIG_PATH, Config, datasets_cache_dir, load_config
 from data import (
-    build_star_samples,
+    build_floorplan_targets,
     extraction_scale,
     image_to_tensor,
     load_train_split,
@@ -20,8 +20,7 @@ from data import (
     scale_extraction,
 )
 from infer import _device
-from net.model import StarRoomFPN, build_model
-from star import draw_filled_star
+from net.model import FloorplanFPN, build_model
 
 _PREVIEW_DIR = CONFIG_PATH.parent / "_preview"
 
@@ -74,14 +73,14 @@ def _print_architecture_summary(cfg: Config) -> None:
     width = cfg.net.fpn_width
 
     print("\n=== Architecture ===", flush=True)
-    print(f"Task:     starred RGB floor plan → room boundary mask", flush=True)
-    print(f"Input:    (3, {h}, {h})   gray → invert → RGB (white walls) + red star", flush=True)
-    print(f"Output:   (3, {h}, {h})   boundary / doors / windows logits", flush=True)
+    print(f"Task:     grayscale floor plan → walls / doors / windows", flush=True)
+    print(f"Input:    (1, {h}, {h})   gray → invert (white walls on black)", flush=True)
+    print(f"Output:   (3, {h}, {h})   wall / door / window logits", flush=True)
     print(flush=True)
-    print("StarRoomFPN", flush=True)
+    print("FloorplanFPN", flush=True)
     print(f"├─ CnnBackbone (depth={depth} residual blocks per stage)", flush=True)
     print(
-        f"│  ├─ stem           3→{stem} ch, stride 2   @ {sizes['stem']}×{sizes['stem']}",
+        f"│  ├─ stem           1→{stem} ch, stride 2   @ {sizes['stem']}×{sizes['stem']}",
         flush=True,
     )
     for index, (label, size, channels) in enumerate(
@@ -114,7 +113,7 @@ def _print_architecture_summary(cfg: Config) -> None:
     )
 
 
-def _layer_param_counts(model: StarRoomFPN) -> dict[str, tuple[int, int]]:
+def _layer_param_counts(model: FloorplanFPN) -> dict[str, tuple[int, int]]:
     counts = {name: (0, 0) for name in _LAYER_ORDER}
     for name, param in model.named_parameters():
         matched = next(
@@ -131,7 +130,7 @@ def _layer_param_counts(model: StarRoomFPN) -> dict[str, tuple[int, int]]:
     return counts
 
 
-def print_model(cfg: Config, *, dummy_forward: bool = True) -> StarRoomFPN:
+def print_model(cfg: Config, *, dummy_forward: bool = True) -> FloorplanFPN:
     model = build_model(cfg)
     model.eval()
     layers = _layer_param_counts(model)
@@ -159,7 +158,7 @@ def print_model(cfg: Config, *, dummy_forward: bool = True) -> StarRoomFPN:
     if dummy_forward:
         size = cfg.input_size
         with torch.no_grad():
-            x = torch.zeros(1, 3, size, size)
+            x = torch.zeros(1, 1, size, size)
             features = model.backbone(x)
             pyramid = model.fpn(features)
             out = model(x)
@@ -180,7 +179,7 @@ def print_model(cfg: Config, *, dummy_forward: bool = True) -> StarRoomFPN:
     return model
 
 
-def export_sample_pair(cfg: Config, model: StarRoomFPN) -> None:
+def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     cache_dir = datasets_cache_dir(cfg)
     print(f"Loading sample row from {cfg.data.dataset} …")
     train_rows, _train_count, _test_count = load_train_split(
@@ -191,35 +190,23 @@ def export_sample_pair(cfg: Config, model: StarRoomFPN) -> None:
     )
     row = train_rows[1]
     stem = str(row["stem"])
-    base = prepare_image(row["image"], cfg.input_size)
+    image = prepare_image(row["image"], cfg.input_size)
     extraction = scale_extraction(
         json.loads(str(row["extraction"])),
         extraction_scale(cfg.input_size),
     )
-    samples = build_star_samples(extraction, 0, cfg)
-    if not samples:
-        raise ValueError("no star samples for preview row")
-    (cx, cy, radius), gt_targets = samples[0]
-
-    starred = base.copy()
-    draw_filled_star(
-        starred,
-        cx,
-        cy,
-        radius,
-        color=cfg.star.color,
-        inner_ratio=cfg.star.inner_ratio,
-    )
+    gt_targets = build_floorplan_targets(extraction, cfg.input_size)
 
     device = _device()
     model.to(device)
     with torch.no_grad():
-        logits = model(image_to_tensor(starred).unsqueeze(0).to(device)).mask_logits
+        logits = model(image_to_tensor(image).unsqueeze(0).to(device)).mask_logits
     pred = (torch.sigmoid(logits[0]) > 0.5).cpu().numpy()
-    pred_view = overlay_masks(starred, pred)
+    input_view = image.convert("RGB")
+    pred_view = overlay_masks(input_view, pred)
     gt_rgb = masks_to_rgb(gt_targets)
-    gt_view = overlay_masks(starred, gt_targets)
-    panel = merge_panels([starred, pred_view, gt_view])
+    gt_view = overlay_masks(input_view, gt_targets)
+    panel = merge_panels([input_view, pred_view, gt_view])
 
     if _PREVIEW_DIR.exists():
         shutil.rmtree(_PREVIEW_DIR)
@@ -228,7 +215,7 @@ def export_sample_pair(cfg: Config, model: StarRoomFPN) -> None:
     output_path = _PREVIEW_DIR / "output.jpg"
     gt_path = _PREVIEW_DIR / "gt.jpg"
     panel_path = _PREVIEW_DIR / "preview.jpg"
-    starred.save(input_path, format="JPEG", quality=95)
+    input_view.save(input_path, format="JPEG", quality=95)
     pred_view.save(output_path, format="JPEG", quality=95)
     gt_rgb.save(gt_path, format="JPEG", quality=95)
     panel.save(panel_path, format="JPEG", quality=95)
@@ -236,7 +223,6 @@ def export_sample_pair(cfg: Config, model: StarRoomFPN) -> None:
     print("\n=== Sample I/O ===")
     print(f"dataset:      {cfg.data.dataset}")
     print(f"stem:         {stem}")
-    print(f"star:         ({cx:.1f}, {cy:.1f}) r={radius:.1f}")
     print(f"preview_dir:  {_PREVIEW_DIR}")
     print(f"input:        {input_path}")
     print(f"output:       {output_path}")
@@ -252,7 +238,7 @@ def run(cfg: Config, *, export_sample: bool = True) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Print star-prompted FPN model architecture")
+    parser = argparse.ArgumentParser(description="Print floor-plan FPN model architecture")
     parser.add_argument("--config", type=Path, default=CONFIG_PATH)
     parser.add_argument(
         "--no-sample",

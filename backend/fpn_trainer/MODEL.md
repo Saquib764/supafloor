@@ -1,6 +1,6 @@
-# StarRoomFPN — model knowledge
+# FloorplanFPN — model knowledge
 
-Star-prompted room segmentation: a red star marks one room on the input; the network predicts that room's boundary, doors, and windows.
+Full floor-plan structure segmentation: grayscale schematic in, three mask channels out (all walls, all doors, all windows).
 
 See `uv run fpn-train inspect` for live architecture and parameter counts from the active `config.yaml`.
 
@@ -12,45 +12,34 @@ See `uv run fpn-train inspect` for live architecture and parameter counts from t
 Hub image (1024, white bg + black walls)
     │
     ▼  prepare_image()
-grayscale → resize 512 → invert → RGB (black bg + white walls)
+grayscale → resize 512 → invert (black bg + white walls), single channel
     │
-    ▼  draw_filled_star()
-RGB + red star at random point inside target room
-    │
-    ▼  StarRoomFPN
+    ▼  FloorplanFPN
 mask logits (3×512×512) → sigmoid → 3-channel structure mask
-    R = room boundary (Canny)
-    G = door lines for this room
-    B = window lines for this room
+    R = all wall segments
+    G = all door segments
+    B = all window segments
 ```
 
-**Ground truth:** `build_room_targets()` → `(3, H, W)`. Ch0 = Canny boundary of wall-carved interior. Ch1/ch2 = line renders of doors/windows where `room.name` is in `connects` / `room_names`. Star placement uses the filled interior. Viz combines channels as RGB via `masks_to_rgb()`.
-
-**Prompt:** the star replaces an invisible point prompt (similar idea to `sam_trainer`, but visible on the image).
+**Ground truth:** `build_floorplan_targets()` → `(3, H, W)`. Ch0 = all extraction walls as strips (4px interior / 8px exterior). Ch1/ch2 = all doors/windows with the same thickness lookup. Viz combines channels as RGB via `masks_to_rgb()`.
 
 ---
 
 ## Module reference
 
-### `star.py` — star prompt
-
-Draws a filled 5-point star at `(cx, cy)` with outer radius `r`. Vertices alternate outer/inner radius (`inner_ratio`, default 0.4). During training, position and size are randomized; the star must fit inside the room mask.
-
 ### `data.py` — dataset
 
 | Piece | Role |
 |---|---|
-| `prepare_image()` | Grayscale → resize → invert → RGB |
+| `prepare_image()` | Grayscale → resize → invert |
 | `scale_extraction()` | Scale room/wall polygon coords to `input_size` |
-| `rasterize_room_mask()` | Fill room polygon, subtract wall strips (star sampling) |
-| `room_boundary_mask()` | Canny edges of interior fill → ch0 |
-| `rasterize_line_mask()` | Door/window line segments → ch1/ch2 |
-| `build_room_targets()` | Stack boundary + doors + windows → `(3, H, W)` |
-| `sample_point_from_mask()` | Random star center, weighted toward room interior |
-| `FloorplanStarDataset` | Hub rows → `(starred_rgb, targets)` pairs |
+| `rasterize_room_wall_mask()` | Wall strips along one room polygon edge |
+| `rasterize_segment_wall_mask()` | Wall strips for line segments (walls/doors/windows) |
+| `build_floorplan_targets()` | Stack all walls + doors + windows → `(3, H, W)` |
+| `FloorplanDataset` | Hub rows → `(grayscale, targets)` pairs |
 | `load_train_split()` | Cached Hub dataset (no streaming) |
 
-Each floor plan yields `room_slots × per_room_variation` samples per epoch (default 4).
+One training sample per floor plan row per epoch.
 
 ### `net/blocks.py` — building blocks
 
@@ -157,7 +146,7 @@ Per-channel dice + focal, summed (`multi_mask_loss`). Optional `loss.channel_wei
 
 `masks_to_rgb()`: R=boundary, G=doors, B=windows. `overlay_masks()` blends over the starred input.
 
-### `net/model.py` — `StarRoomFPN`
+### `net/model.py` — `FloorplanFPN`
 
 Composes backbone → FPN (with optional L5 transformer) → mask head.
 
@@ -260,14 +249,14 @@ N4 ──down──► N5 = merge(P5 + down(N4))
 
 **Can:**
 
-- Segment the room containing the star using local walls + coarse layout (via L5 attention + top-down FPN).
+- Predict all walls, doors, and windows for the full floor plan (via L5 attention + top-down FPN).
 - Reason globally over the whole floor plan at L5 (256-token self-attention).
-- Handle varied star size/position (training augmentation).
+- Handle varied floor-plan layouts at 512².
 
 **Cannot (without further changes):**
 
 - All-pairs attention at full 512² resolution (only L5 is transformed).
-- Pick a room without the star prompt.
+- Per-room prompting without architectural changes.
 - Match ViT/SAM quality on thin walls with the 0.8M CNN backbone alone.
 
 ---
@@ -282,5 +271,5 @@ net/
 ├── l5_transformer.py L5Transformer, Rotary3D (y,x,level)
 ├── mask_head.py      FPNMaskHead → mask logits
 ├── loss.py           dice + focal
-└── model.py          StarRoomFPN, build_model()
+└── model.py          FloorplanFPN, build_model()
 ```

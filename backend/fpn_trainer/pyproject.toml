@@ -4,18 +4,16 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fpn-trainer"
-version = "0.1.01"
-description = "Star-prompted room segmentation via CNN + FPN"
+version = "0.1.03"
+description = "Floor-plan structure segmentation via CNN + FPN"
 requires-python = ">=3.11"
 dependencies = [
   "dataset-manager",
   "datasets>=3.0.0",
   "huggingface_hub>=0.26.0",
   "numpy>=1.26.0",
-  "opencv-python-headless>=4.10.0",
   "pillow>=10.4.0",
   "pyyaml>=6.0.2",
-  "scipy>=1.11.0",
   "shapely>=2.0.6",
   "torch>=2.4.0",
   "torchvision>=0.19.0",
@@ -38,7 +36,6 @@ dev-mode-dirs = ["."]
 "fpn_cli.py" = "fpn_cli.py"
 "config.py" = "config.py"
 "config.yaml" = "config.yaml"
-"star.py" = "star.py"
 "data.py" = "data.py"
 "canvas.py" = "canvas.py"
 "train.py" = "train.py"

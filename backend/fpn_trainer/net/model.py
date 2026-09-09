@@ -1,4 +1,4 @@
-"""Star-prompted room segmentation model."""
+"""Floor-plan structure segmentation model."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from net.mask_head import FPNMaskHead
 
 
 @dataclass
-class StarRoomFPNOutput:
+class FloorplanFPNOutput:
     mask_logits: Tensor
 
 
@@ -33,11 +33,11 @@ def _build_l5_transformer(
     )
 
 
-class StarRoomFPN(nn.Module):
+class FloorplanFPN(nn.Module):
     def __init__(
         self,
         *,
-        in_channels: int = 3,
+        in_channels: int = 1,
         stem_channels: int = 32,
         backbone_channels: tuple[int, ...] = (48, 96, 128, 128),
         depth: int = 2,
@@ -56,18 +56,19 @@ class StarRoomFPN(nn.Module):
         self.fpn = YoloLikeFPN(self.backbone.out_channels, fpn_width, l5_transformer=l5_vit)
         self.mask_head = FPNMaskHead(fpn_width, out_channels=out_channels)
 
-    def forward(self, x: Tensor) -> StarRoomFPNOutput:
+    def forward(self, x: Tensor) -> FloorplanFPNOutput:
         pyramid = self.fpn(self.backbone(x))
         logits = self.mask_head(pyramid["p2"], pyramid["p3"], pyramid["p4"])
         if logits.shape[-2:] != x.shape[-2:]:
             raise RuntimeError(
                 f"mask logits {tuple(logits.shape)} != input spatial {tuple(x.shape[-2:])}"
             )
-        return StarRoomFPNOutput(mask_logits=logits)
+        return FloorplanFPNOutput(mask_logits=logits)
 
 
-def build_model(cfg: Config) -> StarRoomFPN:
-    return StarRoomFPN(
+def build_model(cfg: Config) -> FloorplanFPN:
+    return FloorplanFPN(
+        in_channels=1,
         stem_channels=cfg.net.stem_channels,
         backbone_channels=cfg.net.backbone_channels,
         depth=cfg.net.depth,

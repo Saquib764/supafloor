@@ -34,29 +34,12 @@ def _load_dotenv() -> None:
 
 
 @dataclass(frozen=True)
-class StarSettings:
-    min_radius: float
-    max_radius: float
-    color: tuple[int, int, int]
-    inner_ratio: float
-
-
-@dataclass(frozen=True)
 class DataSettings:
     dataset: str
     test_fraction: float
-    room_slots: int
-    per_room_variation: int
-    point_distance_alpha: float
-    door_line_width: float
-    window_line_width: float
     revision: str | None = None
     seed: int | None = None
     num_workers: int = 0
-
-    @property
-    def variations_per_floorplan(self) -> int:
-        return self.room_slots * self.per_room_variation
 
 
 @dataclass(frozen=True)
@@ -111,7 +94,6 @@ class InferSettings:
 class Config:
     hf_cache: Path
     input_size: int
-    star: StarSettings
     data: DataSettings
     net: NetSettings
     loss: LossSettings
@@ -199,7 +181,6 @@ def load_config(path: Path | None = None) -> Config:
     load_dotenv(config_path.parent)
     raw: dict[str, Any] = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     base = config_path.parent
-    star = raw["star"]
     data = raw["data"]
     net = raw["net"]
     loss = raw["loss"]
@@ -211,7 +192,6 @@ def load_config(path: Path | None = None) -> Config:
     input_size = int(raw["input_size"])
     if input_size < 64 or input_size % 32 != 0:
         raise ValueError(f"input_size ({input_size}) must be ≥ 64 and divisible by 32")
-    color = star["color"]
     hf_cache = apply_hf_cache(_resolve(Path(raw["hf_cache"]), base))
     net_settings = _load_net_settings(net)
     _validate_l5_grid_side(input_size, net_settings.l5_transformer)
@@ -224,20 +204,9 @@ def load_config(path: Path | None = None) -> Config:
     return Config(
         hf_cache=hf_cache,
         input_size=input_size,
-        star=StarSettings(
-            min_radius=float(star["min_radius"]),
-            max_radius=float(star["max_radius"]),
-            color=(int(color[0]), int(color[1]), int(color[2])),
-            inner_ratio=float(star["inner_ratio"]),
-        ),
         data=DataSettings(
             dataset=dataset,
             test_fraction=float(data["test_fraction"]),
-            room_slots=int(data["room_slots"]),
-            per_room_variation=int(data["per_room_variation"]),
-            point_distance_alpha=float(data["point_distance_alpha"]),
-            door_line_width=float(data.get("door_line_width", 3.0)),
-            window_line_width=float(data.get("window_line_width", 3.0)),
             revision=str(data["revision"]).strip() if data.get("revision") else None,
             seed=int(data["seed"]) if data.get("seed") is not None else None,
             num_workers=int(data.get("num_workers", 0)),

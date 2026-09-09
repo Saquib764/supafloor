@@ -1,3 +1,3 @@
-from net.model import StarRoomFPN, StarRoomFPNOutput, build_model
+from net.model import FloorplanFPN, FloorplanFPNOutput, build_model
 
-__all__ = ["StarRoomFPN", "StarRoomFPNOutput", "build_model"]
+__all__ = ["FloorplanFPN", "FloorplanFPNOutput", "build_model"]
