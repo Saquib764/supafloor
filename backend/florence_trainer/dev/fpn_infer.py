@@ -14,7 +14,6 @@ import torch
 from PIL import Image, ImageOps
 
 _FPN_ROOT = Path(__file__).resolve().parents[2] / "fpn_trainer"
-_INFER_SIZE = 1024
 _ISOLATED = ("config",)
 
 
@@ -78,6 +77,7 @@ def overlay_structure(base: Image.Image, masks: np.ndarray) -> Image.Image:
 class FpnRuntime:
     device: torch.device
     model: Any
+    infer_size: int
 
     @classmethod
     def load(cls, checkpoint: Path | None = None) -> FpnRuntime:
@@ -101,7 +101,7 @@ class FpnRuntime:
             model.load_state_dict(state["model"])
             model.to(device)
             model.eval()
-            return cls(device=device, model=model)
+            return cls(device=device, model=model, infer_size=cfg.infer.size)
         finally:
             for name, module in saved.items():
                 if module is not None:
@@ -111,7 +111,7 @@ class FpnRuntime:
 
     def infer_structure(self, image: Image.Image) -> Image.Image:
         original_size = image.size
-        size = _INFER_SIZE
+        size = self.infer_size
         small = image.convert("RGB").resize((size, size), Image.Resampling.LANCZOS)
 
         prepared = _prepare_image(small, size)
@@ -127,6 +127,6 @@ class FpnRuntime:
 
 
 @lru_cache(maxsize=1)
-def get_fpn_runtime(checkpoint: str) -> FpnRuntime:
+def get_fpn_runtime(checkpoint: str | None = None) -> FpnRuntime:
     path = Path(checkpoint) if checkpoint else None
     return FpnRuntime.load(path)

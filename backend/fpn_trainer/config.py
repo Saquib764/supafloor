@@ -76,6 +76,7 @@ class TrainSettings:
     batch_size: int
     grad_accum: int
     learning_rate: float
+    warmup_ratio: float
     weight_decay: float
     bf16: bool
     resume: bool
@@ -87,6 +88,7 @@ class TrainSettings:
 
 @dataclass(frozen=True)
 class InferSettings:
+    size: int
     checkpoint: Path
 
 
@@ -223,6 +225,7 @@ def load_config(path: Path | None = None) -> Config:
             batch_size=int(train["batch_size"]),
             grad_accum=max(1, int(train.get("grad_accum", 1))),
             learning_rate=float(train["learning_rate"]),
+            warmup_ratio=float(train.get("warmup_ratio", 0.0)),
             weight_decay=float(train["weight_decay"]),
             bf16=bool(train["bf16"]),
             resume=bool(train.get("resume", False)),
@@ -232,6 +235,7 @@ def load_config(path: Path | None = None) -> Config:
             max_grad_norm=float(train["max_grad_norm"]),
         ),
         infer=InferSettings(
+            size=int(infer.get("size") or input_size),
             checkpoint=_resolve(Path(infer.get("checkpoint") or "training_session/last.pt"), base),
         ),
     )

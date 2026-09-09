@@ -16,7 +16,7 @@ from registry import hub_dataset_row_count, load_hub_dataset, load_hub_rows_at
 from shapely.geometry import Polygon
 from torch.utils.data import IterableDataset
 
-HUB_COLUMNS = ("stem", "image", "extraction")
+HUB_COLUMNS = ("stem", "image", "simple_image", "extraction")
 _EXTRACTION_CANVAS = 1024
 ROOM_WALL_THICK = 4.0
 BOUNDARY_WALL_THICK = 8.0
@@ -527,7 +527,7 @@ class FloorplanDataset(IterableDataset):
         self.epoch = 0
 
     def __len__(self) -> int:
-        return self._num_rows
+        return self._num_rows * 2
 
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         indices = list(range(self._num_rows))
@@ -536,10 +536,11 @@ class FloorplanDataset(IterableDataset):
         scale = extraction_scale(self._input_size)
         for dataset_index in indices:
             row = self._dataset[dataset_index]
-            image = prepare_image(row["image"], self._input_size)
             extraction = scale_extraction(json.loads(str(row["extraction"])), scale)
-            targets = build_floorplan_targets(extraction, self._input_size)
-            yield image_to_tensor(image), torch.from_numpy(targets)
+            targets = torch.from_numpy(build_floorplan_targets(extraction, self._input_size))
+            for key in ("image", "simple_image"):
+                image = prepare_image(row[key], self._input_size)
+                yield image_to_tensor(image), targets
 
 
 class FloorplanCollator:

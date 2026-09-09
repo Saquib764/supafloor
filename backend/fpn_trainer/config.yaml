@@ -1,5 +1,5 @@
 hf_cache: ../hf_cache
-input_size: 256
+input_size: 1024
 
 data:
   dataset: floorplan-to-json
@@ -29,9 +29,10 @@ loss:
 train:
   session_dir: training_session_2
   epochs: 10
-  batch_size: 8
+  batch_size: 2
   grad_accum: 1
   learning_rate: 1.0e-4
+  warmup_ratio: 0.03
   weight_decay: 0.01
   bf16: true
   resume: true
@@ -41,4 +42,5 @@ train:
   max_grad_norm: 1.0
 
 infer:
-  checkpoint: training_session/last.pt
+  size: 512
+  checkpoint: training_session_2/last.pt

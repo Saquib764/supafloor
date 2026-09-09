@@ -29,7 +29,7 @@ def infer_mask(
     cfg: Config,
     device: torch.device,
 ) -> tuple[Image.Image, np.ndarray]:
-    prepared = prepare_image(image, cfg.input_size)
+    prepared = prepare_image(image, cfg.infer.size)
     batch = image_to_tensor(prepared).unsqueeze(0).to(device)
     with torch.no_grad():
         logits = model(batch).mask_logits

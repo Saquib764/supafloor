@@ -254,7 +254,7 @@ class InferUI:
         sam_config: Path,
         unet_checkpoint: Path,
         vae_checkpoint: Path,
-        fpn_checkpoint: Path,
+        fpn_checkpoint: Path | None,
     ) -> None:
         if not test_images:
             raise ValueError(f"No images found in {TEST_DIR}")
@@ -468,7 +468,10 @@ class InferUI:
         self._draw()
         pygame.display.flip()
         try:
-            runtime = get_fpn_runtime(str(self.fpn_checkpoint.resolve()))
+            checkpoint = (
+                str(self.fpn_checkpoint.resolve()) if self.fpn_checkpoint is not None else ""
+            )
+            runtime = get_fpn_runtime(checkpoint)
             self._apply_viewer_image(
                 runtime.infer_structure(self.base_image),
                 "FPN structure detected — viewer updated.",
@@ -890,11 +893,9 @@ class InferUI:
 
 _SAM_ROOT = _ROOT.parent / "sam_trainer"
 _UNET_ROOT = _ROOT.parent / "unet_trainer"
-_FPN_ROOT = _ROOT.parent / "fpn_trainer"
 _VAE_ROOT = _ROOT.parent / "vae_trainer"
 _DEFAULT_SAM_CONFIG = _SAM_ROOT / "config.yaml"
 _DEFAULT_UNET_CHECKPOINT = _UNET_ROOT / "training_session" / "last.pt"
-_DEFAULT_FPN_CHECKPOINT = _FPN_ROOT / "training_session" / "last.pt"
 _DEFAULT_VAE_CHECKPOINT = _VAE_ROOT / "training_session" / "last.pt"
 
 
@@ -917,8 +918,8 @@ def main() -> None:
     parser.add_argument(
         "--fpn-checkpoint",
         type=Path,
-        default=_DEFAULT_FPN_CHECKPOINT,
-        help="FPN weights (default: fpn_trainer/training_session/last.pt)",
+        default=None,
+        help="FPN weights (default: fpn_trainer/config.yaml infer.checkpoint)",
     )
     parser.add_argument(
         "--vae-checkpoint",

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import torch
 from PIL import Image
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
@@ -36,11 +38,24 @@ def use_bf16(cfg: Config) -> bool:
     return bool(cfg.train.bf16 and torch.cuda.is_available())
 
 
+def _lr_lambda(*, warmup_steps: int, total_steps: int):
+    def fn(step: int) -> float:
+        if warmup_steps > 0 and step < warmup_steps:
+            return float(step + 1) / float(warmup_steps)
+        if total_steps <= warmup_steps:
+            return 1.0
+        progress = float(step - warmup_steps) / float(total_steps - warmup_steps)
+        return 0.5 * (1.0 + math.cos(math.pi * progress))
+
+    return fn
+
+
 def _save_checkpoint(
     path: Path,
     *,
     model: FloorplanFPN,
     optimizer: AdamW,
+    scheduler: LambdaLR,
     step: int,
     epoch: int,
 ) -> None:
@@ -50,6 +65,7 @@ def _save_checkpoint(
             "epoch": epoch,
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
+            "scheduler": scheduler.state_dict(),
         },
         path,
     )
@@ -155,6 +171,8 @@ def _print_setup(
     print(f"steps/epoch:    {steps_per_epoch:,}")
     print(f"total steps:    {total_steps:,}")
     print(f"learning_rate:  {cfg.train.learning_rate}")
+    print(f"warmup_ratio:   {cfg.train.warmup_ratio}")
+    print(f"lr schedule:    cosine decay")
     print(f"resume:         {cfg.train.resume}")
     print(f"save_steps:     {cfg.train.save_steps}")
     print(f"viz_steps:      {cfg.train.viz_steps}")
@@ -193,6 +211,11 @@ def run(cfg: Config) -> None:
     model.to(device)
     model.train()
     optimizer = AdamW(model.parameters(), lr=cfg.train.learning_rate, weight_decay=cfg.train.weight_decay)
+    warmup_steps = int(total_steps * cfg.train.warmup_ratio)
+    scheduler = LambdaLR(
+        optimizer,
+        lr_lambda=_lr_lambda(warmup_steps=warmup_steps, total_steps=total_steps),
+    )
 
     step = 0
     start_epoch = 0
@@ -203,6 +226,11 @@ def run(cfg: Config) -> None:
         optimizer.load_state_dict(state["optimizer"])
         step = int(state["step"])
         start_epoch = int(state["epoch"])
+        if "scheduler" in state:
+            scheduler.load_state_dict(state["scheduler"])
+        else:
+            for _ in range(step):
+                scheduler.step()
         tqdm.write(f"Resumed step {step} epoch {start_epoch} ← {checkpoint_path}")
 
     _print_setup(cfg, len(dataset), steps_per_epoch, total_steps, device)
@@ -240,6 +268,7 @@ def run(cfg: Config) -> None:
                 continue
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.max_grad_norm)
             optimizer.step()
+            scheduler.step()
             optimizer.zero_grad(set_to_none=True)
             step += 1
             progress.update(1)
@@ -256,20 +285,31 @@ def run(cfg: Config) -> None:
                 _save_viz(model, cfg, device, train_count, viz_dir, step)
             if step % cfg.train.save_steps == 0:
                 _save_checkpoint(
-                    checkpoint_path, model=model, optimizer=optimizer, step=step, epoch=epoch
+                    checkpoint_path,
+                    model=model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    step=step,
+                    epoch=epoch,
                 )
                 tqdm.write(f"saved → {checkpoint_path}")
 
     if micro % accum != 0:
         torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.max_grad_norm)
         optimizer.step()
+        scheduler.step()
         optimizer.zero_grad(set_to_none=True)
         step += 1
         progress.update(1)
 
     progress.close()
     _save_checkpoint(
-        checkpoint_path, model=model, optimizer=optimizer, step=step, epoch=cfg.train.epochs
+        checkpoint_path,
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        step=step,
+        epoch=cfg.train.epochs,
     )
     tqdm.write(f"Saved → {checkpoint_path}")
     tqdm.write(f"train={len(dataset)} steps={step}")
