@@ -21,6 +21,12 @@ class Sam2Predictor:
     device: torch.device
 
 
+@dataclass
+class EncodedImage:
+    pixel_values: torch.Tensor
+    original_sizes: torch.Tensor
+
+
 def pick_device() -> torch.device:
     if torch.cuda.is_available():
         return torch.device("cuda")
@@ -225,6 +231,77 @@ class Sam2TrainingWrapper(nn.Module):
         )
 
 
+def encode_image(predictor: Sam2Predictor, image: Image.Image) -> EncodedImage:
+    """Run the vision backbone once; reuse pixel_values for point queries."""
+    inputs = predictor.processor(images=image, return_tensors="pt")
+    return EncodedImage(
+        pixel_values=inputs["pixel_values"].to(predictor.device),
+        original_sizes=inputs["original_sizes"],
+    )
+
+
+def predict_point_encoded(
+    predictor: Sam2Predictor,
+    encoded: EncodedImage,
+    point: tuple[float, float],
+    *,
+    multimask_output: bool = False,
+) -> tuple[np.ndarray, float]:
+    """Return a boolean H×W mask and confidence score using pre-encoded image features."""
+    return predict_points_encoded(
+        predictor,
+        encoded,
+        [point],
+        multimask_output=multimask_output,
+    )
+
+
+def predict_points_encoded(
+    predictor: Sam2Predictor,
+    encoded: EncodedImage,
+    points: list[tuple[float, float]],
+    *,
+    negative_points: list[tuple[float, float]] | None = None,
+    multimask_output: bool = False,
+) -> tuple[np.ndarray, float]:
+    if not points:
+        raise ValueError("points required")
+    all_points = list(points)
+    all_labels = [1] * len(points)
+    if negative_points:
+        all_points.extend(negative_points)
+        all_labels.extend([0] * len(negative_points))
+    input_points = torch.tensor(
+        [[[[x, y] for x, y in all_points]]],
+        dtype=torch.float32,
+        device=predictor.device,
+    )
+    input_labels = torch.tensor([[all_labels]], dtype=torch.int64, device=predictor.device)
+
+    with torch.no_grad():
+        outputs = _segment(
+            predictor.model,
+            pixel_values=encoded.pixel_values,
+            input_points=input_points,
+            input_labels=input_labels,
+            multimask_output=multimask_output,
+        )
+
+    masks = post_process_pred_masks(
+        predictor.processor,
+        outputs.pred_masks.cpu(),
+        encoded.original_sizes,
+    )
+    scores = outputs.iou_scores[0, 0].detach().cpu()
+    if multimask_output:
+        best_idx = int(scores.argmax().item())
+    else:
+        best_idx = 0
+    mask = masks[0, best_idx].numpy().astype(bool)
+    score = float(scores[best_idx].item())
+    return mask, score
+
+
 def predict_point(
     predictor: Sam2Predictor,
     image: Image.Image,
@@ -246,13 +323,19 @@ def predict_points(
     image: Image.Image,
     points: list[tuple[float, float]],
     *,
+    negative_points: list[tuple[float, float]] | None = None,
     multimask_output: bool = False,
 ) -> tuple[np.ndarray, float]:
-    """Return a boolean H×W mask and confidence score for one or more foreground points."""
+    """Return a boolean H×W mask and confidence score for foreground (and optional negative) points."""
     if not points:
         raise ValueError("points required")
-    input_points = [[[[x, y] for x, y in points]]]
-    input_labels = [[[1] * len(points)]]
+    all_points = list(points)
+    all_labels = [1] * len(points)
+    if negative_points:
+        all_points.extend(negative_points)
+        all_labels.extend([0] * len(negative_points))
+    input_points = [[[[x, y] for x, y in all_points]]]
+    input_labels = [[all_labels]]
     inputs = predictor.processor(
         images=image,
         input_points=input_points,

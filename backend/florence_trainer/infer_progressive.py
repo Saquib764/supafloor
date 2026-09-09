@@ -34,7 +34,7 @@ from inference.progressive import (
     white_black_ratio,
 )
 from loc import parse_rooms
-from model import load_model_and_processor
+from model import load_model_and_processor, resolve_infer_adapter
 from plot import draw_points, draw_rooms
 from post_process import insert_t_joints, snap_room_points
 from pre_clean import pre_clean
@@ -83,7 +83,7 @@ def run(
     *,
     adapter: Path | None = None,
 ) -> None:
-    adapter_path = adapter or cfg.train.session_dir
+    adapter_path = resolve_infer_adapter(cfg, adapter)
     model, processor = load_model_and_processor(cfg, adapter=adapter_path)
     if torch.cuda.is_available():
         model.to("cuda")

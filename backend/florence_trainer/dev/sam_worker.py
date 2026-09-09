@@ -74,10 +74,14 @@ def main() -> None:
             if cmd == "predict_points":
                 image = _read_image_b64(req["image_b64"])
                 points = [(float(x), float(y)) for x, y in req["points"]]
+                negative = [
+                    (float(x), float(y)) for x, y in req.get("negative_points") or []
+                ]
                 mask, score = predict_points(
                     predictor,
                     image,
                     points,
+                    negative_points=negative or None,
                     multimask_output=cfg.infer.multimask_output,
                 )
                 _send({"ok": True, "score": score, "mask_b64": _mask_to_b64(mask)})

@@ -27,6 +27,10 @@ def use_bf16(cfg: Config) -> bool:
     return bool(cfg.train.bf16 and torch.cuda.is_available())
 
 
+def resolve_infer_adapter(cfg: Config, adapter: Path | None = None) -> Path:
+    return adapter or cfg.infer.adapter or cfg.train.session_dir
+
+
 def load_dtype(cfg: Config, *, for_training: bool, adapter: Path | None) -> torch.dtype:
     if for_training:
         return torch.bfloat16 if use_bf16(cfg) else torch.float32

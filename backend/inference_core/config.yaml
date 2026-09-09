@@ -1,0 +1,25 @@
+canvas_size: 1024
+margin: 10
+hf_cache: ../hf_cache
+
+sam_config: ../sam_trainer/config.yaml
+
+grid:
+  size: 100
+  tries_per_cell: 5
+  seed: null
+
+point_filter:
+  dilate_px: 16
+
+mask_smooth:
+  close_px: 2
+  smooth_sigma: 1.0
+  approx_epsilon: 2.0
+
+output: output
+
+fit:
+  min_sides: 4
+  max_sides: 20
+  output_dir: output/fit

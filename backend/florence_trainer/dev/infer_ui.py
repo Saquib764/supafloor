@@ -4,8 +4,8 @@
 Left panel lists test/ images (sorted by name); first image loads by default.
 Toggle backbone between Florence (room polygons) and SAM 2.1 (segmentation masks).
 Single mode infers immediately on each click. Multiple mode places points first,
-then runs one inference when Infer is clicked. Florence multiple mode also supports
-optional exclusion points. UNet/VAE buttons apply only in Florence mode.
+then runs one inference when Infer is clicked. Multiple mode supports optional
+exclusion points (Florence prompt + SAM negative points). UNet/VAE buttons apply only in Florence mode.
 
 Usage (from backend/florence_trainer):
 
@@ -41,7 +41,7 @@ from data import (
     prepare_image,
 )
 from loc import parse_referring_room, parse_rooms
-from model import load_model_and_processor
+from model import load_model_and_processor, resolve_infer_adapter
 from plot import draw_rooms
 from pre_clean import pre_clean
 from fit_test_canvas import fit_to_canvas
@@ -220,6 +220,7 @@ class MaskEntry:
     mask: np.ndarray
     points: list[tuple[float, float]]
     score: float
+    negative_points: list[tuple[float, float]] | None = None
 
 
 @dataclass
@@ -383,18 +384,25 @@ class InferUI:
         mx, my = pos
         return self.viewer_x <= mx < self.panel_x and my < self.display_h
 
-    def _sam_masks_and_points(self) -> tuple[list[np.ndarray], list[tuple[float, float]]]:
+    def _sam_masks_and_points(
+        self,
+    ) -> tuple[list[np.ndarray], list[tuple[float, float]], list[tuple[float, float]]]:
         masks = [entry.mask for entry in self.sam_entries]
         points = [point for entry in self.sam_entries for point in entry.points]
-        return masks, points
+        negative = [
+            point
+            for entry in self.sam_entries
+            for point in (entry.negative_points or [])
+        ]
+        return masks, points, negative
 
     def _rebuild_surface(self) -> None:
         if self.backbone == "florence":
             overlay = draw_rooms(self.base_image.copy(), self.rooms)
         else:
             runtime = self._ensure_sam_runtime()
-            masks, points = self._sam_masks_and_points()
-            overlay = runtime.overlay(self.base_image, masks, points)
+            masks, points, negative = self._sam_masks_and_points()
+            overlay = runtime.overlay(self.base_image, masks, points, negative_points=negative)
         self.image_surface = _pil_to_surface(overlay)
         self.display_surface = pygame.transform.smoothscale(
             self.image_surface,
@@ -460,11 +468,8 @@ class InferUI:
         except Exception as exc:
             self.status = f"VAE failed: {exc}"
 
-    def _florence_only_visible(self) -> bool:
-        return self.backbone == "florence"
-
     def _sync_backbone_controls(self) -> None:
-        self.exclude_btn.visible = self._florence_only_visible() and self.mode == "multiple"
+        self.exclude_btn.visible = self.mode == "multiple"
         self.backbone_btn.label = f"Backbone: {self.backbone}"
         pygame.display.set_caption(f"Infer UI — {self.backbone}")
 
@@ -498,7 +503,7 @@ class InferUI:
         self.excluded_points.clear()
         self.placing_exclusion = False
         self.infer_btn.visible = mode == "multiple"
-        self.exclude_btn.visible = self._florence_only_visible() and mode == "multiple"
+        self.exclude_btn.visible = mode == "multiple"
         self.mode_btn.label = f"Mode: {mode}"
         if mode == "single":
             self.status = f"Single mode ({self.backbone}) — click the floor plan to infer immediately."
@@ -514,9 +519,6 @@ class InferUI:
 
     def _update_multi_status(self) -> None:
         positive = len(self.selected_points)
-        if self.backbone == "sam":
-            self.status = f"Placing points ({positive} set) — press Infer."
-            return
         excluded = len(self.excluded_points)
         if self.placing_exclusion:
             self.status = (
@@ -549,8 +551,17 @@ class InferUI:
         mask: np.ndarray,
         points: list[tuple[float, float]],
         score: float,
+        *,
+        negative_points: list[tuple[float, float]] | None = None,
     ) -> None:
-        self.sam_entries.append(MaskEntry(mask=mask, points=points, score=score))
+        self.sam_entries.append(
+            MaskEntry(
+                mask=mask,
+                points=points,
+                score=score,
+                negative_points=negative_points,
+            )
+        )
 
     def _apply_result(self, result: dict, image_x: int, image_y: int) -> bool:
         self.last_prompt = result["prompt"]
@@ -579,27 +590,42 @@ class InferUI:
             self._rebuild_surface()
             return
 
-        if (x, y) not in self.selected_points:
-            self.selected_points.append((x, y))
+        target = self.excluded_points if self.placing_exclusion else self.selected_points
+        if (x, y) not in target:
+            target.append((x, y))
         self._update_multi_status()
 
     def _on_sam_infer_batch(self) -> None:
         if not self.selected_points:
-            self.status = "No points selected."
+            self.status = "No positive points selected."
             return
 
         runtime = self._ensure_sam_runtime()
         count = len(self.selected_points)
+        excluded_count = len(self.excluded_points)
         self.status = f"Inferring {count} point(s)..."
         self._draw()
         pygame.display.flip()
 
         canvas_points = [(float(x), float(y)) for x, y in self.selected_points]
-        mask, score = runtime.predict_points(self.base_image, canvas_points)
-        self._append_sam_entry(mask, canvas_points, score)
+        canvas_excluded = [(float(x), float(y)) for x, y in self.excluded_points]
+        mask, score = runtime.predict_points(
+            self.base_image,
+            canvas_points,
+            negative_points=canvas_excluded or None,
+        )
+        self._append_sam_entry(
+            mask,
+            canvas_points,
+            score,
+            negative_points=canvas_excluded or None,
+        )
         self._reset_point_selection()
+        detail = f"{count} positive"
+        if excluded_count:
+            detail += f", {excluded_count} excluded"
         self.status = (
-            f"Inferred mask from {count} point(s) score={score:.3f} — {len(self.sam_entries)} total."
+            f"Inferred mask from {detail} point(s) score={score:.3f} — {len(self.sam_entries)} total."
         )
         self._rebuild_surface()
 
@@ -776,7 +802,9 @@ class InferUI:
                         px, py = entry.points[0]
                         text = f"{index}. ({px:.0f}, {py:.0f}) score={entry.score:.3f}"
                     else:
-                        text = f"{index}. {len(entry.points)} pts score={entry.score:.3f}"
+                        pos = len(entry.points)
+                        neg = len(entry.negative_points or [])
+                        text = f"{index}. {pos}+/{neg}- pts score={entry.score:.3f}"
                     line = self.font.render(text, True, TEXT_COLOR)
                     self.window.blit(line, (x, y))
                     y += 16
@@ -872,7 +900,7 @@ def main() -> None:
 
     pygame.init()
     cfg = load_config(args.config)
-    adapter = args.adapter or cfg.train.session_dir
+    adapter = resolve_infer_adapter(cfg, args.adapter)
 
     test_images = list_test_images()
     if not test_images:

@@ -82,6 +82,7 @@ class InferSettings:
     max_new_tokens: int
     num_beams: int
     seed: int | None = None
+    adapter: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -203,5 +204,10 @@ def load_config(path: Path | None = None) -> Config:
             max_new_tokens=int(infer["max_new_tokens"]),
             num_beams=int(infer["num_beams"]),
             seed=int(infer["seed"]) if infer["seed"] is not None else None,
+            adapter=(
+                _resolve(Path(infer["adapter"]), base)
+                if infer.get("adapter")
+                else None
+            ),
         ),
     )

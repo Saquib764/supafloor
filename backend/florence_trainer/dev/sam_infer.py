@@ -155,8 +155,10 @@ class SamRuntime:
         image: Image.Image,
         masks: list[np.ndarray],
         points: list[tuple[float, float]],
+        *,
+        negative_points: list[tuple[float, float]] | None = None,
     ) -> Image.Image:
-        return self.apply_masks(image, masks, points)
+        return self.apply_masks(image, masks, points, negative_points=negative_points)
 
     def predict_point(
         self,
@@ -177,14 +179,17 @@ class SamRuntime:
         self,
         image: Image.Image,
         points: list[tuple[float, float]],
+        *,
+        negative_points: list[tuple[float, float]] | None = None,
     ) -> tuple[np.ndarray, float]:
-        response = self._request(
-            {
-                "cmd": "predict_points",
-                "image_b64": _image_to_b64(image),
-                "points": [[x, y] for x, y in points],
-            }
-        )
+        payload: dict = {
+            "cmd": "predict_points",
+            "image_b64": _image_to_b64(image),
+            "points": [[x, y] for x, y in points],
+        }
+        if negative_points:
+            payload["negative_points"] = [[x, y] for x, y in negative_points]
+        response = self._request(payload)
         return _mask_from_b64(response["mask_b64"]), float(response["score"])
 
 

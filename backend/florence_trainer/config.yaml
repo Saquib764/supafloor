@@ -40,6 +40,7 @@ train:
   num_workers: 4
 
 infer:
+  adapter: training_session_3
   num_points: 16
   max_new_tokens: 256
   num_beams: 3
