@@ -55,14 +55,14 @@ def load_sam_predictor(
     return _with_sam_config(sam_config_path)
 
 
-def load_viewer_image(path: Path, *, canvas_size: int, margin: int) -> Any:
+def load_viewer_image(path: Path, *, canvas_size: int) -> Any:
     saved_canvas = sys.modules.get("canvas")
     sam_str = str(_SAM_ROOT.resolve())
     if sam_str not in sys.path:
         sys.path.insert(0, sam_str)
     try:
         sam_canvas = _load_module("canvas", _SAM_ROOT / "canvas.py")
-        return sam_canvas.load_viewer_image(path, canvas_size=canvas_size, margin=margin)
+        return sam_canvas.load_viewer_image(path, canvas_size=canvas_size, margin=0)
     finally:
         if saved_canvas is not None:
             sys.modules["canvas"] = saved_canvas

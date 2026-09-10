@@ -55,11 +55,7 @@ def run_image_edit_pipeline(
         image = Image.open(canvas_path).convert("RGB")
         print(f"loaded {canvas_path}")
     else:
-        image = load_canvas_image(
-            image_path,
-            canvas_size=cfg.canvas_size,
-            margin=cfg.margin,
-        )
+        image = load_canvas_image(image_path, canvas_size=cfg.canvas_size)
         image.save(canvas_path)
         print(f"wrote {canvas_path}")
 

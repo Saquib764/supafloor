@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from util.render import draw_mask, draw_masks, floorplan_view, merge_panels, stack_rows, with_label
+from util.render import draw_masks, floorplan_view, merge_panels, stack_rows, with_label
 
 
 def _room_binary(room_mask: np.ndarray) -> np.ndarray:
@@ -41,46 +41,23 @@ def room_components_from_mask(room_mask: np.ndarray, *, min_area_px: int) -> lis
     return [component for component in components if int(component.sum()) >= min_area_px]
 
 
-def compute_area_masks(
-    roi_mask: np.ndarray,
-    combined_rooms: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Open area = ROI ∩ rooms; wall area = ROI − rooms."""
-    roi = roi_mask > 0.5
-    rooms = combined_rooms > 0.5 if combined_rooms.dtype != bool else combined_rooms
-    open_area = roi & rooms
-    wall_area = roi & ~rooms
-    return open_area, wall_area
-
-
-def _mask_to_rgb(mask: np.ndarray, *, channel: int) -> Image.Image:
-    height, width = mask.shape
-    rgb = np.zeros((height, width, 3), dtype=np.uint8)
-    rgb[..., channel] = (np.clip(mask.astype(np.float32), 0.0, 1.0) * 255).astype(np.uint8)
-    return Image.fromarray(rgb, mode="RGB")
-
-
-def save_area_masks(
-    open_area: np.ndarray,
-    wall_area: np.ndarray,
-    out_dir: Path,
-    *,
-    floorplan: Image.Image,
-    size: int,
-) -> dict[str, Path]:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    open_path = out_dir / "open-area-mask.jpg"
-    wall_path = out_dir / "wall-area-mask.jpg"
-    overlay_path = out_dir / "open-area-overlay.jpg"
-    _mask_to_rgb(open_area, channel=1).save(open_path, format="JPEG", quality=95)
-    _mask_to_rgb(wall_area, channel=0).save(wall_path, format="JPEG", quality=95)
-
-    draw_mask(floorplan_view(floorplan, size), open_area, alpha=120, color=(0, 180, 60)).save(
-        overlay_path,
-        format="JPEG",
-        quality=95,
-    )
-    return {"open_area": open_path, "wall_area": wall_path, "open_area_overlay": overlay_path}
+def _overlay_openings(
+    base: Image.Image,
+    door_mask: np.ndarray,
+    window_mask: np.ndarray,
+) -> Image.Image:
+    size = base.size[0]
+    rgb = np.asarray(base.convert("RGB"), dtype=np.float32)
+    doors = scale_room_mask(door_mask, size) > 0.5
+    windows = scale_room_mask(window_mask, size) > 0.5
+    out = rgb.copy()
+    out[doors, 0] = np.clip(out[doors, 0] * 0.25 + 255 * 0.75, 0, 255)
+    out[doors, 1] *= 0.25
+    out[doors, 2] *= 0.25
+    out[windows, 1] = np.clip(out[windows, 1] * 0.25 + 255 * 0.75, 0, 255)
+    out[windows, 0] *= 0.25
+    out[windows, 2] *= 0.25
+    return Image.fromarray(out.astype(np.uint8))
 
 
 def save_all_room_mask_overlays(
@@ -89,6 +66,8 @@ def save_all_room_mask_overlays(
     out_dir: Path,
     *,
     size: int,
+    door_mask: np.ndarray | None = None,
+    window_mask: np.ndarray | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     view = floorplan_view(floorplan, size)
@@ -97,7 +76,13 @@ def save_all_room_mask_overlays(
             [
                 view,
                 with_label(
-                    draw_masks(view, components, alpha=120) if components else view.copy(),
+                    _overlay_openings(
+                        draw_masks(view, components, alpha=120) if components else view.copy(),
+                        door_mask,
+                        window_mask,
+                    )
+                    if door_mask is not None and window_mask is not None
+                    else (draw_masks(view, components, alpha=120) if components else view.copy()),
                     label,
                 ),
                 with_label(

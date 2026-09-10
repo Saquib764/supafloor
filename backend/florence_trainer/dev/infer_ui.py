@@ -5,7 +5,7 @@ Left panel lists test/ images (sorted by name); first image loads by default.
 Toggle backbone between Florence (room polygons) and SAM 2.1 (segmentation masks).
 Single mode infers immediately on each click. Multiple mode places points first,
 then runs one inference when Infer is clicked. Multiple mode supports optional
-exclusion points (Florence prompt + SAM negative points). UNet/FPN/FPN Room buttons apply in Florence mode.
+exclusion points (Florence prompt + SAM negative points). UNet/FPN/FPN Room/FPN Five buttons apply in Florence mode.
 
 Usage (from backend/florence_trainer):
 
@@ -49,6 +49,7 @@ from fit_test_canvas import fit_to_canvas
 from sam_infer import get_sam_runtime
 from fpn_infer import get_fpn_runtime
 from fpn_room_infer import get_fpn_room_runtime
+from fpn_five_infer import get_fpn_five_runtime
 from unet_infer import get_unet_runtime
 
 Backbone = Literal["florence", "sam"]
@@ -255,6 +256,7 @@ class InferUI:
         unet_checkpoint: Path,
         fpn_checkpoint: Path | None,
         fpn_room_checkpoint: Path | None,
+        fpn_five_checkpoint: Path | None,
     ) -> None:
         if not test_images:
             raise ValueError(f"No images found in {TEST_DIR}")
@@ -266,6 +268,7 @@ class InferUI:
         self.unet_checkpoint = unet_checkpoint
         self.fpn_checkpoint = fpn_checkpoint
         self.fpn_room_checkpoint = fpn_room_checkpoint
+        self.fpn_five_checkpoint = fpn_five_checkpoint
         self.test_images = test_images
         self.selected_index = 0
         self.list_scroll = 0
@@ -315,6 +318,8 @@ class InferUI:
         self.fpn_btn = Button(pygame.Rect(x, y, btn_w, 28), "FPN")
         y += 34
         self.fpn_room_btn = Button(pygame.Rect(x, y, btn_w, 28), "FPN Room")
+        y += 34
+        self.fpn_five_btn = Button(pygame.Rect(x, y, btn_w, 28), "FPN Five")
         y += 34
         self.mode_btn = Button(pygame.Rect(x, y, btn_w, 28), "Mode: single")
         y += 34
@@ -496,6 +501,24 @@ class InferUI:
             )
         except Exception as exc:
             self.status = f"FPN Room failed: {exc}"
+
+    def _on_fpn_five(self) -> None:
+        self.status = "Running FPN Five (bg/rooms/walls/doors/windows)..."
+        self._draw()
+        pygame.display.flip()
+        try:
+            checkpoint = (
+                str(self.fpn_five_checkpoint.resolve())
+                if self.fpn_five_checkpoint is not None
+                else ""
+            )
+            runtime = get_fpn_five_runtime(checkpoint)
+            self._apply_viewer_image(
+                runtime.infer_structure(self.base_image),
+                "FPN Five — all five masks overlaid — viewer updated.",
+            )
+        except Exception as exc:
+            self.status = f"FPN Five failed: {exc}"
 
     def _sync_backbone_controls(self) -> None:
         self.exclude_btn.visible = self.mode == "multiple"
@@ -742,6 +765,9 @@ class InferUI:
         if self.fpn_room_btn.hit(pos):
             self._on_fpn_room()
             return
+        if self.fpn_five_btn.hit(pos):
+            self._on_fpn_five()
+            return
         if self.mode_btn.hit(pos):
             self._toggle_mode()
             return
@@ -804,6 +830,7 @@ class InferUI:
             self.unet_btn,
             self.fpn_btn,
             self.fpn_room_btn,
+            self.fpn_five_btn,
             self.mode_btn,
             self.exclude_btn,
             self.infer_btn,
@@ -933,6 +960,12 @@ def main() -> None:
         default=None,
         help="FPN room weights (default: fpn_room_trainer/config.yaml infer.checkpoint)",
     )
+    parser.add_argument(
+        "--fpn-five-checkpoint",
+        type=Path,
+        default=None,
+        help="FPN Five weights (default: fpn_five_trainer/config.yaml infer.checkpoint)",
+    )
     args = parser.parse_args()
 
     pygame.init()
@@ -960,6 +993,7 @@ def main() -> None:
         unet_checkpoint=args.unet_checkpoint,
         fpn_checkpoint=args.fpn_checkpoint,
         fpn_room_checkpoint=args.fpn_room_checkpoint,
+        fpn_five_checkpoint=args.fpn_five_checkpoint,
     )
     ui._sync_backbone_controls()
     ui.run()

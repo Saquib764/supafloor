@@ -37,35 +37,26 @@ Outputs land in `output/image_edit/<stem>/` (`00-canvas.png` … `03-no-furnitur
 
 Set `REPLICATE_API_TOKEN` or `replicate_token` in `config.yaml`.
 
-## FPN mask inference
+## FPN Five mask inference
 
-Fits the input to a 1024×1024 white canvas (`canvas_size`, `margin`), detects the floorplan region of interest, masks out everything outside that region (white fill), then uses the masked canvas as the main input for all downstream tasks. FPN models run at 512, 768, and 1024 px on the masked canvas.
+Fits the input to a 1024×1024 white canvas (`canvas_size`), runs `fpn_five_trainer` at 1024 px on the full canvas to derive the floorplan region (invert background channel), masks out everything outside that region (white fill), then runs the model again at 512, 768, and 1024 px on the masked canvas.
 
 ```bash
 uv run infer-fpn --image ../fpn_trainer/test_image/002.jpeg
 ```
 
 Outputs land in `output/fpn/<stem>/`:
-- `step-000/` — raw model masks (input | output)
-- `step-001/` — cleaned masks after morphological open/close and small-component removal
-
-Each step saves `room_masks.jpg` (input | room | wall) and `structure_masks.jpg` (input | walls | doors+windows).
+- `step-000/masks.jpg` — raw masks at 512 / 768 / 1024 px (input | background | rooms | walls | doors | windows | overlay per row)
+- `step-001/masks.jpg` — same layout after morphological open/close and small-component removal
 
 Right after canvas fit, a floorplan region of interest is computed at 1024 px on the full canvas, then saved at `output/fpn/<stem>/`:
-- `floorplan-region.jpg` — input | polygon overlay | region mask (3×1024 columns)
 - `floorplan-region-mask.jpg` — 1024×1024 region mask
 - `floorplan-region.json` — polygon vertices at 1024 px
 - `input-masked.jpg` — canvas with content outside the region removed (used as main input below)
-- `open-area-mask.jpg` — ROI ∩ combined room components (1024×1024)
-- `open-area-overlay.jpg` — open area mask overlaid on floorplan with opacity
-- `wall-area-mask.jpg` — ROI − combined rooms (1024×1024)
-- `rooms.md` — room counts by source (wall-subtract and FPN resolutions)
+- `rooms.md` — room counts by source (wall-subtract and FPN Five resolutions)
 - `room-mask-overlays.jpg` — per-source component overlays on floorplan and white background
-
-Wall-subtract room detection runs at 1024px using the 768px structure wall mask (scaled to 1024, inverted). Saves:
-- `step-000/wall-input-1024.jpg` — inverted wall mask input
-- `step-000/wall-based-room-mask-final-1024.jpg` — wall input | overlay | masks only (3 columns)
-- `wall-based-room-mask-final.jpg` — same panel at output root
+- `step-000/wall-input-1024.jpg` — inverted wall+openings mask used for wall-subtract (walls from 512∪768, doors/windows from 512)
+- `step-000/wall-subtract-prefilter-1024.jpg` — wall-subtract room components before FPN-512 overlap / min-area filters
 
 ## Config
 
@@ -91,15 +82,13 @@ Wall-subtract room detection runs at 1024px using the 768px structure wall mask 
 | `fit.max_sides` | Maximum polygon sides when fitting a mask |
 | `fit.output_dir` | Directory for fit overlays |
 | `fpn.sizes` | Square side lengths for B/W resize and inference (default 512, 768, 1024) |
-| `fpn.structure_checkpoint` | Path to fpn_trainer weights (walls, doors, windows) |
-| `fpn.room_checkpoint` | Path to fpn_room_trainer weights (room interior) |
+| `fpn.checkpoint` | Path to fpn_five_trainer weights (background / rooms / walls / doors / windows) |
 | `fpn.output_dir` | Base directory for FPN mask panels |
 | `fpn.mask_clean.open_px` | Morphological open radius (px at 768) to drop tiny speckles |
 | `fpn.mask_clean.close_px` | Morphological close radius (px at 768) to fill gaps inside masks |
 | `fpn.mask_clean.min_area_px` | Minimum component area (px² at 768); scaled per resolution |
-| `fpn.floorplan_region.size` | Resolution for OR-combined region detection (default 1024) |
-| `fpn.floorplan_region.close_px` | Close radius to fill holes inside combined mask |
+| `fpn.floorplan_region.size` | Resolution for background-based region detection (default 1024) |
+| `fpn.floorplan_region.close_px` | Close radius to fill holes inside ROI mask |
 | `fpn.floorplan_region.approx_epsilon` | Douglas–Peucker epsilon for boundary polygon |
-| `fpn.room_components.infer_size` | FPN room mask inference size (default 768) |
 | `fpn.room_components.component_size` | Upscaled size for connected components (default 1024) |
 | `fpn.room_components.min_area_px` | Minimum room component area at 768 reference |

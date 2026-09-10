@@ -54,11 +54,7 @@ def run_mask_discovery_loop(
     if source_image is not None:
         image = source_image.convert("RGB")
     else:
-        image = load_viewer_image(
-            image_path,
-            canvas_size=cfg.canvas_size,
-            margin=cfg.margin,
-        )
+        image = load_viewer_image(image_path, canvas_size=cfg.canvas_size)
 
     gray = np.array(image.convert("L"), dtype=np.uint8)
     gray_path = masks_dir / "gray.png"

@@ -78,11 +78,7 @@ def run_fit_loop(
     if source_image is not None:
         image = source_image.convert("RGB")
     else:
-        image = load_viewer_image(
-            image_path,
-            canvas_size=cfg.canvas_size,
-            margin=cfg.margin,
-        )
+        image = load_viewer_image(image_path, canvas_size=cfg.canvas_size)
     sobel_img = sobel_edges(image)
     sobel = np.array(sobel_img, dtype=np.uint8)
     sobel_path = cfg.output / "sobel.png"

@@ -23,14 +23,12 @@ class FpnMaskCleanSettings:
 @dataclass(frozen=True)
 class FpnFloorplanRegionSettings:
     size: int
-    wall_dilate_px: int
     close_px: int
     approx_epsilon: float
 
 
 @dataclass(frozen=True)
 class FpnRoomComponentsSettings:
-    infer_size: int
     component_size: int
     min_area_px: int
 
@@ -38,8 +36,7 @@ class FpnRoomComponentsSettings:
 @dataclass(frozen=True)
 class FpnSettings:
     sizes: tuple[int, ...]
-    structure_checkpoint: Path
-    room_checkpoint: Path
+    checkpoint: Path
     output_dir: Path
     mask_clean: FpnMaskCleanSettings
     floorplan_region: FpnFloorplanRegionSettings
@@ -102,7 +99,6 @@ class ImageEditSettings:
 @dataclass(frozen=True)
 class Config:
     canvas_size: int
-    margin: int
     hf_cache: Path
     sam_config: Path
     replicate_token: str
@@ -155,7 +151,6 @@ def load_config(path: Path | None = None) -> Config:
     replicate_token = os.environ.get("REPLICATE_API_TOKEN") or str(raw.get("replicate_token") or "")
     return Config(
         canvas_size=int(raw["canvas_size"]),
-        margin=int(raw["margin"]),
         hf_cache=_resolve(Path(raw["hf_cache"]), backend_root),
         sam_config=sam_config,
         replicate_token=replicate_token,
@@ -233,12 +228,13 @@ def load_config(path: Path | None = None) -> Config:
         ),
         fpn=FpnSettings(
             sizes=tuple(int(s) for s in fpn.get("sizes", [512, 768, 1024])),
-            structure_checkpoint=_resolve(
-                Path(fpn.get("structure_checkpoint", "fpn_trainer/training_session_2/last.pt")),
-                backend_root,
-            ),
-            room_checkpoint=_resolve(
-                Path(fpn.get("room_checkpoint", "fpn_room_trainer/training_session/last.pt")),
+            checkpoint=_resolve(
+                Path(
+                    fpn.get(
+                        "checkpoint",
+                        "fpn_five_trainer/training_session/last.pt",
+                    )
+                ),
                 backend_root,
             ),
             output_dir=_resolve(
@@ -252,13 +248,13 @@ def load_config(path: Path | None = None) -> Config:
             ),
             floorplan_region=FpnFloorplanRegionSettings(
                 size=int((fpn.get("floorplan_region") or {}).get("size", 1024)),
-                wall_dilate_px=int((fpn.get("floorplan_region") or {}).get("wall_dilate_px", 5)),
                 close_px=int((fpn.get("floorplan_region") or {}).get("close_px", 4)),
                 approx_epsilon=float((fpn.get("floorplan_region") or {}).get("approx_epsilon", 2.0)),
             ),
             room_components=FpnRoomComponentsSettings(
-                infer_size=int((rc := fpn.get("room_components") or {}).get("infer_size", rc.get("size", 768))),
-                component_size=int(rc.get("component_size", 1024)),
+                component_size=int(
+                    (rc := fpn.get("room_components") or {}).get("component_size", 1024)
+                ),
                 min_area_px=int(rc.get("min_area_px", 64)),
             ),
         ),

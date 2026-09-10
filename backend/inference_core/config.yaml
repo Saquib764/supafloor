@@ -1,5 +1,4 @@
 canvas_size: 1024
-margin: 10
 hf_cache: ../hf_cache
 
 sam_config: ../sam_trainer/config.yaml
@@ -56,8 +55,7 @@ output: output
 
 fpn:
   sizes: [512, 768, 1024]
-  structure_checkpoint: fpn_trainer/training_session_2/last.pt
-  room_checkpoint: fpn_room_trainer/training_session/last.pt
+  checkpoint: fpn_five_trainer/training_session/last.pt
   output_dir: output/fpn
   mask_clean:
     open_px: 2
@@ -65,11 +63,9 @@ fpn:
     min_area_px: 64
   floorplan_region:
     size: 1024
-    wall_dilate_px: 5
     close_px: 4
     approx_epsilon: 2.0
   room_components:
-    infer_size: 768
     component_size: 1024
     min_area_px: 64
 
