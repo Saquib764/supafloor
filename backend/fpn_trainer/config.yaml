@@ -42,5 +42,5 @@ train:
   max_grad_norm: 1.0
 
 infer:
-  size: 256
+  size: 768
   checkpoint: training_session_2/last.pt
