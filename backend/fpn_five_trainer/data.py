@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 import torch
 from PIL import Image, ImageOps
-from config import MaskChannels
+from config import AugmentSettings, MaskChannels
 from registry import hub_dataset_row_count, load_hub_dataset, load_hub_rows_at
 
 DEFAULT_MASK_CHANNELS = MaskChannels.from_dict(None)
@@ -25,12 +25,6 @@ _EXTRACTION_CANVAS = 1024
 ROOM_WALL_THICK = 4.0
 BOUNDARY_WALL_THICK = 8.0
 _GEOM_TOL = 0.5
-_SCALE_MIN = 0.5
-_SCALE_MAX = 2.0
-_OPACITY_MIN = 0.4
-_OPACITY_MAX = 1.0
-
-
 def extraction_scale(input_size: int) -> float:
     return input_size / _EXTRACTION_CANVAS
 
@@ -104,9 +98,10 @@ def augment_sample(
     masks: np.ndarray,
     *,
     rng: random.Random,
+    augment: AugmentSettings,
 ) -> tuple[Image.Image, np.ndarray]:
-    scale = rng.uniform(_SCALE_MIN, _SCALE_MAX)
-    opacity = rng.uniform(_OPACITY_MIN, _OPACITY_MAX)
+    scale = rng.uniform(augment.scale_min, augment.scale_max)
+    opacity = rng.uniform(augment.opacity_min, augment.opacity_max)
     size = image.size[0]
     if image.size != (size, size):
         raise ValueError(f"expected square image, got {image.size}")
@@ -713,6 +708,7 @@ class FloorplanDataset(IterableDataset):
         input_sizes: tuple[int, ...],
         batch_size: int,
         num_rows: int,
+        augment: AugmentSettings,
         seed: int | None = None,
     ) -> None:
         self._dataset = dataset
@@ -720,6 +716,7 @@ class FloorplanDataset(IterableDataset):
         self._input_sizes = input_sizes
         self._batch_size = max(1, batch_size)
         self._num_rows = num_rows
+        self._augment = augment
         self._seed = seed
         self.epoch = 0
 
@@ -748,7 +745,9 @@ class FloorplanDataset(IterableDataset):
                     )
                     row_target_size = current_size
                 image = prepare_image(row[key], current_size)
-                image, targets = augment_sample(image, row_targets, rng=rng)
+                image, targets = augment_sample(
+                    image, row_targets, rng=rng, augment=self._augment
+                )
                 yields_in_batch += 1
                 yield image_to_tensor(image), torch.from_numpy(targets)
 

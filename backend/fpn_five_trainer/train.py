@@ -88,7 +88,9 @@ def _viz_row(
         extraction_scale(size),
     )
     targets = build_floorplan_targets(extraction, size, cfg.mask_channels)
-    image, targets = augment_sample(image, targets, rng=random.Random(seed))
+    image, targets = augment_sample(
+        image, targets, rng=random.Random(seed), augment=cfg.data.augment
+    )
     batch = image_to_tensor(image).unsqueeze(0).to(device)
     model.eval()
     with torch.no_grad():
@@ -201,6 +203,7 @@ def run(cfg: Config) -> None:
         input_sizes=cfg.input_sizes,
         batch_size=cfg.train.batch_size,
         num_rows=train_count,
+        augment=cfg.data.augment,
         seed=cfg.data.seed,
     )
     loader = DataLoader(

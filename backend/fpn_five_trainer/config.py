@@ -86,12 +86,21 @@ _DEFAULT_MASK_CHANNELS = {
 
 
 @dataclass(frozen=True)
+class AugmentSettings:
+    scale_min: float
+    scale_max: float
+    opacity_min: float
+    opacity_max: float
+
+
+@dataclass(frozen=True)
 class DataSettings:
     dataset: str
     test_fraction: float
     revision: str | None = None
     seed: int | None = None
     num_workers: int = 0
+    augment: AugmentSettings = AugmentSettings(0.5, 2.0, 0.4, 1.0)
 
 
 @dataclass(frozen=True)
@@ -204,6 +213,27 @@ def _load_l5_transformer(raw: dict[str, Any] | None) -> L5TransformerSettings | 
     )
 
 
+def _load_augment_settings(raw: dict[str, Any] | None) -> AugmentSettings:
+    aug = raw or {}
+    scale_min = float(aug.get("scale_min", 0.5))
+    scale_max = float(aug.get("scale_max", 2.0))
+    opacity_min = float(aug.get("opacity_min", 0.4))
+    opacity_max = float(aug.get("opacity_max", 1.0))
+    if scale_min <= 0 or scale_max <= 0 or scale_min > scale_max:
+        raise ValueError(f"data.augment scale range invalid: [{scale_min}, {scale_max}]")
+    for name, value in (("opacity_min", opacity_min), ("opacity_max", opacity_max)):
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(f"data.augment.{name} ({value}) must be between 0 and 1")
+    if opacity_min > opacity_max:
+        raise ValueError(f"data.augment opacity range invalid: [{opacity_min}, {opacity_max}]")
+    return AugmentSettings(
+        scale_min=scale_min,
+        scale_max=scale_max,
+        opacity_min=opacity_min,
+        opacity_max=opacity_max,
+    )
+
+
 def _parse_input_sizes(raw: Any) -> tuple[int, ...]:
     if isinstance(raw, list):
         sizes = tuple(int(size) for size in raw)
@@ -281,6 +311,7 @@ def load_config(path: Path | None = None) -> Config:
             revision=str(data["revision"]).strip() if data.get("revision") else None,
             seed=int(data["seed"]) if data.get("seed") is not None else None,
             num_workers=int(data.get("num_workers", 0)),
+            augment=_load_augment_settings(data.get("augment")),
         ),
         net=net_settings,
         loss=LossSettings(

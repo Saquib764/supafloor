@@ -208,7 +208,7 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     )
     gt_targets = build_floorplan_targets(extraction, size, cfg.mask_channels)
     rng = random.Random(cfg.data.seed)
-    image, gt_targets = augment_sample(image, gt_targets, rng=rng)
+    image, gt_targets = augment_sample(image, gt_targets, rng=rng, augment=cfg.data.augment)
     mask_labels = cfg.mask_channels.labels()
 
     device = training_device()

@@ -13,6 +13,11 @@ data:
   seed: 42
   test_fraction: 0.1
   num_workers: 0
+  augment:
+    scale_min: 0.5
+    scale_max: 2.0
+    opacity_min: 0.4
+    opacity_max: 1.0
 
 net:
   stem_channels: 16
