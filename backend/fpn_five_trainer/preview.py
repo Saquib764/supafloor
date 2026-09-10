@@ -198,7 +198,7 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
         revision=cfg.data.revision,
         cache_dir=cache_dir,
     )
-    row = train_rows[50]
+    row = train_rows[90]
     stem = str(row["stem"])
     size = max(cfg.input_sizes)
     image = prepare_image(row["image"], size)
@@ -208,7 +208,13 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     )
     gt_targets = build_floorplan_targets(extraction, size, cfg.mask_channels)
     rng = random.Random(cfg.data.seed)
-    image, gt_targets = augment_sample(image, gt_targets, rng=rng, augment=cfg.data.augment)
+    image, gt_targets = augment_sample(
+        image,
+        gt_targets,
+        rng=rng,
+        augment=cfg.data.augment,
+        background_channel=cfg.mask_channels.background,
+    )
     mask_labels = cfg.mask_channels.labels()
 
     device = training_device()
@@ -216,8 +222,12 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     with torch.no_grad():
         logits = model(image_to_tensor(image).unsqueeze(0).to(device)).mask_logits
     pred = (torch.sigmoid(logits[0]) > 0.5).cpu().numpy()
-    gt_row = columns_input_masks(image, gt_targets, mask_labels=mask_labels)
-    pred_row = columns_input_masks(image, pred, mask_labels=mask_labels)
+    gt_row = columns_input_masks(
+        image, gt_targets, mask_labels=mask_labels, background_channel=cfg.mask_channels.background
+    )
+    pred_row = columns_input_masks(
+        image, pred, mask_labels=mask_labels, background_channel=cfg.mask_channels.background
+    )
     panel = stack_rows([gt_row, pred_row])
 
     if _PREVIEW_DIR.exists():

@@ -54,33 +54,42 @@ def scale_crop_image(
     scale: float,
     *,
     resample: Image.Resampling = Image.Resampling.LANCZOS,
+    canvas_fill: int = 0,
 ) -> Image.Image:
-    """Resize by scale, then center-crop or center-paste onto a zero canvas of `size`."""
+    """Resize by scale, then center-crop or center-paste onto a square canvas of `size`."""
     scaled_side = _scaled_side(size, scale)
     scaled = image.resize((scaled_side, scaled_side), resample)
     if scaled_side >= size:
         left = (scaled_side - size) // 2
         top = (scaled_side - size) // 2
         return scaled.crop((left, top, left + size, top + size))
-    canvas = Image.new(image.mode, (size, size), 0)
+    canvas = Image.new(image.mode, (size, size), canvas_fill)
     paste_x = (size - scaled_side) // 2
     paste_y = (size - scaled_side) // 2
     canvas.paste(scaled, (paste_x, paste_y))
     return canvas
 
 
-def scale_crop_masks(masks: np.ndarray, size: int, scale: float) -> np.ndarray:
+def scale_crop_masks(
+    masks: np.ndarray,
+    size: int,
+    scale: float,
+    *,
+    background_channel: int,
+) -> np.ndarray:
     """Same center scale/crop as `scale_crop_image` for (C, H, W) float masks."""
     if masks.ndim != 3:
         raise ValueError(f"masks must be (C, H, W), got {masks.shape}")
     channels = []
-    for channel in masks:
+    for channel_index, channel in enumerate(masks):
         channel_image = Image.fromarray((np.clip(channel, 0.0, 1.0) * 255.0).astype(np.uint8), mode="L")
+        canvas_fill = 255 if channel_index == background_channel else 0
         cropped = scale_crop_image(
             channel_image,
             size,
             scale,
             resample=Image.Resampling.NEAREST,
+            canvas_fill=canvas_fill,
         )
         channels.append(np.asarray(cropped, dtype=np.float32) / 255.0)
     return np.stack(channels, axis=0)
@@ -99,6 +108,7 @@ def augment_sample(
     *,
     rng: random.Random,
     augment: AugmentSettings,
+    background_channel: int,
 ) -> tuple[Image.Image, np.ndarray]:
     scale = rng.uniform(augment.scale_min, augment.scale_max)
     opacity = rng.uniform(augment.opacity_min, augment.opacity_max)
@@ -106,7 +116,9 @@ def augment_sample(
     if image.size != (size, size):
         raise ValueError(f"expected square image, got {image.size}")
     scaled_image = scale_crop_image(image, size, scale)
-    scaled_masks = scale_crop_masks(masks, size, scale)
+    scaled_masks = scale_crop_masks(
+        masks, size, scale, background_channel=background_channel
+    )
     return apply_opacity(scaled_image, opacity), scaled_masks
 
 
@@ -746,7 +758,11 @@ class FloorplanDataset(IterableDataset):
                     row_target_size = current_size
                 image = prepare_image(row[key], current_size)
                 image, targets = augment_sample(
-                    image, row_targets, rng=rng, augment=self._augment
+                    image,
+                    row_targets,
+                    rng=rng,
+                    augment=self._augment,
+                    background_channel=self._mask_channels.background,
                 )
                 yields_in_batch += 1
                 yield image_to_tensor(image), torch.from_numpy(targets)

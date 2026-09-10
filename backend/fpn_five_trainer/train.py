@@ -89,7 +89,11 @@ def _viz_row(
     )
     targets = build_floorplan_targets(extraction, size, cfg.mask_channels)
     image, targets = augment_sample(
-        image, targets, rng=random.Random(seed), augment=cfg.data.augment
+        image,
+        targets,
+        rng=random.Random(seed),
+        augment=cfg.data.augment,
+        background_channel=cfg.mask_channels.background,
     )
     batch = image_to_tensor(image).unsqueeze(0).to(device)
     model.eval()
@@ -98,8 +102,12 @@ def _viz_row(
     pred = (torch.sigmoid(logits[0]) > 0.5).cpu().numpy()
     model.train()
     labels = cfg.mask_channels.labels()
-    pred_row = columns_input_masks(image, pred, mask_labels=labels)
-    gt_row = columns_input_masks(image, targets, mask_labels=labels)
+    pred_row = columns_input_masks(
+        image, pred, mask_labels=labels, background_channel=cfg.mask_channels.background
+    )
+    gt_row = columns_input_masks(
+        image, targets, mask_labels=labels, background_channel=cfg.mask_channels.background
+    )
     return stack_rows([pred_row, gt_row])
 
 

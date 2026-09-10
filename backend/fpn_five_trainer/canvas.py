@@ -22,12 +22,21 @@ def to_gray_image(image: Image.Image) -> Image.Image:
     return image.convert("L")
 
 
-def mask_channel_to_gray(masks: np.ndarray, channel: int) -> Image.Image:
+def mask_channel_to_gray(
+    masks: np.ndarray,
+    channel: int,
+    *,
+    background_channel: int | None = None,
+) -> Image.Image:
     """One mask channel as grayscale (white = active)."""
     if masks.ndim != 3:
         raise ValueError(f"masks must be (C, H, W), got {masks.shape}")
     if channel < 0 or channel >= masks.shape[0]:
         raise ValueError(f"channel {channel} out of range for {masks.shape[0]} channels")
+    if channel == background_channel:
+        gray = np.full(masks.shape[-2:], 255, dtype=np.uint8)
+        gray[masks[channel] <= 0.5] = 0
+        return Image.fromarray(gray, mode="L")
     active = (masks[channel] > 0.5).astype(np.uint8) * 255
     return Image.fromarray(active, mode="L")
 
@@ -72,12 +81,18 @@ def columns_input_masks(
     masks: np.ndarray,
     *,
     mask_labels: tuple[str, ...] | None = None,
+    background_channel: int | None = None,
 ) -> Image.Image:
     """Input plus one grayscale column per mask channel."""
     panels = [with_label(to_gray_image(image), "input")]
     for channel in range(masks.shape[0]):
         name = mask_labels[channel] if mask_labels and channel < len(mask_labels) else f"ch{channel}"
-        panels.append(with_label(mask_channel_to_gray(masks, channel), name))
+        panels.append(
+            with_label(
+                mask_channel_to_gray(masks, channel, background_channel=background_channel),
+                name,
+            )
+        )
     return merge_panels(panels)
 
 
