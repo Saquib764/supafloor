@@ -1,0 +1,54 @@
+hf_cache: ../hf_cache
+input_size: [256]
+
+mask_channels:
+  background: 0
+  rooms: 1
+  walls: 2
+  doors: 3
+  windows: 4
+
+data:
+  dataset: floorplan-to-json
+  seed: 42
+  test_fraction: 0.1
+  num_workers: 0
+
+net:
+  stem_channels: 16
+  backbone_channels: [32, 48, 64, 64]
+  depth: 1
+  fpn_width: 64
+  p1_width: 32
+  out_channels: 5
+  l5_transformer:
+    depth: 2
+    dim: 48
+    heads: 4
+    mlp_ratio: 4.0
+    max_l5_grid_side: 64
+
+loss:
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+  channel_weights: [1.20, 1.0, 1.0, 1.20, 1.20]
+  extra_opening_penalty: 2.0
+
+train:
+  session_dir: training_session
+  epochs: 10
+  batch_size: 4
+  grad_accum: 1
+  learning_rate: 1.0e-3
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  bf16: true
+  resume: true
+  save_steps: 1000
+  viz_steps: 100
+  viz_samples: 10
+  max_grad_norm: 1.0
+
+infer:
+  size: 768
+  checkpoint: training_session/last.pt

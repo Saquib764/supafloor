@@ -5,7 +5,7 @@ Left panel lists test/ images (sorted by name); first image loads by default.
 Toggle backbone between Florence (room polygons) and SAM 2.1 (segmentation masks).
 Single mode infers immediately on each click. Multiple mode places points first,
 then runs one inference when Infer is clicked. Multiple mode supports optional
-exclusion points (Florence prompt + SAM negative points). UNet/VAE/FPN buttons apply only in Florence mode.
+exclusion points (Florence prompt + SAM negative points). UNet/FPN/FPN Room buttons apply in Florence mode.
 
 Usage (from backend/florence_trainer):
 
@@ -48,8 +48,8 @@ from fit_test_canvas import fit_to_canvas
 
 from sam_infer import get_sam_runtime
 from fpn_infer import get_fpn_runtime
+from fpn_room_infer import get_fpn_room_runtime
 from unet_infer import get_unet_runtime
-from vae_infer import get_vae_runtime
 
 Backbone = Literal["florence", "sam"]
 
@@ -253,8 +253,8 @@ class InferUI:
         *,
         sam_config: Path,
         unet_checkpoint: Path,
-        vae_checkpoint: Path,
         fpn_checkpoint: Path | None,
+        fpn_room_checkpoint: Path | None,
     ) -> None:
         if not test_images:
             raise ValueError(f"No images found in {TEST_DIR}")
@@ -264,8 +264,8 @@ class InferUI:
         self.sam_config = sam_config
         self.sam_runtime = None
         self.unet_checkpoint = unet_checkpoint
-        self.vae_checkpoint = vae_checkpoint
         self.fpn_checkpoint = fpn_checkpoint
+        self.fpn_room_checkpoint = fpn_room_checkpoint
         self.test_images = test_images
         self.selected_index = 0
         self.list_scroll = 0
@@ -314,7 +314,7 @@ class InferUI:
         y += 34
         self.fpn_btn = Button(pygame.Rect(x, y, btn_w, 28), "FPN")
         y += 34
-        self.vae_btn = Button(pygame.Rect(x, y, btn_w, 28), "VAE")
+        self.fpn_room_btn = Button(pygame.Rect(x, y, btn_w, 28), "FPN Room")
         y += 34
         self.mode_btn = Button(pygame.Rect(x, y, btn_w, 28), "Mode: single")
         y += 34
@@ -354,7 +354,7 @@ class InferUI:
         if self.backbone == "florence":
             return load_viewer_image(path, self.cfg)
         runtime = self._ensure_sam_runtime()
-        return runtime.viewer_image(path)
+        return runtime.load_viewer_image(path, canvas_size=runtime.cfg.canvas_size)
 
     def _ensure_sam_runtime(self):
         if self.sam_runtime is None:
@@ -441,7 +441,7 @@ class InferUI:
     def _apply_viewer_image(self, output: Image.Image, status: str) -> None:
         if self.backbone == "sam":
             runtime = self._ensure_sam_runtime()
-            self.base_image = runtime.fit_output(output)
+            self.base_image = runtime.fit_to_canvas(output, size=runtime.cfg.canvas_size)
         else:
             self.base_image = prepare_image(output, self.cfg.image_size)
         self.rooms.clear()
@@ -479,15 +479,23 @@ class InferUI:
         except Exception as exc:
             self.status = f"FPN failed: {exc}"
 
-    def _on_vae(self) -> None:
-        self.status = "Running VAE..."
+    def _on_fpn_room(self) -> None:
+        self.status = "Running FPN Room..."
         self._draw()
         pygame.display.flip()
         try:
-            runtime = get_vae_runtime(str(self.vae_checkpoint.resolve()))
-            self._apply_viewer_image(runtime.infer(self.base_image), "VAE pass complete — viewer image updated.")
+            checkpoint = (
+                str(self.fpn_room_checkpoint.resolve())
+                if self.fpn_room_checkpoint is not None
+                else ""
+            )
+            runtime = get_fpn_room_runtime(checkpoint)
+            self._apply_viewer_image(
+                runtime.infer_rooms(self.base_image),
+                "FPN room mask detected — viewer updated.",
+            )
         except Exception as exc:
-            self.status = f"VAE failed: {exc}"
+            self.status = f"FPN Room failed: {exc}"
 
     def _sync_backbone_controls(self) -> None:
         self.exclude_btn.visible = self.mode == "multiple"
@@ -731,8 +739,8 @@ class InferUI:
         if self.fpn_btn.hit(pos):
             self._on_fpn()
             return
-        if self.vae_btn.hit(pos):
-            self._on_vae()
+        if self.fpn_room_btn.hit(pos):
+            self._on_fpn_room()
             return
         if self.mode_btn.hit(pos):
             self._toggle_mode()
@@ -795,7 +803,7 @@ class InferUI:
             self.backbone_btn,
             self.unet_btn,
             self.fpn_btn,
-            self.vae_btn,
+            self.fpn_room_btn,
             self.mode_btn,
             self.exclude_btn,
             self.infer_btn,
@@ -893,10 +901,8 @@ class InferUI:
 
 _SAM_ROOT = _ROOT.parent / "sam_trainer"
 _UNET_ROOT = _ROOT.parent / "unet_trainer"
-_VAE_ROOT = _ROOT.parent / "vae_trainer"
 _DEFAULT_SAM_CONFIG = _SAM_ROOT / "config.yaml"
 _DEFAULT_UNET_CHECKPOINT = _UNET_ROOT / "training_session" / "last.pt"
-_DEFAULT_VAE_CHECKPOINT = _VAE_ROOT / "training_session" / "last.pt"
 
 
 def main() -> None:
@@ -922,10 +928,10 @@ def main() -> None:
         help="FPN weights (default: fpn_trainer/config.yaml infer.checkpoint)",
     )
     parser.add_argument(
-        "--vae-checkpoint",
+        "--fpn-room-checkpoint",
         type=Path,
-        default=_DEFAULT_VAE_CHECKPOINT,
-        help="VAE weights (default: vae_trainer/training_session/last.pt)",
+        default=None,
+        help="FPN room weights (default: fpn_room_trainer/config.yaml infer.checkpoint)",
     )
     args = parser.parse_args()
 
@@ -952,8 +958,8 @@ def main() -> None:
         test_images,
         sam_config=args.sam_config,
         unet_checkpoint=args.unet_checkpoint,
-        vae_checkpoint=args.vae_checkpoint,
         fpn_checkpoint=args.fpn_checkpoint,
+        fpn_room_checkpoint=args.fpn_room_checkpoint,
     )
     ui._sync_backbone_controls()
     ui.run()

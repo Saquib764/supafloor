@@ -97,7 +97,6 @@ class InferSettings:
 class Config:
     model_id: str
     canvas_size: int
-    margin: int
     hf_cache: Path
     data: DataSettings
     finetune: FinetuneSettings
@@ -177,7 +176,6 @@ def load_config(path: Path | None = None) -> Config:
     return Config(
         model_id=str(raw["model_id"]).strip(),
         canvas_size=int(raw["canvas_size"]),
-        margin=int(raw["margin"]),
         hf_cache=hf_cache,
         data=DataSettings(
             dataset=dataset,

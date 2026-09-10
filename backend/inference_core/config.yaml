@@ -54,6 +54,25 @@ mask_smooth:
 
 output: output
 
+fpn:
+  sizes: [512, 768, 1024]
+  structure_checkpoint: fpn_trainer/training_session_2/last.pt
+  room_checkpoint: fpn_room_trainer/training_session/last.pt
+  output_dir: output/fpn
+  mask_clean:
+    open_px: 2
+    close_px: 2
+    min_area_px: 64
+  floorplan_region:
+    size: 1024
+    wall_dilate_px: 5
+    close_px: 4
+    approx_epsilon: 2.0
+  room_components:
+    infer_size: 768
+    component_size: 1024
+    min_area_px: 64
+
 fit:
   min_sides: 4
   max_sides: 20

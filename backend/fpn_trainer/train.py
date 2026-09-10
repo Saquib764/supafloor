@@ -27,7 +27,7 @@ from data import (
     scale_extraction,
 )
 from device import training_device
-from net.loss import multi_mask_loss
+from net.loss import structure_mask_loss
 from net.model import FloorplanFPN
 from preview import print_model
 
@@ -255,14 +255,17 @@ def run(cfg: Config) -> None:
         for batch in loader:
             images = batch["images"].to(device, non_blocking=True)
             masks = batch["masks"].to(device, non_blocking=True)
+            opening_masks = torch.clamp(masks[:, 1] + masks[:, 2], max=1.0)
             with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
                 logits = model(images).mask_logits
-                loss = multi_mask_loss(
+                loss = structure_mask_loss(
                     logits,
                     masks,
+                    opening_masks,
                     focal_alpha=cfg.loss.focal_alpha,
                     focal_gamma=cfg.loss.focal_gamma,
                     channel_weights=cfg.loss.channel_weights,
+                    extra_opening_penalty=cfg.loss.extra_opening_penalty,
                 )
             (loss / accum).backward()
             micro += 1

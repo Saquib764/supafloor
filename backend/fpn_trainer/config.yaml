@@ -1,5 +1,5 @@
 hf_cache: ../hf_cache
-input_size: [256, 512, 768, 1024]
+input_size: [512, 768]
 
 data:
   dataset: floorplan-to-json
@@ -24,13 +24,14 @@ net:
 loss:
   focal_alpha: 0.25
   focal_gamma: 2.0
-  channel_weights: [1.0, 1.0, 1.0]
+  channel_weights: [1.0, 1.5, 1.5]
+  extra_opening_penalty: 2.0
 
 train:
   session_dir: training_session_2
   epochs: 30
-  batch_size: 2
-  grad_accum: 8
+  batch_size: 4
+  grad_accum: 2
   learning_rate: 1.0e-4
   warmup_ratio: 0.03
   weight_decay: 0.01

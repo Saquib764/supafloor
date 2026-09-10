@@ -112,7 +112,7 @@ uv run python infer_progressive.py
 
 Set `AUTOMATIC = True` in that file to run the full grid without Enter prompts between attempts.
 
-**Click-to-infer UI** — lists `test/` images on the left (sorted by name, first loaded by default); single mode infers on each click; multiple mode places points (and optional exclusions) then runs one inference when Infer is clicked. **UNet** and **VAE** run the visible image through the latest checkpoint from each trainer and replace the viewer image (repeat to chain); Florence always uses the current viewer image:
+**Click-to-infer UI** — lists `test/` images on the left (sorted by name, first loaded by default); single mode infers on each click; multiple mode places points (and optional exclusions) then runs one inference when Infer is clicked. **UNet**, **FPN**, and **FPN Room** run the visible image through the latest checkpoint from each trainer and replace the viewer image (repeat to chain); Florence always uses the current viewer image:
 
 ```bash
 uv sync --group dev

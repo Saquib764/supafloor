@@ -50,3 +50,21 @@ def side_by_side_mask(image: Image.Image, masks: np.ndarray) -> Image.Image:
 def side_by_side_mask_channel(image: Image.Image, masks: np.ndarray, channel: int) -> Image.Image:
     """Floor plan and one mask channel, side by side."""
     return merge_panels([image.convert("RGB"), mask_channel_to_rgb(masks, channel)])
+
+
+def binary_mask_to_rgb(mask: np.ndarray, *, channel: int) -> Image.Image:
+    """(H, W) float/bool → RGB PIL with one channel lit."""
+    if mask.ndim != 2:
+        raise ValueError(f"mask must be (H, W), got {mask.shape}")
+    if channel < 0 or channel >= 3:
+        raise ValueError(f"channel {channel} must be 0, 1, or 2")
+    active = mask > 0.5
+    height, width = active.shape
+    rgb = np.zeros((height, width, 3), dtype=np.uint8)
+    rgb[..., channel] = (active * 255).astype(np.uint8)
+    return Image.fromarray(rgb, mode="RGB")
+
+
+def side_by_side_binary_mask(image: Image.Image, mask: np.ndarray, *, channel: int) -> Image.Image:
+    """Floor plan and one binary mask, side by side."""
+    return merge_panels([image.convert("RGB"), binary_mask_to_rgb(mask, channel=channel)])

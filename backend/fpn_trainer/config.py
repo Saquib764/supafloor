@@ -67,6 +67,7 @@ class LossSettings:
     focal_alpha: float
     focal_gamma: float
     channel_weights: tuple[float, ...]
+    extra_opening_penalty: float
 
 
 @dataclass(frozen=True)
@@ -230,6 +231,7 @@ def load_config(path: Path | None = None) -> Config:
             focal_alpha=float(loss["focal_alpha"]),
             focal_gamma=float(loss["focal_gamma"]),
             channel_weights=channel_weights,
+            extra_opening_penalty=float(loss.get("extra_opening_penalty", 0.0)),
         ),
         train=TrainSettings(
             session_dir=_resolve(Path(train["session_dir"]), base),

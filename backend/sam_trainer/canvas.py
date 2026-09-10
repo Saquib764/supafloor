@@ -8,21 +8,22 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 
-def fit_to_canvas(image: Image.Image, *, size: int, margin: int) -> Image.Image:
-    image = image.convert("L")
-    fit_size = size - 2 * margin
+def fit_to_canvas(image: Image.Image, *, size: int) -> Image.Image:
+    """Scale to fit the canvas (aspect preserved), center on white square."""
+    if image.mode != "RGB":
+        image = image.convert("RGB")
     orig_w, orig_h = image.size
-    scale = fit_size / max(orig_w, orig_h)
+    scale = size / max(orig_w, orig_h)
     new_w = max(1, round(orig_w * scale))
     new_h = max(1, round(orig_h * scale))
     resized = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-    canvas = Image.new("L", (size, size), 255)
+    canvas = Image.new("RGB", (size, size), "white")
     canvas.paste(resized, ((size - new_w) // 2, (size - new_h) // 2))
     return canvas
 
 
-def load_viewer_image(path: Path, *, canvas_size: int, margin: int) -> Image.Image:
-    return fit_to_canvas(Image.open(path), size=canvas_size, margin=margin).convert("RGB")
+def load_viewer_image(path: Path, *, canvas_size: int) -> Image.Image:
+    return fit_to_canvas(Image.open(path), size=canvas_size)
 
 
 def _draw_points(

@@ -16,16 +16,17 @@ uv run python dev/plot_locs.py
 # Pre-clean every image in test/ → dev/output/pre-clean/
 uv run python dev/pre_clean_test.py
 
-# Interactive infer UI (Florence + UNet/VAE pre-pass)
+# Interactive infer UI (Florence + UNet/FPN pre-pass)
 uv sync --group dev
 uv run python dev/infer_ui.py --adapter training_session/checkpoint-12000
 ```
 
 | Script | Purpose |
 |---|---|
-| `infer_ui.py` | Pygame UI — `test/` image list (left), viewer (center), controls (right); loads first image by default; **UNet** / **VAE** chain on viewer image |
+| `infer_ui.py` | Pygame UI — `test/` image list (left), viewer (center), controls (right); loads first image by default; **UNet** / **FPN** / **FPN Room** on viewer image |
 | `unet_infer.py` | Helper loaded by `infer_ui.py` — loads `unet_trainer/training_session/last.pt` by default |
-| `vae_infer.py` | Helper loaded by `infer_ui.py` — loads `vae_trainer/training_session/last.pt` by default |
+| `fpn_infer.py` | Helper loaded by `infer_ui.py` — loads `fpn_trainer` structure checkpoint by default |
+| `fpn_room_infer.py` | Helper loaded by `infer_ui.py` — loads `fpn_room_trainer` room mask checkpoint by default |
 | `fit_test_canvas.py` | Scale + center each `test/` image onto a 1024×1024 white square; overwrites sources |
 | `plot_locs.py` | Draw hardcoded Florence loc pairs to `dev/output/locs.png` (points, or polylines when `AS_LINE` is true) |
 | `pre_clean_test.py` | Run pre-clean on each `test/` image; writes PNGs to `dev/output/pre-clean/` |

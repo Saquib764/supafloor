@@ -136,20 +136,6 @@ class SamRuntime:
         finally:
             self._proc.wait(timeout=30)
 
-    def viewer_image(self, path: Path) -> Image.Image:
-        return self.load_viewer_image(
-            path,
-            canvas_size=self.cfg.canvas_size,
-            margin=self.cfg.margin,
-        )
-
-    def fit_output(self, image: Image.Image) -> Image.Image:
-        return self.fit_to_canvas(
-            image,
-            size=self.cfg.canvas_size,
-            margin=self.cfg.margin,
-        ).convert("RGB")
-
     def overlay(
         self,
         image: Image.Image,

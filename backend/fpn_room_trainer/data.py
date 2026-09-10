@@ -20,6 +20,7 @@ HUB_COLUMNS = ("stem", "image", "simple_image", "extraction")
 _EXTRACTION_CANVAS = 1024
 ROOM_WALL_THICK = 4.0
 BOUNDARY_WALL_THICK = 8.0
+_GEOM_TOL = 0.5
 
 
 def extraction_scale(input_size: int) -> float:
@@ -75,6 +76,11 @@ def scale_extraction(extraction: dict[str, Any], scale: float) -> dict[str, Any]
         for pillar in scaled.get("pillars") or []
     ]
     return scaled
+
+
+def _openings(extraction: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    openings = extraction.get("openings") or {}
+    return list(openings.get("doors") or []), list(openings.get("windows") or [])
 
 
 def _select_hub_columns(dataset: Any) -> Any:
@@ -228,6 +234,94 @@ def _walls_uncut(extraction: dict[str, Any]) -> list[dict[str, Any]]:
     return walls
 
 
+def _project_t(
+    point: tuple[float, float],
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    len2 = dx * dx + dy * dy
+    if len2 < 1e-12:
+        return 0.0
+    return ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / len2
+
+
+def _dist_to_segment(
+    point: tuple[float, float],
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    t = max(0.0, min(1.0, _project_t(point, start, end)))
+    q = (
+        start[0] + (end[0] - start[0]) * t,
+        start[1] + (end[1] - start[1]) * t,
+    )
+    dx = point[0] - q[0]
+    dy = point[1] - q[1]
+    return math.hypot(dx, dy)
+
+
+def _opening_wall_span(
+    opening_start: tuple[float, float],
+    opening_end: tuple[float, float],
+    wall_start: tuple[float, float],
+    wall_end: tuple[float, float],
+) -> float | None:
+    if _dist_to_segment(opening_start, wall_start, wall_end) > _GEOM_TOL:
+        return None
+    if _dist_to_segment(opening_end, wall_start, wall_end) > _GEOM_TOL:
+        return None
+    t0 = _project_t(opening_start, wall_start, wall_end)
+    t1 = _project_t(opening_end, wall_start, wall_end)
+    lo, hi = sorted((t0, t1))
+    if hi < -0.02 or lo > 1.02:
+        return None
+    return max(0.0, hi - lo)
+
+
+def _wall_endpoint(wall: dict[str, Any], key: str) -> tuple[float, float] | None:
+    point = wall.get(key) or {}
+    try:
+        return (float(point["x"]), float(point["y"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _opening_wall_thickness(
+    opening_start: tuple[float, float],
+    opening_end: tuple[float, float],
+    walls: list[dict[str, Any]],
+    *,
+    room_wall_thick: float,
+    boundary_wall_thick: float,
+) -> float:
+    best_span = 0.0
+    thickness = room_wall_thick
+    for wall in walls:
+        wall_start = _wall_endpoint(wall, "start")
+        wall_end = _wall_endpoint(wall, "end")
+        if wall_start is None or wall_end is None:
+            continue
+        span = _opening_wall_span(opening_start, opening_end, wall_start, wall_end)
+        if span is None or span <= best_span:
+            continue
+        best_span = span
+        thickness = boundary_wall_thick if wall.get("is_exterior") else room_wall_thick
+    return thickness
+
+
+def _draw_wall_strip(
+    draw: ImageDraw.ImageDraw,
+    start: tuple[float, float],
+    end: tuple[float, float],
+    thickness: float,
+) -> None:
+    strip = _wall_strip_polygon(start, end, thickness)
+    if strip:
+        draw.polygon(strip, fill=1)
+
+
 def _wall_thickness_by_edge(
     walls: list[dict[str, Any]],
     *,
@@ -283,6 +377,47 @@ def _wall_thicknesses(input_size: int) -> tuple[float, float]:
     return ROOM_WALL_THICK * scale, BOUNDARY_WALL_THICK * scale
 
 
+def rasterize_opening_mask(
+    size: int,
+    segments: list[dict[str, Any]],
+    walls: list[dict[str, Any]],
+    *,
+    room_wall_thick: float,
+    boundary_wall_thick: float,
+) -> np.ndarray:
+    """Door/window segments as wall strips on their host wall edge."""
+    mask = Image.new("L", (size, size), 0)
+    if not segments:
+        return np.zeros((size, size), dtype=np.float32)
+    draw = ImageDraw.Draw(mask)
+    for segment in segments:
+        start = (float(segment["start"]["x"]), float(segment["start"]["y"]))
+        end = (float(segment["end"]["x"]), float(segment["end"]["y"]))
+        thickness = _opening_wall_thickness(
+            start,
+            end,
+            walls,
+            room_wall_thick=room_wall_thick,
+            boundary_wall_thick=boundary_wall_thick,
+        )
+        _draw_wall_strip(draw, start, end, thickness)
+    return np.asarray(mask, dtype=np.float32)
+
+
+def rasterize_openings_mask(extraction: dict[str, Any], size: int) -> np.ndarray:
+    """Combined door and window mask (same render settings as fpn_trainer)."""
+    walls = _walls_uncut(extraction)
+    doors, windows = _openings(extraction)
+    room_wall_thick, boundary_wall_thick = _wall_thicknesses(size)
+    return rasterize_opening_mask(
+        size,
+        doors + windows,
+        walls,
+        room_wall_thick=room_wall_thick,
+        boundary_wall_thick=boundary_wall_thick,
+    )
+
+
 def rasterize_all_rooms_mask(extraction: dict[str, Any], size: int) -> np.ndarray:
     """All room interiors combined, with wall strips and pillars carved out."""
     rooms = list(extraction.get("rooms") or [])
@@ -331,6 +466,11 @@ def build_floorplan_targets(extraction: dict[str, Any], input_size: int) -> np.n
     return np.stack([rasterize_all_rooms_mask(extraction, input_size)], axis=0)
 
 
+def build_opening_mask(extraction: dict[str, Any], input_size: int) -> np.ndarray:
+    """Combined door/window mask (H, W)."""
+    return rasterize_openings_mask(extraction, input_size)
+
+
 class FloorplanDataset(IterableDataset):
     def __init__(
         self,
@@ -351,7 +491,7 @@ class FloorplanDataset(IterableDataset):
     def __len__(self) -> int:
         return self._num_rows * 2
 
-    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         indices = list(range(self._num_rows))
         rng = random.Random((self._seed or 0) + self.epoch)
         rng.shuffle(indices)
@@ -366,15 +506,20 @@ class FloorplanDataset(IterableDataset):
                 scale = extraction_scale(current_size)
                 extraction = scale_extraction(raw_extraction, scale)
                 targets = torch.from_numpy(build_floorplan_targets(extraction, current_size))
+                opening_mask = torch.from_numpy(build_opening_mask(extraction, current_size))
                 image = prepare_image(row[key], current_size)
                 yields_in_batch += 1
-                yield image_to_tensor(image), targets
+                yield image_to_tensor(image), targets, opening_mask
 
 
 class FloorplanCollator:
-    def __call__(self, batch: list[tuple[torch.Tensor, torch.Tensor]]) -> dict[str, torch.Tensor]:
-        images, masks = zip(*batch, strict=True)
+    def __call__(
+        self,
+        batch: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+    ) -> dict[str, torch.Tensor]:
+        images, masks, opening_masks = zip(*batch, strict=True)
         return {
             "images": torch.stack(list(images)),
             "masks": torch.stack(list(masks)),
+            "opening_masks": torch.stack(list(opening_masks)),
         }

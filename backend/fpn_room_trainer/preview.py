@@ -9,10 +9,16 @@ from pathlib import Path
 
 import torch
 
-from canvas import merge_panels, side_by_side_mask, side_by_side_mask_channel
+from canvas import (
+    merge_panels,
+    side_by_side_binary_mask,
+    side_by_side_mask,
+    side_by_side_mask_channel,
+)
 from config import CONFIG_PATH, Config, datasets_cache_dir, load_config
 from data import (
     build_floorplan_targets,
+    build_opening_mask,
     extraction_scale,
     image_to_tensor,
     load_train_split,
@@ -198,6 +204,7 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
         extraction_scale(size),
     )
     gt_targets = build_floorplan_targets(extraction, size)
+    gt_openings = build_opening_mask(extraction, size)
 
     device = training_device()
     model.to(device)
@@ -207,7 +214,8 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     input_view = image.convert("RGB")
     pred_view = side_by_side_mask(input_view, pred)
     gt_view = side_by_side_mask(input_view, gt_targets)
-    panel = merge_panels([pred_view, gt_view])
+    openings_view = side_by_side_binary_mask(input_view, gt_openings, channel=2)
+    panel = merge_panels([pred_view, gt_view, openings_view])
 
     if _PREVIEW_DIR.exists():
         shutil.rmtree(_PREVIEW_DIR)
@@ -215,10 +223,12 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     input_path = _PREVIEW_DIR / "input.jpg"
     output_path = _PREVIEW_DIR / "output.jpg"
     gt_path = _PREVIEW_DIR / "gt.jpg"
+    openings_path = _PREVIEW_DIR / "gt_openings.jpg"
     panel_path = _PREVIEW_DIR / "preview.jpg"
     input_view.save(input_path, format="JPEG", quality=95)
     pred_view.save(output_path, format="JPEG", quality=95)
     gt_view.save(gt_path, format="JPEG", quality=95)
+    openings_view.save(openings_path, format="JPEG", quality=95)
     panel.save(panel_path, format="JPEG", quality=95)
 
     channel_paths: list[tuple[str, Path]] = []
@@ -241,6 +251,7 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     print(f"input:        {input_path}")
     print(f"output:       {output_path}")
     print(f"gt:           {gt_path}")
+    print(f"gt_openings:  {openings_path}")
     print(f"panel:        {panel_path}")
     for label, path in channel_paths:
         print(f"{label + ':':<14} {path}")

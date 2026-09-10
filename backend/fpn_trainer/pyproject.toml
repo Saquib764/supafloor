@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fpn-trainer"
-version = "0.1.06"
+version = "0.1.07"
 description = "Floor-plan structure segmentation via CNN + FPN"
 requires-python = ">=3.11"
 dependencies = [

@@ -40,6 +40,10 @@ backend/fpn_trainer/_preview/
 backend/fpn_room_trainer/training_session/
 backend/fpn_room_trainer/training_session_2/
 backend/fpn_room_trainer/_preview/
+backend/inference_core/output
+backend/fpn_five_trainer/training_session/
+backend/fpn_five_trainer/training_session_2/
+backend/fpn_five_trainer/_preview/
 
 
 checkpoints/

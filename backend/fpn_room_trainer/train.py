@@ -255,13 +255,16 @@ def run(cfg: Config) -> None:
         for batch in loader:
             images = batch["images"].to(device, non_blocking=True)
             masks = batch["masks"].to(device, non_blocking=True)
+            opening_masks = batch["opening_masks"].to(device, non_blocking=True)
             with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
                 logits = model(images).mask_logits
                 loss = room_mask_loss(
                     logits,
                     masks,
+                    opening_masks,
                     focal_alpha=cfg.loss.focal_alpha,
                     focal_gamma=cfg.loss.focal_gamma,
+                    extra_opening_penalty=cfg.loss.extra_opening_penalty,
                 )
             (loss / accum).backward()
             micro += 1

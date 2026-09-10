@@ -14,6 +14,39 @@ CONFIG_PATH = _PACKAGE_DIR / "config.yaml"
 
 
 @dataclass(frozen=True)
+class FpnMaskCleanSettings:
+    open_px: int
+    close_px: int
+    min_area_px: int
+
+
+@dataclass(frozen=True)
+class FpnFloorplanRegionSettings:
+    size: int
+    wall_dilate_px: int
+    close_px: int
+    approx_epsilon: float
+
+
+@dataclass(frozen=True)
+class FpnRoomComponentsSettings:
+    infer_size: int
+    component_size: int
+    min_area_px: int
+
+
+@dataclass(frozen=True)
+class FpnSettings:
+    sizes: tuple[int, ...]
+    structure_checkpoint: Path
+    room_checkpoint: Path
+    output_dir: Path
+    mask_clean: FpnMaskCleanSettings
+    floorplan_region: FpnFloorplanRegionSettings
+    room_components: FpnRoomComponentsSettings
+
+
+@dataclass(frozen=True)
 class FitSettings:
     min_sides: int
     max_sides: int
@@ -79,6 +112,7 @@ class Config:
     point_filter: PointFilterSettings
     fit: FitSettings
     mask_smooth: MaskSmoothSettings
+    fpn: FpnSettings
     output: Path
 
 
@@ -114,6 +148,7 @@ def load_config(path: Path | None = None) -> Config:
     mask_smooth = raw.get("mask_smooth") or {}
     image_edit = raw.get("image_edit") or {}
     room_masks = raw.get("room_masks") or {}
+    fpn = raw.get("fpn") or {}
     prompts = image_edit.get("prompts") or {}
     inference_root = _find_inference_core_root()
     sam_config = backend_root / "sam_trainer" / "config.yaml"
@@ -195,6 +230,37 @@ def load_config(path: Path | None = None) -> Config:
             close_px=int(mask_smooth.get("close_px", 2)),
             smooth_sigma=float(mask_smooth.get("smooth_sigma", 1.0)),
             approx_epsilon=float(mask_smooth.get("approx_epsilon", 2.0)),
+        ),
+        fpn=FpnSettings(
+            sizes=tuple(int(s) for s in fpn.get("sizes", [512, 768, 1024])),
+            structure_checkpoint=_resolve(
+                Path(fpn.get("structure_checkpoint", "fpn_trainer/training_session_2/last.pt")),
+                backend_root,
+            ),
+            room_checkpoint=_resolve(
+                Path(fpn.get("room_checkpoint", "fpn_room_trainer/training_session/last.pt")),
+                backend_root,
+            ),
+            output_dir=_resolve(
+                Path(fpn.get("output_dir", "output/fpn")),
+                inference_root,
+            ),
+            mask_clean=FpnMaskCleanSettings(
+                open_px=int((fpn.get("mask_clean") or fpn.get("wall_mask") or {}).get("open_px", 2)),
+                close_px=int((fpn.get("mask_clean") or fpn.get("wall_mask") or {}).get("close_px", 2)),
+                min_area_px=int((fpn.get("mask_clean") or fpn.get("wall_mask") or {}).get("min_area_px", 64)),
+            ),
+            floorplan_region=FpnFloorplanRegionSettings(
+                size=int((fpn.get("floorplan_region") or {}).get("size", 1024)),
+                wall_dilate_px=int((fpn.get("floorplan_region") or {}).get("wall_dilate_px", 5)),
+                close_px=int((fpn.get("floorplan_region") or {}).get("close_px", 4)),
+                approx_epsilon=float((fpn.get("floorplan_region") or {}).get("approx_epsilon", 2.0)),
+            ),
+            room_components=FpnRoomComponentsSettings(
+                infer_size=int((rc := fpn.get("room_components") or {}).get("infer_size", rc.get("size", 768))),
+                component_size=int(rc.get("component_size", 1024)),
+                min_area_px=int(rc.get("min_area_px", 64)),
+            ),
         ),
         output=_resolve(
             Path(raw.get("output", "output")),

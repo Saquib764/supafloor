@@ -29,6 +29,7 @@ dataset-manager = { path = "../../dataset_manager", editable = true }
 [project.scripts]
 infer-sam-fit = "infer_sam_fit:main"
 infer-image-edit = "infer_image_edit:main"
+infer-fpn = "infer_fpn:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["util"]
@@ -39,6 +40,7 @@ dev-mode-dirs = ["."]
 [tool.hatch.build.targets.wheel.force-include]
 "infer_sam_fit.py" = "infer_sam_fit.py"
 "infer_image_edit.py" = "infer_image_edit.py"
+"infer_fpn.py" = "infer_fpn.py"
 "config.py" = "config.py"
 "config.yaml" = "config.yaml"
 

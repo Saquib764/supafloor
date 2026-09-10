@@ -78,6 +78,44 @@ def render_image_diff(before: Image.Image, after: Image.Image) -> Image.Image:
     return Image.fromarray(diff, mode="RGB")
 
 
+def floorplan_view(floorplan: Image.Image, size: int) -> Image.Image:
+    view = floorplan.convert("RGB")
+    if view.size != (size, size):
+        view = view.resize((size, size), Image.Resampling.LANCZOS)
+    return view
+
+
+def merge_panels(panels: list[Image.Image]) -> Image.Image:
+    if not panels:
+        raise ValueError("panels must not be empty")
+    width, height = panels[0].size
+    merged = Image.new("RGB", (width * len(panels), height))
+    for index, panel in enumerate(panels):
+        merged.paste(panel.convert("RGB"), (index * width, 0))
+    return merged
+
+
+def stack_rows(rows: list[Image.Image]) -> Image.Image:
+    if not rows:
+        raise ValueError("rows must not be empty")
+    width = max(row.width for row in rows)
+    height = sum(row.height for row in rows)
+    merged = Image.new("RGB", (width, height), (255, 255, 255))
+    y = 0
+    for row in rows:
+        merged.paste(row, (0, y))
+        y += row.height
+    return merged
+
+
+def with_label(image: Image.Image, label: str) -> Image.Image:
+    labeled = image.copy()
+    draw = ImageDraw.Draw(labeled)
+    draw.rectangle((0, 0, min(labeled.width, 360), 28), fill=(255, 255, 255))
+    draw.text((8, 6), label, fill=(0, 0, 0))
+    return labeled
+
+
 def draw_points(
     image: Image.Image,
     points: list[tuple[float, float] | list[int]],
