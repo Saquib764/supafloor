@@ -1,5 +1,5 @@
 hf_cache: ../hf_cache
-input_size: [512, 768, 1024, 1024]
+input_size: [512, 768, 1024]
 
 mask_channels:
   background: 0
@@ -16,7 +16,7 @@ data:
   augment:
     scale_min: 0.5
     scale_max: 1.5
-    opacity_min: 0.3
+    opacity_min: 0.1
     opacity_max: 1.0
 
 net:
@@ -36,8 +36,8 @@ net:
 loss:
   focal_alpha: 0.25
   focal_gamma: 2.0
-  channel_weights: [1.30, 1.0, 1.0, 1.40, 1.40]
-  extra_opening_penalty: 0.10
+  channel_weights: [1.20, 1.0, 1.0, 1.0, 1.0]
+  extra_opening_penalty: 0.0
 
 train:
   session_dir: training_session

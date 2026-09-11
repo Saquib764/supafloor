@@ -1,0 +1,291 @@
+"""Train OCR VLM on synthetic text images."""
+
+from __future__ import annotations
+
+import math
+import random
+from pathlib import Path
+
+import torch
+from PIL import Image
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import LambdaLR
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
+
+from canvas import input_output_row
+from config import Config, load_config
+from data import OcrCollator, SyntheticOcrDataset, image_to_tensor, render_text_sample
+from device import training_device
+from model import OcrVlm, count_parameters, ocr_loss
+from preview import print_model
+from vocab import CharVocab
+
+CHECKPOINT_NAME = "last.pt"
+
+
+def use_bf16(cfg: Config) -> bool:
+    return bool(cfg.train.bf16 and torch.cuda.is_available())
+
+
+def _lr_lambda(*, warmup_steps: int, total_steps: int):
+    def fn(step: int) -> float:
+        if warmup_steps > 0 and step < warmup_steps:
+            return float(step + 1) / float(warmup_steps)
+        if total_steps <= warmup_steps:
+            return 1.0
+        progress = float(step - warmup_steps) / float(total_steps - warmup_steps)
+        return 0.5 * (1.0 + math.cos(math.pi * progress))
+
+    return fn
+
+
+def _save_checkpoint(
+    path: Path,
+    *,
+    model: OcrVlm,
+    optimizer: AdamW,
+    scheduler: LambdaLR,
+    step: int,
+    epoch: int,
+) -> None:
+    torch.save(
+        {
+            "step": step,
+            "epoch": epoch,
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "scheduler": scheduler.state_dict(),
+        },
+        path,
+    )
+
+
+def _progress_postfix(
+    *,
+    loss: float,
+    lr: float,
+    step: int,
+    epoch: int,
+    epochs: int,
+) -> dict[str, str]:
+    return {
+        "loss": f"{loss:.4f}",
+        "lr": f"{lr:.2e}",
+        "step": str(step),
+        "epoch": f"{epoch + 1}/{epochs}",
+    }
+
+
+def _viz_row(
+    model: OcrVlm,
+    vocab: CharVocab,
+    cfg: Config,
+    device: torch.device,
+    *,
+    seed: int,
+) -> Image.Image:
+    rng = random.Random(seed)
+    width, height = rng.choice(cfg.data.image_sizes)
+    sample = render_text_sample(
+        width,
+        height,
+        rng,
+        min_lines=cfg.data.min_lines,
+        max_lines=cfg.data.max_lines,
+        sentence_len_min=cfg.data.sentence_len_min,
+        sentence_len_max=cfg.data.sentence_len_max,
+    )
+    tensor = image_to_tensor(sample.image).unsqueeze(0).to(device)
+    generated = model.generate(tensor, max_length=cfg.max_seq_len)
+    pred = vocab.decode(generated[0].tolist())
+    return input_output_row(tensor[0], pred)
+
+
+def _save_viz(
+    model: OcrVlm,
+    vocab: CharVocab,
+    cfg: Config,
+    device: torch.device,
+    out_dir: Path,
+    step: int,
+    *,
+    seed: int,
+) -> None:
+    model.eval()
+    step_dir = out_dir / f"step-{step:06d}"
+    step_dir.mkdir(parents=True, exist_ok=True)
+    for index in range(cfg.train.viz_samples):
+        panel = _viz_row(model, vocab, cfg, device, seed=seed + step + index)
+        panel.save(step_dir / f"sample-{index:03d}.jpg", format="JPEG", quality=95)
+    model.train()
+    tqdm.write(f"viz → {step_dir} ({cfg.train.viz_samples} sample(s))")
+
+
+def run(cfg: Config) -> None:
+    device = training_device()
+    vocab = CharVocab()
+    dataset = SyntheticOcrDataset(
+        image_sizes=cfg.data.image_sizes,
+        max_seq_len=cfg.max_seq_len,
+        vocab=vocab,
+        min_lines=cfg.data.min_lines,
+        max_lines=cfg.data.max_lines,
+        sentence_len_min=cfg.data.sentence_len_min,
+        sentence_len_max=cfg.data.sentence_len_max,
+        samples_per_epoch=cfg.data.samples_per_epoch,
+        seed=cfg.data.seed,
+    )
+    loader = DataLoader(
+        dataset,
+        batch_size=cfg.train.batch_size,
+        shuffle=False,
+        num_workers=cfg.train.num_workers,
+        pin_memory=device.type == "cuda",
+        collate_fn=OcrCollator(vocab.pad_id),
+    )
+    micro_per_epoch = max(1, (len(dataset) + cfg.train.batch_size - 1) // cfg.train.batch_size)
+    steps_per_epoch = max(1, (micro_per_epoch + cfg.train.grad_accum - 1) // cfg.train.grad_accum)
+    total_steps = steps_per_epoch * cfg.train.epochs
+    warmup_steps = int(total_steps * cfg.train.warmup_ratio)
+
+    print("\n=== Model ===")
+    model = print_model(cfg, vocab, dummy_forward=False)
+    model.to(device)
+    model.train()
+    optimizer = AdamW(
+        model.parameters(),
+        lr=cfg.train.learning_rate,
+        weight_decay=cfg.train.weight_decay,
+    )
+    scheduler = LambdaLR(
+        optimizer,
+        lr_lambda=_lr_lambda(warmup_steps=warmup_steps, total_steps=max(1, total_steps)),
+    )
+
+    step = 0
+    start_epoch = 0
+    checkpoint_path = cfg.train.session_dir / CHECKPOINT_NAME
+    if cfg.train.resume and checkpoint_path.is_file():
+        state = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        model.load_state_dict(state["model"])
+        optimizer.load_state_dict(state["optimizer"])
+        scheduler.load_state_dict(state["scheduler"])
+        step = int(state["step"])
+        start_epoch = int(state["epoch"])
+        tqdm.write(f"Resumed step {step} epoch {start_epoch} ← {checkpoint_path}")
+
+    print("\n=== Device ===")
+    print(f"device:         {device}")
+    print(f"compute dtype:  {'bfloat16' if use_bf16(cfg) else 'float32'}")
+    print("\n=== Dataset ===")
+    print(f"synthetic:      on-the-fly random text lines")
+    print(f"image_sizes:    {list(cfg.data.image_sizes)}")
+    print(f"sentence_len:   {cfg.data.sentence_len_min}–{cfg.data.sentence_len_max}")
+    print(f"max_seq_len:    {cfg.max_seq_len}")
+    print(f"lines/sample:   {cfg.data.min_lines}–{cfg.data.max_lines}")
+    print(f"samples/epoch:  {cfg.data.samples_per_epoch:,}")
+    print(f"vocab size:     {vocab.size}")
+    print("\n=== Training ===")
+    print(f"output_dir:     {cfg.train.session_dir}")
+    print(f"epochs:         {cfg.train.epochs}")
+    print(f"batch_size:     {cfg.train.batch_size}")
+    print(f"grad_accum:     {cfg.train.grad_accum}")
+    print(f"steps/epoch:    {steps_per_epoch:,}")
+    print(f"total_steps:    {total_steps:,}")
+    print(f"warmup_steps:   {warmup_steps:,}")
+    print(f"learning_rate:  {cfg.train.learning_rate}")
+    print(f"warmup_ratio:   {cfg.train.warmup_ratio}")
+    print(f"resume:         {cfg.train.resume}")
+    print(f"save_steps:     {cfg.train.save_steps}")
+    print(f"viz_steps:      {cfg.train.viz_steps}")
+    print(f"viz_samples:    {cfg.train.viz_samples}")
+    print(f"parameters:     {count_parameters(model):,}")
+    print()
+
+    cfg.train.session_dir.mkdir(parents=True, exist_ok=True)
+    viz_dir = cfg.train.session_dir / "viz"
+    amp = use_bf16(cfg)
+    accum = cfg.train.grad_accum
+    optimizer.zero_grad(set_to_none=True)
+    micro = 0
+    progress = tqdm(
+        total=total_steps,
+        initial=step,
+        desc="Training",
+        unit="step",
+        dynamic_ncols=True,
+    )
+
+    for epoch in range(start_epoch, cfg.train.epochs):
+        dataset.epoch = epoch
+        for batch in loader:
+            images = batch["images"].to(device, non_blocking=True)
+            token_ids = batch["token_ids"].to(device, non_blocking=True)
+            targets = token_ids[:, 1:]
+            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
+                logits = model(images, token_ids)
+                loss = ocr_loss(logits, targets, pad_id=vocab.pad_id)
+            (loss / accum).backward()
+            micro += 1
+            if micro % accum != 0:
+                continue
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.max_grad_norm)
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad(set_to_none=True)
+            step += 1
+            progress.update(1)
+            progress.set_postfix(
+                _progress_postfix(
+                    loss=loss.item(),
+                    lr=float(optimizer.param_groups[0]["lr"]),
+                    step=step,
+                    epoch=epoch,
+                    epochs=cfg.train.epochs,
+                )
+            )
+            if step % cfg.train.viz_steps == 0:
+                _save_viz(
+                    model,
+                    vocab,
+                    cfg,
+                    device,
+                    viz_dir,
+                    step,
+                    seed=cfg.data.seed or 0,
+                )
+            if step % cfg.train.save_steps == 0:
+                _save_checkpoint(
+                    checkpoint_path,
+                    model=model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    step=step,
+                    epoch=epoch,
+                )
+                tqdm.write(f"saved → {checkpoint_path}")
+
+    if micro % accum != 0:
+        torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.max_grad_norm)
+        optimizer.step()
+        scheduler.step()
+        optimizer.zero_grad(set_to_none=True)
+        step += 1
+        progress.update(1)
+
+    progress.close()
+    _save_checkpoint(
+        checkpoint_path,
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        step=step,
+        epoch=cfg.train.epochs,
+    )
+    tqdm.write(f"Saved → {checkpoint_path}")
+    tqdm.write(f"steps={step}")
+
+
+if __name__ == "__main__":
+    run(load_config())

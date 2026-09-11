@@ -1,0 +1,33 @@
+max_seq_len: 128
+
+data:
+  seed: 42
+  image_sizes:
+    - [256, 256]
+    # - [256, 128]
+    # - [128, 256]
+    # - [128, 128]
+  sentence_len_min: 8
+  sentence_len_max: 40
+  min_lines: 1
+  max_lines: 1
+  samples_per_epoch: 10000
+
+train:
+  session_dir: training_session
+  epochs: 15
+  batch_size: 32
+  grad_accum: 1
+  learning_rate: 3.0e-4
+  weight_decay: 0.01
+  warmup_ratio: 0.03
+  bf16: true
+  resume: true
+  save_steps: 1000
+  viz_steps: 200
+  viz_samples: 4
+  max_grad_norm: 1.0
+  num_workers: 0
+
+infer:
+  checkpoint: training_session/last.pt

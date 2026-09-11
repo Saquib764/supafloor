@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vlm-ocr-trainer"
+version = "0.1.01"
+description = "~1M-param vision-language OCR: 256×256 grayscale → character tokens"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26.0",
+  "pillow>=10.4.0",
+  "pyyaml>=6.0.2",
+  "torch>=2.4.0",
+  "tqdm>=4.66.0",
+]
+
+[project.scripts]
+vlm-ocr-train = "cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = []
+
+[tool.hatch.build.targets.editable]
+dev-mode-dirs = ["."]
+
+[tool.hatch.build.targets.wheel.force-include]
+"cli.py" = "cli.py"
+"config.py" = "config.py"
+"config.yaml" = "config.yaml"
+"canvas.py" = "canvas.py"
+"data.py" = "data.py"
+"device.py" = "device.py"
+"MODEL.md" = "MODEL.md"
+"model.py" = "model.py"
+"preview.py" = "preview.py"
+"train.py" = "train.py"
+"vocab.py" = "vocab.py"
+
+[tool.uv]
+package = true

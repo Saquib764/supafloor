@@ -44,6 +44,9 @@ backend/inference_core/output
 backend/fpn_five_trainer/training_session/
 backend/fpn_five_trainer/training_session_2/
 backend/fpn_five_trainer/_preview/
+backend/vlm_ocr_trainer/training_session/
+backend/vlm_ocr_trainer/training_session_2/
+backend/vlm_ocr_trainer/_preview/
 
 
 checkpoints/
