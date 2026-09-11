@@ -27,7 +27,7 @@ mask logits (5×H×W) → sigmoid → 5-channel structure mask
 
 | Channel | Rasterizer |
 |---|---|
-| 0 background | `1 - clip(wall + room)` |
+| 0 background | `1 - erode(close(wall + room), 3×3)` |
 | 1 walls | `rasterize_wall_mask` (uncut edges + junction extend + pillars) |
 | 2 rooms | `rasterize_all_rooms_mask` (interiors, walls carved out) |
 | 3 doors | `rasterize_opening_mask(doors)` |

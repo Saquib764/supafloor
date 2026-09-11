@@ -19,7 +19,7 @@ Channel order:
 
 | Index | Name | Source |
 |---|---|---|
-| 0 | background | `1 - clip(walls + rooms)` |
+| 0 | background | `1 - erode(close(walls + rooms), 3×3)` |
 | 1 | walls | `fpn_trainer` wall rasterizer |
 | 2 | rooms | `fpn_room_trainer` room interior rasterizer |
 | 3 | doors | `fpn_trainer` opening rasterizer |

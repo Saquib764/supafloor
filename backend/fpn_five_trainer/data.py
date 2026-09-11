@@ -624,26 +624,17 @@ def rasterize_all_rooms_mask(extraction: dict[str, Any], size: int) -> np.ndarra
     return mask.astype(np.float32)
 
 
-def _dilate_mask(mask: np.ndarray, radius: int) -> np.ndarray:
-    if radius <= 0:
-        return np.clip(mask, 0.0, 1.0).astype(np.float32)
-    binary = ((mask > 0.5).astype(np.uint8)) * 255
-    kernel_size = radius * 2 + 1
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
-    dilated = cv2.dilate(binary, kernel)
-    return (dilated.astype(np.float32) / 255.0)
-
-
 def rasterize_background_mask(
     wall_mask: np.ndarray,
     room_mask: np.ndarray,
-    *,
-    wall_dilate: int,
 ) -> np.ndarray:
-    """Exterior / non-structure pixels: invert of dilated walls OR rooms."""
-    dilated_walls = _dilate_mask(wall_mask, wall_dilate)
-    occupied = np.clip(dilated_walls + room_mask, 0.0, 1.0)
-    return (1.0 - occupied).astype(np.float32)
+    """Exterior / non-structure pixels: close room+wall footprint, erode, invert."""
+    occupied = np.clip(wall_mask + room_mask, 0.0, 1.0)
+    binary = ((occupied > 0.5).astype(np.uint8)) * 255
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+    eroded = cv2.erode(closed, kernel, iterations=1)
+    return (1.0 - eroded.astype(np.float32) / 255.0).astype(np.float32)
 
 
 def _stack_mask_layers(
@@ -695,12 +686,7 @@ def build_floorplan_targets(
         room_wall_thick=room_wall_thick,
         boundary_wall_thick=boundary_wall_thick,
     )
-    wall_dilate = max(1, int(math.ceil(max(room_wall_thick, boundary_wall_thick))))
-    background_mask = rasterize_background_mask(
-        wall_mask,
-        room_mask,
-        wall_dilate=wall_dilate,
-    )
+    background_mask = rasterize_background_mask(wall_mask, room_mask)
     return _stack_mask_layers(
         channels,
         background=background_mask,
