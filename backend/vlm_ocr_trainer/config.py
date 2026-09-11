@@ -9,6 +9,8 @@ from typing import Any
 
 import yaml
 
+from data import RenderVariations
+
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
@@ -33,8 +35,8 @@ class DataSettings:
     image_sizes: tuple[tuple[int, int], ...]
     sentence_len_min: int
     sentence_len_max: int
-    min_lines: int
-    max_lines: int
+    line_counts: tuple[int, ...]
+    variations: RenderVariations
     samples_per_epoch: int
 
 
@@ -81,6 +83,23 @@ def _resolve(path: Path, base: Path) -> Path:
     return path if path.is_absolute() else (base / path).resolve()
 
 
+def _parse_variations(raw: Any) -> RenderVariations:
+    if raw is None:
+        return RenderVariations()
+    if not isinstance(raw, dict):
+        raise ValueError("data.variations must be a mapping")
+    values: dict[str, bool] = {}
+    for key in RenderVariations.__dataclass_fields__:
+        value = raw.get(key, False)
+        if isinstance(value, bool):
+            values[key] = value
+        elif isinstance(value, (int, float)) and value in (0, 1):
+            values[key] = bool(value)
+        else:
+            raise ValueError(f"data.variations.{key} must be a boolean")
+    return RenderVariations(**values)
+
+
 def _parse_image_sizes(raw: Any) -> tuple[tuple[int, int], ...]:
     if not raw:
         raise ValueError("data.image_sizes must not be empty")
@@ -104,12 +123,22 @@ def load_config(path: Path | None = None) -> Config:
     data = raw["data"]
     train = raw["train"]
     infer = raw.get("infer") or {}
-    min_lines = int(data["min_lines"])
-    max_lines = int(data["max_lines"])
-    if min_lines < 1:
-        raise ValueError("data.min_lines must be >= 1")
-    if max_lines < min_lines:
-        raise ValueError("data.max_lines must be >= data.min_lines")
+    line_counts_raw = data.get("line_counts")
+    if line_counts_raw is None:
+        min_lines = int(data["min_lines"])
+        max_lines = int(data["max_lines"])
+        if min_lines < 1:
+            raise ValueError("data.min_lines must be >= 1")
+        if max_lines < min_lines:
+            raise ValueError("data.max_lines must be >= data.min_lines")
+        line_counts = tuple(range(min_lines, max_lines + 1))
+    else:
+        line_counts = tuple(int(value) for value in line_counts_raw)
+        if not line_counts:
+            raise ValueError("data.line_counts must not be empty")
+        if any(value < 1 for value in line_counts):
+            raise ValueError("each data.line_counts entry must be >= 1")
+    variations = _parse_variations(data.get("variations"))
     sentence_len_min = int(data["sentence_len_min"])
     sentence_len_max = int(data["sentence_len_max"])
     if sentence_len_min < 1:
@@ -123,8 +152,8 @@ def load_config(path: Path | None = None) -> Config:
             image_sizes=_parse_image_sizes(data.get("image_sizes") or raw.get("image_sizes")),
             sentence_len_min=sentence_len_min,
             sentence_len_max=sentence_len_max,
-            min_lines=min_lines,
-            max_lines=max_lines,
+            line_counts=line_counts,
+            variations=variations,
             samples_per_epoch=int(data["samples_per_epoch"]),
         ),
         train=TrainSettings(

@@ -28,11 +28,29 @@ uv run vlm-ocr-train train
 
 ## Data config
 
-Training randomly picks one canvas size per sample from `data.image_sizes` (width×height):
-
-- 256×256, 256×128, 128×256, 128×128
+Training randomly picks one canvas size per sample from `data.image_sizes` (width×height).
 
 Sentence length is controlled by `data.sentence_len_min` / `data.sentence_len_max` (characters in the full transcription).
+
+### Curriculum (easy → hard)
+
+Start with all defaults, then widen one knob at a time. After each change, run a few thousand steps and inspect `training_session/viz/`.
+
+| Setting | Default (easy) | When enabled | Impact |
+| --- | --- | --- | --- |
+| `line_counts` | `[1]` | `[1, 2, 3, …]` | More lines per image; model must segment and order multiple strings. |
+| `variations.font` | `false` | `true` | Random printed font face per line instead of one fixed default. |
+| `variations.font_size` | `false` | `true` | Random text height per line. |
+| `variations.x_offset` | `false` | `true` | Random horizontal position per line (fixed left margin when off). |
+| `variations.line_spacing` | `false` | `true` | Random vertical gap between lines. |
+| `variations.background` | `false` | `true` | Off-white gray canvas instead of pure white. |
+| `variations.ink` | `false` | `true` | Gray ink instead of black. |
+| `variations.grain` | `false` | `true` | Pixel noise overlay (scan/photo-like). |
+| `variations.handwritten` | `false` | `true` | Handwriting/script font pool — largest style shift; enable last. |
+
+Suggested flag order: `font` → `font_size` → `x_offset` → `line_spacing` → `background` → `ink` → `grain` → `handwritten`.
+
+With every flag `false`, samples render on a white canvas with black text at a fixed top-left origin, one default printed font, and uniform line spacing.
 
 ## Output layout
 

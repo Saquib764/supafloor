@@ -91,10 +91,10 @@ def _viz_row(
         width,
         height,
         rng,
-        min_lines=cfg.data.min_lines,
-        max_lines=cfg.data.max_lines,
+        line_counts=cfg.data.line_counts,
         sentence_len_min=cfg.data.sentence_len_min,
         sentence_len_max=cfg.data.sentence_len_max,
+        variations=cfg.data.variations,
     )
     tensor = image_to_tensor(sample.image).unsqueeze(0).to(device)
     generated = model.generate(tensor, max_length=cfg.max_seq_len)
@@ -129,10 +129,10 @@ def run(cfg: Config) -> None:
         image_sizes=cfg.data.image_sizes,
         max_seq_len=cfg.max_seq_len,
         vocab=vocab,
-        min_lines=cfg.data.min_lines,
-        max_lines=cfg.data.max_lines,
+        line_counts=cfg.data.line_counts,
         sentence_len_min=cfg.data.sentence_len_min,
         sentence_len_max=cfg.data.sentence_len_max,
+        variations=cfg.data.variations,
         samples_per_epoch=cfg.data.samples_per_epoch,
         seed=cfg.data.seed,
     )
@@ -183,7 +183,14 @@ def run(cfg: Config) -> None:
     print(f"image_sizes:    {list(cfg.data.image_sizes)}")
     print(f"sentence_len:   {cfg.data.sentence_len_min}–{cfg.data.sentence_len_max}")
     print(f"max_seq_len:    {cfg.max_seq_len}")
-    print(f"lines/sample:   {cfg.data.min_lines}–{cfg.data.max_lines}")
+    print(f"line_counts:    {list(cfg.data.line_counts)}")
+    v = cfg.data.variations
+    print(
+        "variations:     "
+        f"background={v.background} grain={v.grain} ink={v.ink} "
+        f"handwritten={v.handwritten} font={v.font} font_size={v.font_size} "
+        f"x_offset={v.x_offset} line_spacing={v.line_spacing}"
+    )
     print(f"samples/epoch:  {cfg.data.samples_per_epoch:,}")
     print(f"vocab size:     {vocab.size}")
     print("\n=== Training ===")

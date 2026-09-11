@@ -114,7 +114,7 @@ def _print_input_summary(cfg: Config, vocab: CharVocab) -> None:
     print("Source:   synthetic grayscale PIL image (random OCR-style text lines)", flush=True)
     print(f"Canvas:   one of [{sizes}] px (width×height), chosen per sample", flush=True)
     print(
-        f"Text:     {cfg.data.min_lines}–{cfg.data.max_lines} lines, "
+        f"Text:     {list(cfg.data.line_counts)} lines (sampled), "
         f"{cfg.data.sentence_len_min}–{cfg.data.sentence_len_max} chars total",
         flush=True,
     )
@@ -262,10 +262,10 @@ def export_sample_pair(cfg: Config, model: OcrVlm) -> None:
         width,
         height,
         rng,
-        min_lines=cfg.data.min_lines,
-        max_lines=cfg.data.max_lines,
+        line_counts=cfg.data.line_counts,
         sentence_len_min=cfg.data.sentence_len_min,
         sentence_len_max=cfg.data.sentence_len_max,
+        variations=cfg.data.variations,
     )
     device = training_device()
     model.to(device)
@@ -309,7 +309,14 @@ def run(cfg: Config, *, export_sample: bool = True) -> None:
     print(f"image_sizes:    {list(cfg.data.image_sizes)}")
     print(f"max_seq_len:    {cfg.max_seq_len}")
     print(f"sentence_len:   {cfg.data.sentence_len_min}–{cfg.data.sentence_len_max}")
-    print(f"lines/sample:   {cfg.data.min_lines}–{cfg.data.max_lines}")
+    print(f"line_counts:    {list(cfg.data.line_counts)}")
+    v = cfg.data.variations
+    print(
+        "variations:     "
+        f"background={v.background} grain={v.grain} ink={v.ink} "
+        f"handwritten={v.handwritten} font={v.font} font_size={v.font_size} "
+        f"x_offset={v.x_offset} line_spacing={v.line_spacing}"
+    )
     print(f"samples/epoch:  {cfg.data.samples_per_epoch:,}")
     if export_sample:
         export_sample_pair(cfg, model)

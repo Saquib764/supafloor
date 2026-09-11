@@ -67,6 +67,20 @@ class RenderedSample:
     height: int
 
 
+@dataclass(frozen=True)
+class RenderVariations:
+    """Per-effect on/off flags for render-time randomization."""
+
+    background: bool = False
+    grain: bool = False
+    ink: bool = False
+    handwritten: bool = False
+    font: bool = False
+    font_size: bool = False
+    x_offset: bool = False
+    line_spacing: bool = False
+
+
 def _clamp_sentence(text: str, min_len: int, max_len: int) -> str:
     if len(text) > max_len:
         return text[:max_len]
@@ -122,7 +136,30 @@ def _random_line(rng: random.Random, min_len: int, max_len: int) -> str:
     return _clamp_sentence(line, min_len, max_len)
 
 
-def _pick_font(rng: random.Random, handwritten: bool, size: int) -> ImageFont.ImageFont:
+_default_font_cache: dict[tuple[str, int], ImageFont.ImageFont] = {}
+
+
+def _default_font(size: int) -> ImageFont.ImageFont:
+    pool = _existing_fonts(_PRINTED_FONTS)
+    path = pool[0] if pool else ""
+    key = (path, size)
+    cached = _default_font_cache.get(key)
+    if cached is not None:
+        return cached
+    font = _load_font(path, size) if path else ImageFont.load_default()
+    _default_font_cache[key] = font
+    return font
+
+
+def _pick_font(
+    rng: random.Random,
+    handwritten: bool,
+    size: int,
+    *,
+    randomize: bool,
+) -> ImageFont.ImageFont:
+    if not randomize:
+        return _default_font(size)
     pool = _existing_fonts(_HANDWRITTEN_FONTS if handwritten else _PRINTED_FONTS)
     if not pool:
         pool = _existing_fonts(_PRINTED_FONTS)
@@ -145,13 +182,14 @@ def render_text_sample(
     height: int,
     rng: random.Random,
     *,
-    min_lines: int,
-    max_lines: int,
+    line_counts: tuple[int, ...],
     sentence_len_min: int,
     sentence_len_max: int,
+    variations: RenderVariations | None = None,
 ) -> RenderedSample:
-    """Render one grayscale image with 1–N text lines and return the transcription."""
-    num_lines = rng.randint(min_lines, max_lines)
+    """Render one grayscale image with text lines and return the transcription."""
+    v = variations or RenderVariations()
+    num_lines = rng.choice(line_counts)
     per_line_max = max(sentence_len_min, sentence_len_max // max(1, num_lines))
     per_line_min = min(sentence_len_min, per_line_max)
     lines = [
@@ -161,33 +199,39 @@ def render_text_sample(
     text = _clamp_sentence("\n".join(lines), sentence_len_min, sentence_len_max)
 
     short_side = min(width, height)
-    bg_value = rng.randint(230, 255)
+    margin = max(8, short_side // 32)
+    bg_value = rng.randint(230, 255) if v.background else 255
     image = Image.new("L", (width, height), color=bg_value)
     draw = ImageDraw.Draw(image)
 
-    margin = max(8, short_side // 32)
     y_cursor = margin
-    ink_value = rng.randint(0, max(0, bg_value - 80))
+    line_gap = max(6, short_side // 40)
+    default_font_size = max(18, short_side // 12)
 
     for line in text.split("\n"):
-        handwritten = rng.random() < 0.35
-        font_size = rng.randint(max(14, short_side // 24), max(18, short_side // 10))
-        font = _pick_font(rng, handwritten, font_size)
+        handwritten = v.handwritten
+        if v.font_size:
+            font_size = rng.randint(max(14, short_side // 24), max(18, short_side // 10))
+        else:
+            font_size = default_font_size
+        font = _pick_font(rng, handwritten, font_size, randomize=v.font)
         _, _, line_width, line_height = _line_bbox(draw, line, font)
 
-        max_x = width - margin - line_width
-        if max_x < margin:
-            x = margin
+        if v.x_offset:
+            max_x = width - margin - line_width
+            x = rng.randint(margin, max_x) if max_x >= margin else margin
         else:
-            x = rng.randint(margin, max_x)
+            x = margin
 
         if y_cursor + line_height > height - margin:
             break
 
+        ink_value = rng.randint(0, max(0, bg_value - 80)) if v.ink else 0
         draw.text((x, y_cursor), line, fill=ink_value, font=font)
-        y_cursor += line_height + rng.randint(4, max(6, short_side // 40))
+        gap = rng.randint(4, line_gap) if v.line_spacing else line_gap
+        y_cursor += line_height + gap
 
-    if rng.random() < 0.15:
+    if v.grain:
         noise = np.random.default_rng(rng.randint(0, 2**31 - 1)).integers(
             -8, 9, size=(height, width), dtype=np.int16
         )
@@ -228,20 +272,20 @@ class SyntheticOcrDataset(IterableDataset):
         image_sizes: tuple[tuple[int, int], ...],
         max_seq_len: int,
         vocab: CharVocab,
-        min_lines: int,
-        max_lines: int,
+        line_counts: tuple[int, ...],
         sentence_len_min: int,
         sentence_len_max: int,
+        variations: RenderVariations,
         samples_per_epoch: int,
         seed: int | None = None,
     ) -> None:
         self._image_sizes = image_sizes
         self._max_seq_len = max_seq_len
         self._vocab = vocab
-        self._min_lines = min_lines
-        self._max_lines = max_lines
+        self._line_counts = line_counts
         self._sentence_len_min = sentence_len_min
         self._sentence_len_max = sentence_len_max
+        self._variations = variations
         self._samples_per_epoch = samples_per_epoch
         self._seed = seed
         self.epoch = 0
@@ -257,10 +301,10 @@ class SyntheticOcrDataset(IterableDataset):
                 width,
                 height,
                 rng,
-                min_lines=self._min_lines,
-                max_lines=self._max_lines,
+                line_counts=self._line_counts,
                 sentence_len_min=self._sentence_len_min,
                 sentence_len_max=self._sentence_len_max,
+                variations=self._variations,
             )
             token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
             if len(token_ids) > self._max_seq_len:
