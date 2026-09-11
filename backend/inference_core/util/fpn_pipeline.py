@@ -25,6 +25,8 @@ from util.room_components import (
     scale_room_mask,
     write_room_counts_markdown,
 )
+from util.structure_polygons import opening_centerlines_from_masks
+from util.wall_centerlines import save_wall_centerline_outputs, wall_skeletons_from_masks
 from util.wall_room_masks import render_wall_room_masks
 
 
@@ -222,7 +224,7 @@ def run_fpn_pipeline(
         fpn512_door = door_masks_by_size[opening_size]
         fpn512_window = window_masks_by_size[opening_size]
 
-    wall_or_sizes = (512, 768)
+    wall_or_sizes = (512, 768, 1024)
     wall_masks_for_subtract: list[np.ndarray] = []
     for wall_size in wall_or_sizes:
         if wall_size not in wall_masks_by_size:
@@ -271,10 +273,39 @@ def run_fpn_pipeline(
         door_mask=fpn512_door,
         window_mask=fpn512_window,
     )
+
+    structure_dir = out_dir / "structure-polygons"
+
+    opening_centerlines = opening_centerlines_from_masks(
+        fpn512_door,
+        fpn512_window,
+        size=component_size,
+        min_area_px=min_area_px,
+        polyline_epsilon=3.0,
+        polyline_min_length=6.0,
+        polyline_max_spur_len=4,
+    )
+
+    wall_skeletons = wall_skeletons_from_masks(
+        wall_masks_for_subtract,
+        size=component_size,
+    )
+    wall_centerline_outputs = save_wall_centerline_outputs(
+        image,
+        wall_skeletons,
+        structure_dir,
+        size=component_size,
+        opening_centerlines=opening_centerlines,
+    )
+
     outputs["rooms"] = {
         "markdown": rooms_md_path,
         "overlays": room_overlays_path,
         "input": wall_output["input"],
+    }
+    outputs["structure_polygons"] = {
+        "dir": structure_dir,
+        **wall_centerline_outputs,
     }
 
     return outputs

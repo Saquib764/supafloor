@@ -55,7 +55,7 @@ Right after canvas fit, a floorplan region of interest is computed at 1024 px on
 - `input-masked.jpg` — canvas with content outside the region removed (used as main input below)
 - `rooms.md` — room counts by source (wall-subtract and FPN Five resolutions)
 - `room-mask-overlays.jpg` — per-source component overlays on floorplan and white background
-- `step-000/wall-input-1024.jpg` — inverted wall+openings mask used for wall-subtract (walls from 512∪768, doors/windows from 512)
+- `step-000/wall-input-1024.jpg` — inverted wall+openings mask used for wall-subtract (walls from 512∪768∪1024, doors/windows from 512)
 - `step-000/wall-subtract-prefilter-1024.jpg` — wall-subtract room components before FPN-512 overlap / min-area filters
 
 ## Config

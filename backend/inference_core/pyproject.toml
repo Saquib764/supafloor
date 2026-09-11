@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "inference-core"
-version = "0.1.08"
+version = "0.1.29"
 description = "SAM mask-fit room polygon inference for floor plans"
 requires-python = ">=3.11"
 dependencies = [
@@ -12,7 +12,8 @@ dependencies = [
   "dataset-manager",
   "huggingface_hub>=0.26.0",
   "numpy>=1.26.0",
-  "opencv-python>=4.10.0",
+  "opencv-contrib-python>=4.10.0",
+  "scikit-image>=0.24.0",
   "peft>=0.13.0",
   "pillow>=10.4.0",
   "pyyaml>=6.0.2",
@@ -26,10 +27,16 @@ dependencies = [
 [tool.uv.sources]
 dataset-manager = { path = "../../dataset_manager", editable = true }
 
+[dependency-groups]
+dev = [
+  "pygame>=2.6.0",
+]
+
 [project.scripts]
 infer-sam-fit = "infer_sam_fit:main"
 infer-image-edit = "infer_image_edit:main"
 infer-fpn = "infer_fpn:main"
+infer-ui-simple = "infer_ui_simple:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["util"]
@@ -41,6 +48,7 @@ dev-mode-dirs = ["."]
 "infer_sam_fit.py" = "infer_sam_fit.py"
 "infer_image_edit.py" = "infer_image_edit.py"
 "infer_fpn.py" = "infer_fpn.py"
+"infer_ui_simple.py" = "infer_ui_simple.py"
 "config.py" = "config.py"
 "config.yaml" = "config.yaml"
 

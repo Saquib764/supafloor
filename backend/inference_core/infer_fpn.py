@@ -38,6 +38,13 @@ def main(argv: list[str] | None = None) -> None:
             print(f"room mask overlays → {paths['overlays']}")
             print(f"wall input → {paths['input']}")
             continue
+        if step == "structure_polygons":
+            print(f"structure polygons → {paths['dir']}/")
+            print(f"  wall centerline → {paths['wall_centerline']}")
+            print(f"  opencv thinning → {paths['opencv_thinning']}")
+            print(f"  skimage skeleton → {paths['skimage_skeleton']}")
+            print(f"  structure polylines → {paths['polylines_json']}")
+            continue
         print(f"{step} masks → {paths}")
 
 

@@ -22,6 +22,60 @@ def draw_polygon_outline(
     return overlay
 
 
+def draw_polygon_outlines(
+    image: Image.Image,
+    polygons: list[list[list[int]]],
+    *,
+    color: tuple[int, int, int] = (220, 50, 50),
+    width: int = 2,
+) -> Image.Image:
+    overlay = image.convert("RGB").copy()
+    for polygon in polygons:
+        overlay = draw_polygon_outline(overlay, polygon, color=color, width=width)
+    return overlay
+
+
+def draw_polylines(
+    image: Image.Image,
+    polylines: list[list[list[int]]],
+    *,
+    color: tuple[int, int, int] = (220, 50, 50),
+    width: int = 6,
+) -> Image.Image:
+    overlay = image.convert("RGB").copy()
+    draw = ImageDraw.Draw(overlay)
+    stroke = max(1, width)
+    for polyline in polylines:
+        if len(polyline) < 2:
+            continue
+        points = [(int(x), int(y)) for x, y in polyline]
+        draw.line(points, fill=color, width=stroke)
+    return overlay
+
+
+def draw_line_segments(
+    image: Image.Image,
+    segments: list[dict[str, list[int]]],
+    *,
+    color: tuple[int, int, int] = (220, 50, 50),
+    width: int = 2,
+) -> Image.Image:
+    overlay = image.convert("RGB").copy()
+    draw = ImageDraw.Draw(overlay)
+    stroke = max(1, width)
+    for segment in segments:
+        start = segment.get("start") or []
+        end = segment.get("end") or []
+        if len(start) < 2 or len(end) < 2:
+            continue
+        draw.line(
+            [(int(start[0]), int(start[1])), (int(end[0]), int(end[1]))],
+            fill=color,
+            width=stroke,
+        )
+    return overlay
+
+
 _MASK_COLORS = (
     (0, 180, 60),
     (220, 50, 50),
