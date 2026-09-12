@@ -79,9 +79,9 @@ holdout:
     handwritten: false
 
 train:
-  session_dir: training_session_smoke
+  session_dir: training_session
   epochs: 200
-  batch_size: 16
+  batch_size: 32
   grad_accum: 1
   learning_rate: 1.0e-3
   weight_decay: 0.01
