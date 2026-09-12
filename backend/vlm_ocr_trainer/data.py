@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import random
 import string
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from queue import Empty, Queue
+from threading import Thread
+from typing import Any, Iterator
 
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
-from torch.utils.data import IterableDataset
+from torch.utils.data import Dataset, IterableDataset
 
+from config import DataSettings, RenderVariations
 from vocab import CharVocab
 
 _PRINTED_FONTS = (
@@ -52,11 +56,22 @@ def _existing_fonts(candidates: tuple[str, ...]) -> list[str]:
     return [path for path in candidates if Path(path).is_file()]
 
 
+_PRINTED_FONT_PATHS = _existing_fonts(_PRINTED_FONTS)
+_HANDWRITTEN_FONT_PATHS = _existing_fonts(_HANDWRITTEN_FONTS)
+_FONT_CACHE: dict[tuple[str, int], ImageFont.ImageFont] = {}
+
+
 def _load_font(path: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    key = (path, size)
+    cached = _FONT_CACHE.get(key)
+    if cached is not None:
+        return cached
     try:
-        return ImageFont.truetype(path, size=size)
+        font = ImageFont.truetype(path, size=size)
     except OSError:
-        return ImageFont.load_default()
+        font = ImageFont.load_default()
+    _FONT_CACHE[key] = font
+    return font
 
 
 @dataclass(frozen=True)
@@ -65,20 +80,6 @@ class RenderedSample:
     text: str
     width: int
     height: int
-
-
-@dataclass(frozen=True)
-class RenderVariations:
-    """Per-effect on/off flags for render-time randomization."""
-
-    background: bool = False
-    grain: bool = False
-    ink: bool = False
-    handwritten: bool = False
-    font: bool = False
-    font_size: bool = False
-    x_offset: bool = False
-    line_spacing: bool = False
 
 
 def _clamp_sentence(text: str, min_len: int, max_len: int) -> str:
@@ -136,19 +137,9 @@ def _random_line(rng: random.Random, min_len: int, max_len: int) -> str:
     return _clamp_sentence(line, min_len, max_len)
 
 
-_default_font_cache: dict[tuple[str, int], ImageFont.ImageFont] = {}
-
-
 def _default_font(size: int) -> ImageFont.ImageFont:
-    pool = _existing_fonts(_PRINTED_FONTS)
-    path = pool[0] if pool else ""
-    key = (path, size)
-    cached = _default_font_cache.get(key)
-    if cached is not None:
-        return cached
-    font = _load_font(path, size) if path else ImageFont.load_default()
-    _default_font_cache[key] = font
-    return font
+    path = _PRINTED_FONT_PATHS[0] if _PRINTED_FONT_PATHS else ""
+    return _load_font(path, size) if path else ImageFont.load_default()
 
 
 def _pick_font(
@@ -160,21 +151,69 @@ def _pick_font(
 ) -> ImageFont.ImageFont:
     if not randomize:
         return _default_font(size)
-    pool = _existing_fonts(_HANDWRITTEN_FONTS if handwritten else _PRINTED_FONTS)
+    pool = _HANDWRITTEN_FONT_PATHS if handwritten else _PRINTED_FONT_PATHS
     if not pool:
-        pool = _existing_fonts(_PRINTED_FONTS)
+        pool = _PRINTED_FONT_PATHS
     if not pool:
         return ImageFont.load_default()
     return _load_font(rng.choice(pool), size)
 
 
-def _line_bbox(
-    draw: ImageDraw.ImageDraw,
-    text: str,
-    font: ImageFont.ImageFont,
-) -> tuple[int, int, int, int]:
-    bbox = draw.textbbox((0, 0), text, font=font)
-    return bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1]
+def _text_width(font: ImageFont.ImageFont, text: str) -> float:
+    getlength = getattr(font, "getlength", None)
+    if getlength is not None:
+        return float(getlength(text))
+    if hasattr(font, "getbbox"):
+        bbox = font.getbbox(text)
+        return float(bbox[2] - bbox[0])
+    return float(len(text) * 8)
+
+
+def _text_bbox(font: ImageFont.ImageFont, text: str) -> tuple[int, int, int, int]:
+    if hasattr(font, "getbbox"):
+        left, top, right, bottom = font.getbbox(text)
+        return left, top, right - left, bottom - top
+    width = int(_text_width(font, text))
+    return 0, 0, width, 12
+
+
+def _wrap_long_word(word: str, font: ImageFont.ImageFont, max_width: int) -> list[str]:
+    rows: list[str] = []
+    row = ""
+    for character in word:
+        candidate = row + character
+        if row and _text_width(font, candidate) > max_width:
+            rows.append(row)
+            row = character
+        else:
+            row = candidate
+    if row:
+        rows.append(row)
+    return rows
+
+
+def _wrap_line(text: str, font: ImageFont.ImageFont, max_width: int) -> list[str]:
+    if not text:
+        return []
+    rows: list[str] = []
+    for word in text.split(" "):
+        if not word:
+            continue
+        if _text_width(font, word) > max_width:
+            if rows:
+                rows.extend(_wrap_long_word(word, font, max_width))
+            else:
+                rows = _wrap_long_word(word, font, max_width)
+            continue
+        if not rows:
+            rows.append(word)
+            continue
+        candidate = f"{rows[-1]} {word}"
+        if _text_width(font, candidate) > max_width:
+            rows.append(word)
+        else:
+            rows[-1] = candidate
+    return rows
 
 
 def render_text_sample(
@@ -207,6 +246,8 @@ def render_text_sample(
     y_cursor = margin
     line_gap = max(6, short_side // 40)
     default_font_size = max(18, short_side // 12)
+    rendered_rows: list[str] = []
+    canvas_full = False
 
     for line in text.split("\n"):
         handwritten = v.handwritten
@@ -215,21 +256,27 @@ def render_text_sample(
         else:
             font_size = default_font_size
         font = _pick_font(rng, handwritten, font_size, randomize=v.font)
-        _, _, line_width, line_height = _line_bbox(draw, line, font)
+        rows = _wrap_line(line.rstrip(), font, width - 2 * margin)
+        for row in rows:
+            _, _, row_width, row_height = _text_bbox(font, row)
+            if y_cursor + row_height > height - margin:
+                canvas_full = True
+                break
+            if v.x_offset:
+                max_x = width - margin - row_width
+                x = rng.randint(margin, max_x) if max_x >= margin else margin
+            else:
+                x = margin
 
-        if v.x_offset:
-            max_x = width - margin - line_width
-            x = rng.randint(margin, max_x) if max_x >= margin else margin
-        else:
-            x = margin
-
-        if y_cursor + line_height > height - margin:
+            ink_value = rng.randint(0, max(0, bg_value - 80)) if v.ink else 0
+            draw.text((x, y_cursor), row, fill=ink_value, font=font)
+            rendered_rows.append(row)
+            gap = rng.randint(4, line_gap) if v.line_spacing else line_gap
+            y_cursor += row_height + gap
+        if canvas_full:
             break
 
-        ink_value = rng.randint(0, max(0, bg_value - 80)) if v.ink else 0
-        draw.text((x, y_cursor), line, fill=ink_value, font=font)
-        gap = rng.randint(4, line_gap) if v.line_spacing else line_gap
-        y_cursor += line_height + gap
+    text = "\n".join(rendered_rows)
 
     if v.grain:
         noise = np.random.default_rng(rng.randint(0, 2**31 - 1)).integers(
@@ -243,24 +290,11 @@ def render_text_sample(
 
 def image_to_tensor(image: Image.Image) -> torch.Tensor:
     """Grayscale PIL → [1, H, W] float tensor normalized to [-1, 1]."""
-    array = np.asarray(image.convert("L"), dtype=np.float32)
+    if image.mode != "L":
+        image = image.convert("L")
+    array = np.asarray(image, dtype=np.float32)
     tensor = torch.from_numpy(array / 127.5 - 1.0)
     return tensor.unsqueeze(0)
-
-
-def pad_images_to_batch(images: list[torch.Tensor], *, pad_value: float = 1.0) -> torch.Tensor:
-    max_height = max(image.shape[-2] for image in images)
-    max_width = max(image.shape[-1] for image in images)
-    padded: list[torch.Tensor] = []
-    for image in images:
-        _, height, width = image.shape
-        if height == max_height and width == max_width:
-            padded.append(image)
-            continue
-        canvas = torch.full((1, max_height, max_width), pad_value, dtype=image.dtype)
-        canvas[:, :height, :width] = image
-        padded.append(canvas)
-    return torch.stack(padded)
 
 
 class SyntheticOcrDataset(IterableDataset):
@@ -269,49 +303,107 @@ class SyntheticOcrDataset(IterableDataset):
     def __init__(
         self,
         *,
-        image_sizes: tuple[tuple[int, int], ...],
+        data: DataSettings,
+        batch_size: int,
         max_seq_len: int,
         vocab: CharVocab,
-        line_counts: tuple[int, ...],
-        sentence_len_min: int,
-        sentence_len_max: int,
-        variations: RenderVariations,
         samples_per_epoch: int,
         seed: int | None = None,
+        training_step_value: Any = None,
+        prefetch_samples: int = 0,
     ) -> None:
-        self._image_sizes = image_sizes
+        self._data = data
+        self._batch_size = max(1, batch_size)
         self._max_seq_len = max_seq_len
         self._vocab = vocab
-        self._line_counts = line_counts
-        self._sentence_len_min = sentence_len_min
-        self._sentence_len_max = sentence_len_max
-        self._variations = variations
         self._samples_per_epoch = samples_per_epoch
         self._seed = seed
+        self._training_step_value = training_step_value
+        self._prefetch_samples = max(0, prefetch_samples)
         self.epoch = 0
+        self._local_training_step = 0
+
+    @property
+    def training_step(self) -> int:
+        return self._local_training_step
+
+    @training_step.setter
+    def training_step(self, step: int) -> None:
+        self._local_training_step = step
+        if self._training_step_value is not None:
+            self._training_step_value.value = step
+
+    def _current_training_step(self) -> int:
+        if self._training_step_value is not None:
+            return int(self._training_step_value.value)
+        return self._local_training_step
 
     def __len__(self) -> int:
         return self._samples_per_epoch
 
-    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    def _generate_sample(
+        self,
+        rng: random.Random,
+        *,
+        width: int,
+        height: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        settings = self._data.at_step(self._current_training_step())
+        sample = render_text_sample(
+            width,
+            height,
+            rng,
+            line_counts=settings.line_counts,
+            sentence_len_min=settings.sentence_len_min,
+            sentence_len_max=settings.sentence_len_max,
+            variations=settings.variations,
+        )
+        token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
+        if len(token_ids) > self._max_seq_len:
+            token_ids = token_ids[: self._max_seq_len]
+            if token_ids[-1] != self._vocab.eos_id:
+                token_ids[-1] = self._vocab.eos_id
+        return image_to_tensor(sample.image), torch.tensor(token_ids, dtype=torch.long)
+
+    def _iter_samples(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         rng = random.Random((self._seed or 0) + self.epoch)
-        for _ in range(self._samples_per_epoch):
-            width, height = rng.choice(self._image_sizes)
-            sample = render_text_sample(
-                width,
-                height,
-                rng,
-                line_counts=self._line_counts,
-                sentence_len_min=self._sentence_len_min,
-                sentence_len_max=self._sentence_len_max,
-                variations=self._variations,
-            )
-            token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
-            if len(token_ids) > self._max_seq_len:
-                token_ids = token_ids[: self._max_seq_len]
-                if token_ids[-1] != self._vocab.eos_id:
-                    token_ids[-1] = self._vocab.eos_id
-            yield image_to_tensor(sample.image), torch.tensor(token_ids, dtype=torch.long)
+        width = height = 0
+        for index in range(self._samples_per_epoch):
+            if index % self._batch_size == 0:
+                settings = self._data.at_step(self._current_training_step())
+                width, height = rng.choice(settings.image_sizes)
+            yield self._generate_sample(rng, width=width, height=height)
+
+    def _iter_prefetched(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+        queue: Queue[tuple[torch.Tensor, torch.Tensor] | None] = Queue(
+            maxsize=self._prefetch_samples,
+        )
+
+        def producer() -> None:
+            try:
+                for item in self._iter_samples():
+                    queue.put(item)
+            finally:
+                queue.put(None)
+
+        thread = Thread(target=producer, daemon=True)
+        thread.start()
+        while True:
+            try:
+                item = queue.get(timeout=0.1)
+            except Empty:
+                if not thread.is_alive() and queue.empty():
+                    break
+                continue
+            if item is None:
+                break
+            yield item
+
+    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+        if self._prefetch_samples > 0:
+            yield from self._iter_prefetched()
+            return
+        yield from self._iter_samples()
 
 
 class OcrCollator:
@@ -333,6 +425,43 @@ class OcrCollator:
                 )
             padded_ids.append(seq)
         return {
-            "images": pad_images_to_batch(list(images)),
+            "images": torch.stack(images),
             "token_ids": torch.stack(padded_ids),
+        }
+
+
+class HoldoutDataset(Dataset):
+    """Fixed holdout samples loaded from manifest.jsonl."""
+
+    def __init__(self, manifest_path: Path, holdout_dir: Path) -> None:
+        self._holdout_dir = holdout_dir
+        self._records: list[dict[str, object]] = []
+        with manifest_path.open(encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if line:
+                    self._records.append(json.loads(line))
+
+    def __len__(self) -> int:
+        return len(self._records)
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, str]:
+        record = self._records[index]
+        image_path = self._holdout_dir / str(record["image"])
+        image = Image.open(image_path).convert("L")
+        return image_to_tensor(image), str(record["text"])
+
+
+class HoldoutCollator:
+    def __call__(
+        self,
+        batch: list[tuple[torch.Tensor, str]],
+    ) -> dict[str, torch.Tensor | list[str]]:
+        images, texts = zip(*batch, strict=True)
+        shapes = {tuple(image.shape) for image in images}
+        if len(shapes) != 1:
+            raise ValueError("holdout batch contains mixed image sizes; match benchmark batch_size")
+        return {
+            "images": torch.stack(images),
+            "texts": list(texts),
         }

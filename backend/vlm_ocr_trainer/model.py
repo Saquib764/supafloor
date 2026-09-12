@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
@@ -13,8 +11,8 @@ from vocab import CharVocab
 GRID_SIZE = 16
 VISION_DIM = 96
 DECODER_DIM = 128
-VISION_LAYERS = 4
-DECODER_LAYERS = 3
+VISION_LAYERS = 8
+DECODER_LAYERS = 1
 VISION_HEADS = 4
 DECODER_HEADS = 4
 VISION_MLP = 192
@@ -43,6 +41,35 @@ class DepthwiseSeparableConv(nn.Module):
         return self.act(self.norm(x))
 
 
+class ResidualLocalBlock(nn.Module):
+    """Stride-preserving depthwise local mixing with a residual connection."""
+
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        self.conv = DepthwiseSeparableConv(channels, channels, stride=1)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x + self.conv(x)
+
+
+class Stride16Fusion(nn.Module):
+    """Fuse stride-8 features into stride-16 tokens via learned downsample + patch merge."""
+
+    def __init__(self, in_channels: int, out_channels: int) -> None:
+        super().__init__()
+        self.main = DepthwiseSeparableConv(in_channels, out_channels, stride=2)
+        self.detail = nn.Sequential(
+            nn.PixelUnshuffle(2),
+            nn.Conv2d(in_channels * 4, out_channels, 1, bias=False),
+        )
+        self.norm = nn.GroupNorm(1, out_channels)
+        self.act = nn.SiLU(inplace=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        fused = self.main(x) + self.detail(x)
+        return self.act(self.norm(fused))
+
+
 class CnnStem(nn.Module):
     def __init__(self, in_channels: int = 1, out_channels: int = VISION_DIM) -> None:
         super().__init__()
@@ -51,8 +78,11 @@ class CnnStem(nn.Module):
             nn.GroupNorm(1, 24),
             nn.SiLU(inplace=True),
             DepthwiseSeparableConv(24, 48),
+            ResidualLocalBlock(48),
             DepthwiseSeparableConv(48, 72),
-            DepthwiseSeparableConv(72, out_channels),
+            ResidualLocalBlock(72),
+            ResidualLocalBlock(72),
+            Stride16Fusion(72, out_channels),
         )
 
     def forward(self, x: Tensor) -> Tensor:

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vlm-ocr-trainer"
-version = "0.1.01"
+version = "0.1.10"
 description = "~1M-param vision-language OCR: 256×256 grayscale → character tokens"
 requires-python = ">=3.11"
 dependencies = [
@@ -35,6 +35,10 @@ dev-mode-dirs = ["."]
 "model.py" = "model.py"
 "preview.py" = "preview.py"
 "train.py" = "train.py"
+"benchmark.py" = "benchmark.py"
+"holdout.py" = "holdout.py"
+"metrics.py" = "metrics.py"
+"references.py" = "references.py"
 "vocab.py" = "vocab.py"
 
 [tool.uv]

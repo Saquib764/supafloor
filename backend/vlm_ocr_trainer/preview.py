@@ -10,7 +10,7 @@ from pathlib import Path
 import torch
 
 from canvas import input_output_row, text_panel
-from config import CONFIG_PATH, Config, load_config
+from config import CONFIG_PATH, Config, load_config, print_data_schedule
 from data import image_to_tensor, render_text_sample
 from device import training_device
 from model import (
@@ -45,24 +45,21 @@ def _fmt_line(n: int, num_bytes: int) -> str:
     return f"{n:,} ({_fmt_params(n)}, {_fmt_mb(num_bytes)})"
 
 
-_LAYER_ORDER = (
-    "stem",
-    "vision_blocks.0",
-    "vision_blocks.1",
-    "vision_blocks.2",
-    "vision_blocks.3",
-    "vision_norm",
-    "vision_proj",
-    "token_embedding",
-    "decoder_blocks.0",
-    "decoder_blocks.1",
-    "decoder_blocks.2",
-    "decoder_norm",
-)
+def _build_layer_order() -> tuple[str, ...]:
+    layers = ["stem"]
+    layers.extend(f"vision_blocks.{index}" for index in range(VISION_LAYERS))
+    layers.extend(["vision_norm", "vision_proj", "token_embedding"])
+    layers.extend(f"decoder_blocks.{index}" for index in range(DECODER_LAYERS))
+    layers.append("decoder_norm")
+    return tuple(layers)
+
+
+_LAYER_ORDER = _build_layer_order()
 
 
 def _print_architecture_summary(cfg: Config, vocab: CharVocab) -> None:
-    width, height = cfg.data.image_sizes[0]
+    settings = cfg.data.at_final()
+    width, height = settings.image_sizes[0]
     s1w, s1h = width // 2, height // 2
     s2w, s2h = width // 4, height // 4
     s3w, s3h = width // 8, height // 8
@@ -70,7 +67,7 @@ def _print_architecture_summary(cfg: Config, vocab: CharVocab) -> None:
 
     print("\n=== Architecture ===", flush=True)
     print("Task:     grayscale text image → character transcription (autoregressive)", flush=True)
-    sizes = ", ".join(f"{w}×{h}" for w, h in cfg.data.image_sizes)
+    sizes = ", ".join(f"{w}×{h}" for w, h in cfg.data.all_image_sizes)
     print(f"Input:    (1, H, W)   gray, normalized [-1, 1]   sizes: {sizes}", flush=True)
     print(f"Output:   (seq, {vocab.size})   char logits → BOS…text…EOS", flush=True)
     print(flush=True)
@@ -78,8 +75,10 @@ def _print_architecture_summary(cfg: Config, vocab: CharVocab) -> None:
     print("├─ CnnStem", flush=True)
     print(f"│  ├─ conv 3×3 stride 2     1→24 ch   @ {s1w}×{s1h}", flush=True)
     print(f"│  ├─ dwsep stride 2        24→48 ch  @ {s2w}×{s2h}", flush=True)
+    print(f"│  ├─ local block stride 4  48→48 ch  @ {s2w}×{s2h}", flush=True)
     print(f"│  ├─ dwsep stride 2        48→72 ch  @ {s3w}×{s3h}", flush=True)
-    print(f"│  └─ dwsep stride 2        72→96 ch  @ {s4w}×{s4h}", flush=True)
+    print(f"│  ├─ local block stride 8  72→72 ch  @ {s3w}×{s3h}  ×2", flush=True)
+    print(f"│  └─ stride-16 fusion      72→96 ch  @ {s4w}×{s4h}", flush=True)
     print(
         f"├─ VisionEncoder ({VISION_LAYERS} layers, d={VISION_DIM}, "
         f"heads={VISION_HEADS}, mlp={VISION_MLP}, 2D RoPE)",
@@ -105,8 +104,9 @@ def _print_architecture_summary(cfg: Config, vocab: CharVocab) -> None:
 
 
 def _print_input_summary(cfg: Config, vocab: CharVocab) -> None:
-    sizes = ", ".join(f"{w}×{h}" for w, h in cfg.data.image_sizes)
-    example_w, example_h = cfg.data.image_sizes[0]
+    settings = cfg.data.at_final()
+    sizes = ", ".join(f"{w}×{h}" for w, h in cfg.data.all_image_sizes)
+    example_w, example_h = settings.image_sizes[0]
     grid_w, grid_h = example_w // 16, example_h // 16
     visual_tokens = grid_w * grid_h
 
@@ -114,8 +114,8 @@ def _print_input_summary(cfg: Config, vocab: CharVocab) -> None:
     print("Source:   synthetic grayscale PIL image (random OCR-style text lines)", flush=True)
     print(f"Canvas:   one of [{sizes}] px (width×height), chosen per sample", flush=True)
     print(
-        f"Text:     {list(cfg.data.line_counts)} lines (sampled), "
-        f"{cfg.data.sentence_len_min}–{cfg.data.sentence_len_max} chars total",
+        f"Text:     {list(settings.line_counts)} lines (sampled), "
+        f"{settings.sentence_len_min}–{settings.sentence_len_max} chars total",
         flush=True,
     )
     print(flush=True)
@@ -229,7 +229,7 @@ def print_model(
     print(f"{'total:':<22} {_fmt_line(total, total_bytes)}", flush=True)
 
     if dummy_forward:
-        fw_w, fw_h = cfg.data.image_sizes[0]
+        fw_w, fw_h = cfg.data.at_final().image_sizes[0]
         image = torch.zeros(1, 1, fw_h, fw_w)
         token_ids = torch.tensor([[vocab.bos_id, vocab.stoi["H"], vocab.stoi["i"]]], dtype=torch.long)
         full_ids = torch.cat([token_ids, torch.tensor([[vocab.eos_id]])], dim=1)
@@ -257,15 +257,16 @@ def print_model(
 def export_sample_pair(cfg: Config, model: OcrVlm) -> None:
     vocab = model.vocab
     rng = random.Random(cfg.data.seed)
-    width, height = rng.choice(cfg.data.image_sizes)
+    settings = cfg.data.at_final()
+    width, height = rng.choice(settings.image_sizes)
     sample = render_text_sample(
         width,
         height,
         rng,
-        line_counts=cfg.data.line_counts,
-        sentence_len_min=cfg.data.sentence_len_min,
-        sentence_len_max=cfg.data.sentence_len_max,
-        variations=cfg.data.variations,
+        line_counts=settings.line_counts,
+        sentence_len_min=settings.sentence_len_min,
+        sentence_len_max=settings.sentence_len_max,
+        variations=settings.variations,
     )
     device = training_device()
     model.to(device)
@@ -306,17 +307,8 @@ def run(cfg: Config, *, export_sample: bool = True) -> None:
     torch.set_grad_enabled(False)
     model = print_model(cfg, dummy_forward=True)
     print("\n=== Config ===")
-    print(f"image_sizes:    {list(cfg.data.image_sizes)}")
+    print_data_schedule(cfg)
     print(f"max_seq_len:    {cfg.max_seq_len}")
-    print(f"sentence_len:   {cfg.data.sentence_len_min}–{cfg.data.sentence_len_max}")
-    print(f"line_counts:    {list(cfg.data.line_counts)}")
-    v = cfg.data.variations
-    print(
-        "variations:     "
-        f"background={v.background} grain={v.grain} ink={v.ink} "
-        f"handwritten={v.handwritten} font={v.font} font_size={v.font_size} "
-        f"x_offset={v.x_offset} line_spacing={v.line_spacing}"
-    )
     print(f"samples/epoch:  {cfg.data.samples_per_epoch:,}")
     if export_sample:
         export_sample_pair(cfg, model)

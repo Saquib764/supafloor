@@ -4,7 +4,7 @@ Grayscale text image in, character transcription out. A miniature TrOCR-style mo
 
 See `uv run vlm-ocr-train inspect` for live architecture, parameter counts, and a sample I/O export to `_preview/`.
 
-**Target size:** ~0.93M parameters (929,800 trainable).
+**Target size:** ~0.87M parameters (874,504 trainable).
 
 ---
 
@@ -76,7 +76,7 @@ CnnStem (4× downsample, SiLU + GroupNorm)
 [B, (H/16·W/16), 96]
         │
         ▼
-VisionEncoder × 4   (d=96, 4 heads, MLP=192, bidirectional, 2D RoPE)
+VisionEncoder × 8   (d=96, 4 heads, MLP=192, bidirectional, 2D RoPE)
         │
         ▼
 LayerNorm + Linear 96→128
@@ -86,7 +86,7 @@ visual tokens [B, N_vis, 128]     N_vis = (H/16)·(W/16)
         │
         │ cross-attention (fixed during decode)
         ▼
-TextDecoder × 3     (d=128, 4 heads, MLP=256, causal self-attn + cross-attn, 1D RoPE)
+TextDecoder × 1     (d=128, 4 heads, MLP=256, causal self-attn + cross-attn, 1D RoPE)
         │
         ▼
 lm_head (weight-tied to token_embedding)
@@ -101,14 +101,19 @@ lm_head (weight-tied to token_embedding)
 |---|---|---|---|
 | 0 | Conv 3×3, stride 2 | 1 → 24 | 128×128 |
 | 1 | DepthwiseSep, stride 2 | 24 → 48 | 64×64 |
-| 2 | DepthwiseSep, stride 2 | 48 → 72 | 32×32 |
-| 3 | DepthwiseSep, stride 2 | 72 → 96 | 16×16 |
+| 2 | Residual local block | 48 → 48 | 64×64 |
+| 3 | DepthwiseSep, stride 2 | 48 → 72 | 32×32 |
+| 4–5 | Residual local block ×2 | 72 → 72 | 32×32 |
+| 6 | Stride-16 fusion | 72 → 96 | 16×16 |
 
 Depthwise separable block: DWConv 3×3 → PWConv 1×1 → GroupNorm(1) → SiLU.
 
+Stride-16 fusion combines a learned stride-2 downsample with a PixelUnshuffle
+patch-merge path, then adds and normalizes before SiLU.
+
 ### Vision encoder
 
-- **4 layers**, pre-LayerNorm Transformer blocks
+- **8 layers**, pre-LayerNorm Transformer blocks
 - **d_model = 96**, **4 heads** (head dim 24), **MLP = 192**
 - **Bidirectional** self-attention (all image tokens see each other)
 - **2D RoPE:** first half of head dim rotated by y-position, second half by x-position
@@ -119,7 +124,7 @@ Single linear layer: `96 → 128` (no bias). Output visual tokens stay fixed for
 
 ### Text decoder
 
-- **3 layers**, pre-LayerNorm
+- **1 layer**, pre-LayerNorm
 - **d_model = 128**, **4 heads** (head dim 32), **MLP = 256**
 - Each layer: causal self-attention → cross-attention to visual tokens → MLP
 - **1D RoPE** on text self-attention
@@ -182,12 +187,12 @@ No beam search initially. KV caching for text self-attention and cross-attention
 
 | Component | Params |
 |---|---|
-| CNN stem | ~13.5K |
-| Vision encoder (4 layers) | ~297.8K |
+| CNN stem | ~56.1K |
+| Vision encoder (8 layers) | ~595.2K |
 | Vision projection | ~12.3K |
-| Text decoder (3 layers) | ~593.5K |
+| Text decoder (1 layer) | ~197.8K |
 | Token embedding (tied lm_head) | ~12.7K |
-| **Total** | **~929.8K** |
+| **Total** | **~874.5K** |
 
 Layer-wise breakdown: `uv run vlm-ocr-train inspect`.
 
