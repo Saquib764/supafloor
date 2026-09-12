@@ -41,6 +41,7 @@ class RenderVariations:
     font_size: bool = False
     x_offset: bool = False
     line_spacing: bool = False
+    line_tilt: bool = False
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,7 @@ class VariationSchedules:
     font_size: StepSchedule[bool]
     x_offset: StepSchedule[bool]
     line_spacing: StepSchedule[bool]
+    line_tilt: StepSchedule[bool]
 
     def at(self, step: int) -> RenderVariations:
         return RenderVariations(
@@ -93,6 +95,7 @@ class VariationSchedules:
             font_size=self.font_size.at(step),
             x_offset=self.x_offset.at(step),
             line_spacing=self.line_spacing.at(step),
+            line_tilt=self.line_tilt.at(step),
         )
 
     @property
@@ -108,6 +111,7 @@ class VariationSchedules:
                 self.font_size,
                 self.x_offset,
                 self.line_spacing,
+                self.line_tilt,
             )
         )
 
@@ -159,6 +163,7 @@ class DataSettings:
                 self.variations.font_size,
                 self.variations.x_offset,
                 self.variations.line_spacing,
+                self.variations.line_tilt,
             )
         ]
         return max(steps)

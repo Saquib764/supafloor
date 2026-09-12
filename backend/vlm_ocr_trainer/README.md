@@ -24,6 +24,7 @@ uv run vlm-ocr-train inspect --no-sample
 
 # Generate the fixed holdout benchmark set (run once, or after data config changes)
 uv run vlm-ocr-train holdout
+uv run vlm-ocr-train holdout --force
 
 # Train on synthetic text images
 uv run vlm-ocr-train train

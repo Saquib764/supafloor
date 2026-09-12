@@ -6,9 +6,9 @@ data:
   # First entry must be at step 0. Training step = optimizer steps (after grad accum).
   image_sizes:
     - [0, [[128, 128]]]
-    - [15000, [[256, 128], [128, 256]]]
-    - [20000, [[256, 256]]]
-    - [50000, [[256, 128], [128, 256], [256, 256]]]
+    - [45000, [[256, 128], [128, 256]]]
+    - [50000, [[256, 256]]]
+    - [90000, [[256, 128], [128, 256], [256, 256]]]
   sentence_len_min:
     - [0, 8]
   sentence_len_max:
@@ -16,69 +16,74 @@ data:
   # Number of text lines per sample — pick one value from the list each step.
   line_counts:
     - [0, [1]]
-    - [6000, [1, 2, 3]]
-    - [100000, [1, 2, 3, 4, 5, 6]]
+    - [15000, [1, 2, 3]]
+    # - [100000, [1, 2, 3, 4, 5, 6]]
   # Render variations (boolean). false = easy default; true = enable randomization.
-  # Suggested ramp order: font → font_size → x_offset → line_spacing → background → ink → grain → handwritten
+  # Suggested ramp order: font → font_size → x_offset → line_spacing → line_tilt → background → ink → grain → handwritten
   variations:
-    # false: pure white canvas. true: random gray background (230–255).
-    background:
-      - [0, false]
-      - [30000, true]
-    # false: clean pixels. true: ±8 pixel noise overlay (scan/photo artifacts).
-    grain:
-      - [0, false]
-      - [33000, true]
-    # false: black text. true: random gray ink (0 to bg−80).
-    ink:
-      - [0, false]
-      - [35000, true]
-    # false: printed fonts only. true: handwriting/script font pool — enable last.
-    handwritten:
-      - [0, false]
-      - [50000, true]
     # false: one fixed printed font. true: random printed font face per line.
     font:
       - [0, false]
-      - [5000, true]
+      - [8000, true]
     # false: fixed text height. true: random font size per line.
     font_size:
       - [0, false]
       - [10000, true]
+    # false: horizontal text rows. true: small random rotation per row (±4°).
+    line_tilt:
+      - [0, false]
+      - [11000, true]
     # false: fixed left margin. true: random horizontal position per line.
     x_offset:
       - [0, false]
-      - [11000, true]
+      - [12000, true]
     # false: even vertical gap. true: random line spacing per row.
     line_spacing:
       - [0, false]
-      - [13000, true]
-  samples_per_epoch: 10000
+      - [22000, true]
+    # false: pure white canvas. true: random gray background (230–255).
+    background:
+      - [0, false]
+      - [30000, true]
+    # false: black text. true: random gray ink (0 to bg−80).
+    ink:
+      - [0, false]
+      - [35000, true]
+    # false: clean pixels. true: ±8 pixel noise overlay (scan/photo artifacts).
+    grain:
+      - [0, false]
+      - [33000, true]
+    # false: printed fonts only. true: handwriting/script font pool — enable last.
+    handwritten:
+      - [0, false]
+      - [38000, true]
+  samples_per_epoch: 25000
 
 holdout:
   dir: holdout
   seed: 900001
   num_samples: 512
-  image_size: [256, 256]
+  image_size: [128, 128]
   sentence_len_min: 8
   sentence_len_max: 40
   line_counts: [1, 2, 3, 4, 5, 6]
   variations:
-    background: true
-    grain: true
-    ink: true
-    handwritten: true
     font: true
     font_size: true
     x_offset: true
     line_spacing: true
+    line_tilt: true
+    background: true
+    ink: true
+    grain: true
+    handwritten: false
 
 train:
-  session_dir: training_session
-  epochs: 400
-  batch_size: 32
+  session_dir: training_session_smoke
+  epochs: 200
+  batch_size: 16
   grad_accum: 1
-  learning_rate: 8.0e-4
+  learning_rate: 1.0e-3
   weight_decay: 0.01
   warmup_ratio: 0.03
   bf16: true
@@ -90,7 +95,7 @@ train:
   num_workers: 8  # parallel CPU render workers; 0 = main process only
   prefetch_factor: 2  # DataLoader batches prefetched per worker (num_workers > 0)
   prefetch_samples: 64  # in-process thread prefetch when num_workers = 0
-  benchmark_steps: 1000  # holdout eval every N optimizer steps; 0 = off
+  benchmark_steps: 2000  # holdout eval every N optimizer steps; 0 = off
   benchmark_batch_size: 32
   save_best: true
 

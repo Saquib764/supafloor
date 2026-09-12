@@ -192,6 +192,39 @@ def _wrap_long_word(word: str, font: ImageFont.ImageFont, max_width: int) -> lis
     return rows
 
 
+def _draw_text_row(
+    image: Image.Image,
+    *,
+    row: str,
+    font: ImageFont.ImageFont,
+    x: int,
+    y: int,
+    ink_value: int,
+    bg_value: int,
+    tilt: bool,
+    rng: random.Random,
+) -> None:
+    if not tilt:
+        ImageDraw.Draw(image).text((x, y), row, fill=ink_value, font=font)
+        return
+
+    left, top, right, bottom = font.getbbox(row)
+    row_width = right - left
+    row_height = bottom - top
+    pad = max(8, row_height // 2)
+    line_img = Image.new("L", (row_width + 2 * pad, row_height + 2 * pad), color=bg_value)
+    ImageDraw.Draw(line_img).text((pad - left, pad - top), row, fill=ink_value, font=font)
+    angle = rng.uniform(-4.0, 4.0)
+    rotated = line_img.rotate(
+        angle,
+        center=(pad, pad),
+        expand=True,
+        resample=Image.Resampling.BICUBIC,
+        fillcolor=bg_value,
+    )
+    image.paste(rotated, (x - pad, y - pad))
+
+
 def _wrap_line(text: str, font: ImageFont.ImageFont, max_width: int) -> list[str]:
     if not text:
         return []
@@ -241,7 +274,6 @@ def render_text_sample(
     margin = max(8, short_side // 32)
     bg_value = rng.randint(230, 255) if v.background else 255
     image = Image.new("L", (width, height), color=bg_value)
-    draw = ImageDraw.Draw(image)
 
     y_cursor = margin
     line_gap = max(6, short_side // 40)
@@ -269,7 +301,17 @@ def render_text_sample(
                 x = margin
 
             ink_value = rng.randint(0, max(0, bg_value - 80)) if v.ink else 0
-            draw.text((x, y_cursor), row, fill=ink_value, font=font)
+            _draw_text_row(
+                image,
+                row=row,
+                font=font,
+                x=x,
+                y=y_cursor,
+                ink_value=ink_value,
+                bg_value=bg_value,
+                tilt=v.line_tilt,
+                rng=rng,
+            )
             rendered_rows.append(row)
             gap = rng.randint(4, line_gap) if v.line_spacing else line_gap
             y_cursor += row_height + gap
