@@ -232,6 +232,7 @@ def sample_bounded_paragraph(
     *,
     max_chars: int,
     settings: VariationSettings | None = None,
+    fill_budget: bool = False,
 ) -> str:
     """Sample one paragraph with len(text) <= max_chars."""
     max_chars = max(1, max_chars)
@@ -239,7 +240,10 @@ def sample_bounded_paragraph(
         words = [word for word in corpus.all_words if len(word) <= max_chars]
         return rng.choice(words or corpus.all_words)[:max_chars]
 
-    min_len = 1 if max_chars < 8 else min(max_chars - 1, max(1, max_chars // 2))
+    if fill_budget:
+        min_len = max_chars
+    else:
+        min_len = 1 if max_chars < 8 else min(max_chars - 1, max(1, max_chars // 2))
     tokens = sample_paragraph_tokens(
         rng,
         corpus,
@@ -258,29 +262,58 @@ def sample_bounded_paragraph(
     return text[:max_chars]
 
 
+def sample_document_for_budget(
+    rng: random.Random,
+    corpus: WordCorpus,
+    *,
+    settings: VariationSettings,
+    max_chars: int,
+    paragraph_counts: tuple[int, ...],
+) -> list[str]:
+    """Sample document text targeting the full max_seq_len char budget."""
+    max_chars = max(1, max_chars)
+    count = 1 if max_chars < 200 else rng.choice(paragraph_counts)
+    paragraphs: list[str] = []
+    remaining = max_chars
+    for index in range(count):
+        slots_left = count - index
+        budget = max(1, remaining // slots_left)
+        if index == count - 1:
+            budget = remaining
+        paragraph = sample_bounded_paragraph(
+            rng,
+            corpus,
+            max_chars=budget,
+            settings=settings,
+            fill_budget=True,
+        )
+        if not paragraph:
+            break
+        paragraphs.append(paragraph)
+        remaining -= len(paragraph)
+        if index + 1 < count:
+            remaining -= 2
+        if remaining <= 0:
+            break
+    return paragraphs
+
+
 def sample_document_paragraphs(
     rng: random.Random,
     corpus: WordCorpus,
     *,
     settings: VariationSettings,
     paragraph_counts: tuple[int, ...],
-    paragraph_len_min: int,
     paragraph_len_max: int,
 ) -> list[str]:
     count = rng.choice(paragraph_counts)
-    per_min = max(1, paragraph_len_min // count)
-    per_max = max(per_min, paragraph_len_max // count)
-    paragraphs: list[str] = []
-    for _ in range(count):
-        target_max = rng.randint(per_min, per_max)
-        slack = min(40, max(1, per_max // 2))
-        target_min = min(per_min, max(1, target_max - slack))
-        tokens = sample_paragraph_tokens(
+    per_max = max(1, paragraph_len_max // count)
+    return [
+        sample_bounded_paragraph(
             rng,
             corpus,
-            min_len=target_min,
-            max_len=target_max,
+            max_chars=per_max,
             settings=settings,
         )
-        paragraphs.append(join_tokens(tokens))
-    return paragraphs
+        for _ in range(count)
+    ]

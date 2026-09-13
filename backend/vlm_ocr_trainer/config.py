@@ -262,7 +262,6 @@ class DataSettings:
     image_sizes: StepSchedule[tuple[tuple[int, int], ...]]
     variations: VariationSchedule
     paragraph_counts: tuple[int, ...]
-    paragraph_len_min: int
     paragraph_len_max: int
     samples_per_epoch: int
 
@@ -307,7 +306,6 @@ class HoldoutSettings:
     width: int
     height: int
     paragraph_counts: tuple[int, ...]
-    paragraph_len_min: int
     paragraph_len_max: int
     words: Path
 
@@ -724,19 +722,15 @@ def _parse_counts_value(raw: Any, *, field_name: str) -> tuple[int, ...]:
 
 
 def _parse_paragraph_render(raw: dict[str, Any], *, field_prefix: str) -> dict[str, Any]:
-    paragraph_len_min = int(raw.get("paragraph_len_min", 120))
     paragraph_len_max = int(raw.get("paragraph_len_max", 400))
-    if paragraph_len_min < 1:
-        raise ValueError(f"{field_prefix}.paragraph_len_min must be >= 1")
-    if paragraph_len_max < paragraph_len_min:
-        raise ValueError(f"{field_prefix}.paragraph_len_max must be >= {field_prefix}.paragraph_len_min")
+    if paragraph_len_max < 1:
+        raise ValueError(f"{field_prefix}.paragraph_len_max must be >= 1")
     paragraph_counts = _parse_counts_value(
         raw.get("paragraph_counts", [1, 2, 3]),
         field_name=f"{field_prefix}.paragraph_counts",
     )
     return {
         "paragraph_counts": paragraph_counts,
-        "paragraph_len_min": paragraph_len_min,
         "paragraph_len_max": paragraph_len_max,
     }
 
@@ -798,7 +792,7 @@ def print_data_schedule(cfg: Config) -> None:
     )
     print(_format_step_schedule("image_sizes", data.image_sizes))
     print(f"paragraph_counts: {list(data.paragraph_counts)}")
-    print(f"paragraph_len:    {data.paragraph_len_min}–{data.paragraph_len_max}")
+    print(f"paragraph_len:    up to {data.paragraph_len_max}")
     print(f"variations@0:     {_format_variation_step(data.variations.at(0))}")
     print(f"variations@final: {_format_variation_step(data.variations.final)}")
     for name, field_schedule in _variation_schedules(data.variations):

@@ -105,7 +105,6 @@ def print_model(
         example_width=example_w,
         example_height=example_h,
         paragraph_counts=cfg.data.paragraph_counts,
-        paragraph_len_min=cfg.data.paragraph_len_min,
         paragraph_len_max=cfg.data.paragraph_len_max,
         max_seq_len=cfg.max_seq_len.final,
     )
@@ -156,7 +155,6 @@ def export_sample_pair(cfg: Config, model: OcrVlm) -> None:
         corpus,
         settings.variations,
         paragraph_counts=cfg.data.paragraph_counts,
-        paragraph_len_min=cfg.data.paragraph_len_min,
         paragraph_len_max=cfg.data.paragraph_len_max,
     )
     device = training_device()

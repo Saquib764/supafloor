@@ -25,9 +25,9 @@ from holdout import holdout_manifest_path
 from references import print_benchmark_report
 from config import Config, load_config, print_data_schedule
 from data import OcrCollator, SyntheticOcrDataset, image_to_tensor
-from renderer.canvas import input_output_row
+from renderer.canvas import training_viz_row
 from renderer.corpus import require_corpus
-from renderer.paragraph_render import render_paragraph_sample
+from renderer.training_sample import generate_training_sample
 from device import training_device
 from model import OcrVlm, count_parameters, ocr_loss
 from preview import print_model
@@ -86,21 +86,22 @@ def _viz_row(
 ) -> Image.Image:
     rng = random.Random(seed)
     settings = cfg.data.at_step(step)
+    max_seq_len = cfg.max_seq_len.at(step)
     width, height = rng.choice(settings.image_sizes)
-    sample = render_paragraph_sample(
+    sample = generate_training_sample(
         width,
         height,
         rng,
         corpus,
         settings.variations,
+        vocab,
+        max_seq_len=max_seq_len,
         paragraph_counts=cfg.data.paragraph_counts,
-        paragraph_len_min=cfg.data.paragraph_len_min,
-        paragraph_len_max=cfg.data.paragraph_len_max,
     )
     tensor = image_to_tensor(sample.image).unsqueeze(0).to(device)
-    generated = model.generate(tensor, max_length=cfg.max_seq_len.at(step))
+    generated = model.generate(tensor, max_length=max_seq_len)
     pred = vocab.decode(generated[0].tolist())
-    return input_output_row(tensor[0], pred)
+    return training_viz_row(tensor[0], sample.text, pred)
 
 
 def _save_viz(
@@ -200,6 +201,7 @@ def run(cfg: Config) -> None:
     vocab = CharVocab()
     corpus = require_corpus(cfg.words.path)
     training_step_value = Value("i", 0)
+    epoch_value = Value("i", 0)
     use_workers = cfg.train.num_workers > 0
     prefetch_samples = 0 if use_workers else cfg.train.prefetch_samples
     if prefetch_samples == 0 and not use_workers:
@@ -213,6 +215,7 @@ def run(cfg: Config) -> None:
         samples_per_epoch=cfg.data.samples_per_epoch,
         seed=cfg.data.seed,
         training_step_value=training_step_value,
+        epoch_value=epoch_value,
         prefetch_samples=prefetch_samples,
     )
     loader_kwargs: dict[str, object] = {
@@ -256,6 +259,7 @@ def run(cfg: Config) -> None:
         step = int(state["step"])
         start_epoch = int(state["epoch"])
         training_step_value.value = step
+        dataset.epoch = start_epoch
         tqdm.write(f"Resumed step {step} epoch {start_epoch} ← {checkpoint_path}")
 
     print("\n=== Device ===")

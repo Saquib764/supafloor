@@ -46,7 +46,6 @@ def generate_holdout(cfg: Config, *, force: bool = False) -> Path:
             corpus,
             cfg.data.variations.final,
             paragraph_counts=holdout.paragraph_counts,
-            paragraph_len_min=holdout.paragraph_len_min,
             paragraph_len_max=holdout.paragraph_len_max,
         )
         image_name = f"{index:06d}.png"

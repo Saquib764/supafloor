@@ -14,9 +14,9 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset, IterableDataset
 
-from config import DataSettings, StepSchedule, VariationSettings
-from renderer.corpus import WordCorpus, sample_bounded_paragraph
-from renderer.paragraph_render import render_paragraph_document, render_paragraph_sample
+from config import DataSettings, StepSchedule
+from renderer.corpus import WordCorpus
+from renderer.training_sample import generate_training_sample
 from vocab import CharVocab
 
 
@@ -43,6 +43,7 @@ class SyntheticOcrDataset(IterableDataset):
         samples_per_epoch: int,
         seed: int | None = None,
         training_step_value: Any = None,
+        epoch_value: Any = None,
         prefetch_samples: int = 0,
     ) -> None:
         self._data = data
@@ -53,9 +54,20 @@ class SyntheticOcrDataset(IterableDataset):
         self._samples_per_epoch = samples_per_epoch
         self._seed = seed
         self._training_step_value = training_step_value
+        self._epoch_value = epoch_value
         self._prefetch_samples = max(0, prefetch_samples)
-        self.epoch = 0
+        self._local_epoch = 0
         self._local_training_step = 0
+
+    @property
+    def epoch(self) -> int:
+        return self._current_epoch()
+
+    @epoch.setter
+    def epoch(self, value: int) -> None:
+        self._local_epoch = value
+        if self._epoch_value is not None:
+            self._epoch_value.value = value
 
     @property
     def training_step(self) -> int:
@@ -72,13 +84,22 @@ class SyntheticOcrDataset(IterableDataset):
             return int(self._training_step_value.value)
         return self._local_training_step
 
+    def _current_epoch(self) -> int:
+        if self._epoch_value is not None:
+            return int(self._epoch_value.value)
+        return self._local_epoch
+
+    def _worker_shard(self) -> tuple[int, int]:
+        info = torch.utils.data.get_worker_info()
+        if info is None:
+            return 0, self._samples_per_epoch
+        per_worker = self._samples_per_epoch // info.num_workers
+        extra = self._samples_per_epoch % info.num_workers
+        count = per_worker + (1 if info.id < extra else 0)
+        return info.id, count
+
     def __len__(self) -> int:
         return self._samples_per_epoch
-
-    def _fits_label(self, text: str, *, max_seq_len: int, max_text_chars: int) -> bool:
-        if not text or len(text) > max_text_chars:
-            return False
-        return len(self._vocab.encode(text, add_bos_eos=True)) <= max_seq_len
 
     def _generate_sample(
         self,
@@ -87,88 +108,28 @@ class SyntheticOcrDataset(IterableDataset):
         width: int,
         height: int,
         max_seq_len: int,
-        variations: VariationSettings,
+        variations,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Render until label is non-empty drawn text with len(ids) <= max_seq_len."""
-        max_text_chars = max(1, max_seq_len - 2)
-        tight_budget = max_text_chars < self._data.paragraph_len_min
-        max_attempts = 32
-
-        for attempt in range(max_attempts):
-            if tight_budget:
-                target_max = max(1, max_text_chars - attempt // 8)
-                paragraph = sample_bounded_paragraph(
-                    rng,
-                    self._corpus,
-                    max_chars=target_max,
-                    settings=variations,
-                )
-                sample = render_paragraph_document(
-                    width,
-                    height,
-                    rng,
-                    [paragraph],
-                    variations,
-                )
-            else:
-                shrink = min(0.75, 0.06 * attempt)
-                paragraph_len_max = min(
-                    max_text_chars,
-                    max(
-                        1,
-                        int(self._data.paragraph_len_max * (1.0 - shrink)),
-                    ),
-                )
-                paragraph_len_min = min(self._data.paragraph_len_min, paragraph_len_max)
-                paragraph_counts = self._data.paragraph_counts
-                if attempt >= max_attempts // 2:
-                    paragraph_counts = (1,)
-
-                sample = render_paragraph_sample(
-                    width,
-                    height,
-                    rng,
-                    self._corpus,
-                    variations,
-                    paragraph_counts=paragraph_counts,
-                    paragraph_len_min=paragraph_len_min,
-                    paragraph_len_max=paragraph_len_max,
-                )
-
-            if self._fits_label(sample.text, max_seq_len=max_seq_len, max_text_chars=max_text_chars):
-                token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
-                return image_to_tensor(sample.image), torch.tensor(token_ids, dtype=torch.long)
-
-        for word in sorted(self._corpus.all_words, key=len):
-            for candidate in (word.capitalize() + ".", word[:max_text_chars]):
-                if not candidate or len(candidate) > max_text_chars:
-                    continue
-                sample = render_paragraph_document(
-                    width,
-                    height,
-                    rng,
-                    [candidate],
-                    variations,
-                )
-                if self._fits_label(
-                    sample.text,
-                    max_seq_len=max_seq_len,
-                    max_text_chars=max_text_chars,
-                ):
-                    token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
-                    return image_to_tensor(sample.image), torch.tensor(token_ids, dtype=torch.long)
-
-        raise RuntimeError(
-            f"failed to render a sample within max_seq_len={max_seq_len} "
-            f"({max_text_chars} text chars) after {max_attempts} attempts",
+        sample = generate_training_sample(
+            width,
+            height,
+            rng,
+            self._corpus,
+            variations,
+            self._vocab,
+            max_seq_len=max_seq_len,
+            paragraph_counts=self._data.paragraph_counts,
         )
+        token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
+        return image_to_tensor(sample.image), torch.tensor(token_ids, dtype=torch.long)
 
     def _iter_samples(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-        rng = random.Random((self._seed or 0) + self.epoch)
+        worker_id, count = self._worker_shard()
+        rng = random.Random((self._seed or 0) + self._current_epoch() * 1_000_003 + worker_id)
         width = height = 0
         max_seq_len = self._max_seq_len.at(0)
         variations = self._data.variations.at(0)
-        for index in range(self._samples_per_epoch):
+        for index in range(count):
             if index % self._batch_size == 0:
                 step = self._current_training_step()
                 settings = self._data.at_step(step)

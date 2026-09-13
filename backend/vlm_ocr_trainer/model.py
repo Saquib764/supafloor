@@ -151,7 +151,6 @@ def print_vision_encode_summary(
     example_width: int,
     example_height: int,
     paragraph_counts: tuple[int, ...],
-    paragraph_len_min: int,
     paragraph_len_max: int,
     max_seq_len: int,
 ) -> None:
@@ -164,7 +163,7 @@ def print_vision_encode_summary(
     print(f"Canvas:   one of [{sizes}] px (width×height), chosen per batch", flush=True)
     print(
         f"Text:     {list(paragraph_counts)} paragraphs (sampled), "
-        f"{paragraph_len_min}–{paragraph_len_max} chars each",
+        f"up to {paragraph_len_max} chars each",
         flush=True,
     )
     print(flush=True)
@@ -522,8 +521,8 @@ class DecoderBlock(nn.Module):
         self.norm3 = nn.LayerNorm(dim)
         self.mlp = Mlp(dim, mlp_dim)
 
-    def forward(self, x: Tensor, context: Tensor) -> Tensor:
-        x = x + self.self_attn(self.norm1(x))
+    def forward(self, x: Tensor, context: Tensor, attn_mask: Tensor | None = None) -> Tensor:
+        x = x + self.self_attn(self.norm1(x), attn_mask=attn_mask)
         x = x + self.cross_attn(self.norm2(x), context)
         x = x + self.mlp(self.norm3(x))
         return x
@@ -578,8 +577,9 @@ class OcrVlm(nn.Module):
 
     def decode(self, visual_tokens: Tensor, token_ids: Tensor) -> Tensor:
         x = self.token_embedding(token_ids)
+        attn_mask = token_ids != self.vocab.pad_id
         for block in self.decoder_blocks:
-            x = block(x, visual_tokens)
+            x = block(x, visual_tokens, attn_mask=attn_mask)
         x = self.decoder_norm(x)
         return self.lm_head(x)
 
@@ -605,6 +605,7 @@ class OcrVlm(nn.Module):
         for _ in range(max_length - 1):
             logits = self.decode(visual, generated)
             next_token = logits[:, -1].argmax(dim=-1, keepdim=True)
+            next_token = next_token.masked_fill(finished.unsqueeze(1), eos_id)
             generated = torch.cat([generated, next_token], dim=1)
             finished |= next_token.squeeze(1) == eos_id
             if finished.all():

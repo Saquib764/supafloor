@@ -141,7 +141,6 @@ def render_paragraph_sample(
     settings: VariationSettings,
     *,
     paragraph_counts: tuple[int, ...],
-    paragraph_len_min: int,
     paragraph_len_max: int,
 ) -> RenderedSample:
     paragraphs = sample_document_paragraphs(
@@ -149,7 +148,6 @@ def render_paragraph_sample(
         corpus,
         settings=settings,
         paragraph_counts=paragraph_counts,
-        paragraph_len_min=paragraph_len_min,
         paragraph_len_max=paragraph_len_max,
     )
     return render_paragraph_document(width, height, rng, paragraphs, settings)

@@ -70,6 +70,8 @@ class CharVocab:
         parts: list[str] = []
         for token_id in ids:
             token = self.itos[int(token_id)]
+            if token == "<EOS>":
+                break
             if skip_special and token in SPECIAL_TOKENS:
                 continue
             parts.append(token)

@@ -45,7 +45,7 @@ Training picks one canvas size per **batch** from the current step's `data.image
 
 Training samples use the same paragraph pipeline as holdout: words, numbers, and punctuation from `renderer/words.json` are composed into 1–3 paragraphs and rendered with font/size/opacity/background/grain variation. Labels contain only text that fit on the canvas.
 
-Tune `data.paragraph_counts` and `paragraph_len_min` / `paragraph_len_max` in `config.yaml` (defaults match `holdout.*`). Font size is random 8–16 px per sample.
+Tune `data.paragraph_counts` and `paragraph_len_max` in `config.yaml` (defaults match `holdout.*`). Font size is random 8–16 px per sample.
 
 ## Holdout benchmark
 
@@ -56,7 +56,7 @@ Training data is infinite synthetic text, but accuracy is measured on a **fixed 
 3. During training, every `train.benchmark_steps` optimizer steps the model runs greedy decode on the holdout.
 4. Metrics logged: **CER**, **WER**, **seq acc** (exact string match).
 
-Tune `words.*` and `holdout.paragraph_counts`, `paragraph_len_min` / `paragraph_len_max` in `config.yaml`.
+Tune `words.*` and `holdout.paragraph_counts`, `paragraph_len_max` in `config.yaml`.
 
 `train.save_best: true` writes `training_session/best.pt` when holdout CER improves. Per-epoch metrics append to `training_session/metrics.jsonl`.
 

@@ -6,6 +6,8 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
+HEADER_H = 28
+
 
 def tensor_to_rgb(image: torch.Tensor) -> Image.Image:
     array = ((image.detach().float().cpu().squeeze(0).numpy() + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
@@ -15,7 +17,7 @@ def tensor_to_rgb(image: torch.Tensor) -> Image.Image:
 def with_label(image: Image.Image, label: str) -> Image.Image:
     labeled = image.copy()
     draw = ImageDraw.Draw(labeled)
-    draw.rectangle((0, 0, labeled.width, 28), fill=(255, 255, 255))
+    draw.rectangle((0, 0, labeled.width, HEADER_H), fill=(255, 255, 255))
     draw.text((8, 6), label, fill=(0, 0, 0), font=ImageFont.load_default())
     return labeled
 
@@ -53,7 +55,7 @@ def text_panel(
     font = ImageFont.load_default()
     margin = 12
     max_width = width - margin * 2
-    y = margin
+    y = HEADER_H + 4 if label is not None else margin
     for line in _wrap_text_lines(text, draw, font, max_width):
         draw.text((margin, y), line, fill=fill, font=font)
         y += 14
@@ -87,4 +89,27 @@ def input_output_row(input_image: Image.Image | torch.Tensor, output_text: str) 
     row = Image.new("RGB", (input_rgb.width * 2, input_rgb.height), (255, 255, 255))
     row.paste(input_rgb, (0, 0))
     row.paste(output_panel, (input_rgb.width, 0))
+    return row
+
+
+def training_viz_row(
+    input_image: Image.Image | torch.Tensor,
+    ground_truth: str,
+    prediction: str,
+) -> Image.Image:
+    if isinstance(input_image, torch.Tensor):
+        input_rgb = tensor_to_rgb(input_image)
+    else:
+        input_rgb = input_image.convert("RGB")
+    label_panel = text_panel(input_rgb.width, input_rgb.height, ground_truth)
+    pred_panel = text_panel(
+        input_rgb.width,
+        input_rgb.height,
+        prediction,
+        fill=(0, 80, 0),
+    )
+    row = Image.new("RGB", (input_rgb.width * 3, input_rgb.height), (255, 255, 255))
+    row.paste(input_rgb, (0, 0))
+    row.paste(label_panel, (input_rgb.width, 0))
+    row.paste(pred_panel, (input_rgb.width * 2, 0))
     return row
