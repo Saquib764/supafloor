@@ -14,47 +14,47 @@ vocabularies, image sizes, training data, and metrics also differ.
 ## Current OcrVlm
 
 **Release:** local model, 2026  
-**Parameters:** 929,800  
+**Parameters:** ~970K (run `uv run vlm-ocr-train inspect`)  
 **Task:** grayscale, multiline image-to-character transcription
 
 ```text
 128–256 px grayscale image
-  → depthwise-separable CNN stem, total stride 16
-  → 4 vision Transformer blocks
-       width 96, 4 heads, MLP 192, axial 2D RoPE
-  → projection 96 → 128
-  → 3 autoregressive decoder blocks
-       width 128, 4 heads, MLP 256, 1D RoPE
+  → depthwise-separable CNN stem, anisotropic W÷4 H÷8
+  → fixed 2D sinusoidal pos + 8 vision blocks (H/V axial attention, 2D RoPE)
+       width 96, 4 heads, MLP 192
+  → projection 96 → 112
+  → 2 autoregressive decoder blocks
+       width 112, 4 heads, MLP 256, 1D RoPE
   → tied character embedding/language head
-  → 99-token character vocabulary, including newline
+  → 113-token character vocabulary, including research symbols and newline
 ```
 
-Parameter allocation:
+### Stem compression
 
-- CNN stem: 13,512 (1.5%)
-- Vision blocks: 297,600 (32.0%)
-- Decoder blocks: 593,280 (63.8%)
-- Remaining projection, normalization, and embedding: 25,408 (2.7%)
+Anisotropic stem: 256×256 → **64×32** visual grid (2048 tokens). Preserves
+more horizontal resolution (W÷4) than vertical (H÷8), suited to text lines.
+Constants and validation are in `model.py` (`STEM_STRIDE_W = 4`, `STEM_STRIDE_H = 8`).
 
 Strengths:
 
 - Preserves a two-dimensional representation for multiline reading order.
+- W÷4 gives ~4 px per token horizontally on 256×256; H÷8 gives ~8 px vertically.
 - Uses local CNN features followed by global visual attention.
-- Parameter-free 2D and 1D rotary position embeddings.
+- Fixed 2D sinusoidal position features plus 2D RoPE in vision; 1D RoPE in decoder.
 - Autoregressive decoding models character and newline dependencies.
 - Weight tying keeps the character embedding and output head inexpensive.
 
 Main limitations:
 
-- Four stride-2 operations reduce glyphs to stride-16 features before visual
-attention.
-- The 13.5K-parameter stem has little capacity for handwriting and fine
-strokes.
-- Nearly two-thirds of parameters are spent in the decoder.
-- All vision blocks use global attention; there is no explicit local
-character-component mixer after the stem.
+- 2048 visual tokens at 256×256 is a large grid, though axial attention keeps
+  vision cost at O(H·W² + W·H²) instead of O((HW)²).
+- The CNN stem has limited capacity for handwriting and fine strokes.
+- A large share of parameters is still spent in the decoder.
+- Vision blocks alternate row/column attention rather than full global mixing
+  in a single layer; there is no explicit local character-component mixer
+  after the stem.
 - Greedy decoding can propagate errors or hallucinate plausible characters.
-- Mixed-size padded batches require correct visual masking or size bucketing.
+- Training uses one canvas size per batch (no spatial padding); holdout batches must also be uniform size.
 
 ## PP-OCRv6 Tiny
 
@@ -79,9 +79,10 @@ Training only:
 
 ### Compared with OcrVlm
 
-- PP-OCR preserves horizontal resolution; OcrVlm reduces width by 16.
-- PP-OCR dedicates deployed capacity to visual extraction; OcrVlm dedicates
-63.8% to its language decoder.
+- PP-OCR preserves horizontal resolution with asymmetric downsampling; OcrVlm
+  uses uniform stride 8 on both axes (32×32 grid at 256×256).
+- PP-OCR dedicates deployed capacity to visual extraction; OcrVlm still dedicates
+a large share of parameters to its language decoder.
 - PP-OCR decodes all CTC positions in parallel; OcrVlm decodes sequentially.
 - PP-OCR uses language supervision and distillation during training without
 retaining that cost at inference.
@@ -143,8 +144,8 @@ text-line image
 
 ### Compared with OcrVlm
 
-- SVTR begins character-component processing at stride 4; OcrVlm begins
-attention at stride 16.
+- SVTR begins character-component processing at stride 4; OcrVlm begins global
+attention after a uniform stride-8 stem.
 - SVTR is hierarchical and widens with depth; OcrVlm remains at width 96.
 - SVTR uses explicit local-before-global mixing; OcrVlm uses four uniform
 global Transformer blocks.
@@ -184,7 +185,8 @@ PARSeq trains shared decoder weights with permutation language modelling.
 and three decoder layers.
 - Approximately 90% of PARSeq-S parameters belong to the visual encoder,
 versus about 34% of OcrVlm before the decoder.
-- PARSeq uses fine anisotropic patches; OcrVlm uniformly downsamples by 16.
+- PARSeq uses fine anisotropic patches; OcrVlm uses uniform stride-8 patches
+  (32×32 grid at 256×256).
 - PARSeq uses learned output-position queries and permutation masks; OcrVlm
 embeds the generated prefix and always trains left-to-right.
 - PARSeq can share one model across several decoding modes. OcrVlm only uses
@@ -474,7 +476,7 @@ improvement. It should be evaluated by changing one factor at a time and
 reporting at least character error rate, exact sequence accuracy, newline
 accuracy, latency, and peak memory. Comparisons must use the same training
 steps and data because moving capacity cannot compensate for incorrect visual
-padding masks, label truncation, or inconsistent synthetic labels.
+label truncation, or inconsistent synthetic labels.
 
 This combines:
 

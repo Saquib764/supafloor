@@ -1,11 +1,9 @@
-"""On-the-fly synthetic OCR samples: random text lines → grayscale image."""
+"""OCR datasets: synthetic training stream and fixed holdout loader."""
 
 from __future__ import annotations
 
 import json
 import random
-import string
-from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
@@ -13,321 +11,13 @@ from typing import Any, Iterator
 
 import numpy as np
 import torch
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from torch.utils.data import Dataset, IterableDataset
 
-from config import DataSettings, RenderVariations
+from config import DataSettings, StepSchedule
+from renderer.corpus import WordCorpus
+from renderer.paragraph_render import render_paragraph_sample
 from vocab import CharVocab
-
-_PRINTED_FONTS = (
-    "/System/Library/Fonts/Supplemental/Arial.ttf",
-    "/System/Library/Fonts/Supplemental/Courier New.ttf",
-    "/System/Library/Fonts/Supplemental/Georgia.ttf",
-    "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
-    "/System/Library/Fonts/Supplemental/Verdana.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-)
-
-_HANDWRITTEN_FONTS = (
-    "/System/Library/Fonts/Supplemental/Bradley Hand Bold.ttf",
-    "/System/Library/Fonts/Supplemental/SnellRoundhand.ttc",
-    "/System/Library/Fonts/Supplemental/Apple Chancery.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf",
-)
-
-_ROOM_NAMES = (
-    "Room",
-    "Kitchen",
-    "Bedroom",
-    "Bathroom",
-    "Hall",
-    "Living",
-    "Office",
-    "Storage",
-    "Lobby",
-    "Closet",
-)
-
-_LABEL_SUFFIXES = ("A", "B", "C", "North", "South", "East", "West")
-
-
-def _existing_fonts(candidates: tuple[str, ...]) -> list[str]:
-    return [path for path in candidates if Path(path).is_file()]
-
-
-_PRINTED_FONT_PATHS = _existing_fonts(_PRINTED_FONTS)
-_HANDWRITTEN_FONT_PATHS = _existing_fonts(_HANDWRITTEN_FONTS)
-_FONT_CACHE: dict[tuple[str, int], ImageFont.ImageFont] = {}
-
-
-def _load_font(path: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    key = (path, size)
-    cached = _FONT_CACHE.get(key)
-    if cached is not None:
-        return cached
-    try:
-        font = ImageFont.truetype(path, size=size)
-    except OSError:
-        font = ImageFont.load_default()
-    _FONT_CACHE[key] = font
-    return font
-
-
-@dataclass(frozen=True)
-class RenderedSample:
-    image: Image.Image
-    text: str
-    width: int
-    height: int
-
-
-def _clamp_sentence(text: str, min_len: int, max_len: int) -> str:
-    if len(text) > max_len:
-        return text[:max_len]
-    while len(text) < min_len:
-        text += " "
-    return text
-
-
-def _random_word(rng: random.Random, min_len: int, max_len: int) -> str:
-    length = rng.randint(min_len, max_len)
-    return "".join(rng.choice(string.ascii_lowercase) for _ in range(length)).capitalize()
-
-
-def _random_room_label(rng: random.Random) -> str:
-    base = rng.choice(_ROOM_NAMES)
-    if rng.random() < 0.55:
-        return f"{base} {rng.randint(100, 999)}"
-    if rng.random() < 0.35:
-        return f"{base} {rng.choice(_LABEL_SUFFIXES)}"
-    return base
-
-
-def _random_dimension(rng: random.Random) -> str:
-    value = rng.uniform(1.0, 12.0)
-    label = rng.choice(("Width", "Length", "Height", "Depth"))
-    unit = rng.choice(("m", "cm", "ft"))
-    if unit == "cm":
-        return f"{label}: {value * 100:.0f}{unit}"
-    return f"{label}: {value:.1f}{unit}"
-
-
-def _random_identifier(rng: random.Random) -> str:
-    styles = (
-        lambda: f"{rng.choice(string.ascii_uppercase)}{rng.randint(1, 9)}",
-        lambda: f"ID-{rng.randint(10, 9999)}",
-        lambda: "".join(rng.choices(string.ascii_uppercase + string.digits, k=rng.randint(4, 8))),
-    )
-    return rng.choice(styles)()
-
-
-def _random_line(rng: random.Random, min_len: int, max_len: int) -> str:
-    generators = (
-        _random_room_label,
-        _random_dimension,
-        _random_identifier,
-        lambda r: _random_word(r, min(3, min_len), min(8, max_len)),
-        lambda r: str(r.randint(0, 9999)),
-        lambda r: f"{r.choice(string.ascii_uppercase)}{r.randint(1, 20)}.{r.randint(0, 9)}m",
-    )
-    line = rng.choice(generators)(rng)
-    if rng.random() < 0.2:
-        line = f"{line}{rng.choice('!.:;-')}"
-    return _clamp_sentence(line, min_len, max_len)
-
-
-def _default_font(size: int) -> ImageFont.ImageFont:
-    path = _PRINTED_FONT_PATHS[0] if _PRINTED_FONT_PATHS else ""
-    return _load_font(path, size) if path else ImageFont.load_default()
-
-
-def _pick_font(
-    rng: random.Random,
-    handwritten: bool,
-    size: int,
-    *,
-    randomize: bool,
-) -> ImageFont.ImageFont:
-    if not randomize:
-        return _default_font(size)
-    pool = _HANDWRITTEN_FONT_PATHS if handwritten else _PRINTED_FONT_PATHS
-    if not pool:
-        pool = _PRINTED_FONT_PATHS
-    if not pool:
-        return ImageFont.load_default()
-    return _load_font(rng.choice(pool), size)
-
-
-def _text_width(font: ImageFont.ImageFont, text: str) -> float:
-    getlength = getattr(font, "getlength", None)
-    if getlength is not None:
-        return float(getlength(text))
-    if hasattr(font, "getbbox"):
-        bbox = font.getbbox(text)
-        return float(bbox[2] - bbox[0])
-    return float(len(text) * 8)
-
-
-def _text_bbox(font: ImageFont.ImageFont, text: str) -> tuple[int, int, int, int]:
-    if hasattr(font, "getbbox"):
-        left, top, right, bottom = font.getbbox(text)
-        return left, top, right - left, bottom - top
-    width = int(_text_width(font, text))
-    return 0, 0, width, 12
-
-
-def _wrap_long_word(word: str, font: ImageFont.ImageFont, max_width: int) -> list[str]:
-    rows: list[str] = []
-    row = ""
-    for character in word:
-        candidate = row + character
-        if row and _text_width(font, candidate) > max_width:
-            rows.append(row)
-            row = character
-        else:
-            row = candidate
-    if row:
-        rows.append(row)
-    return rows
-
-
-def _draw_text_row(
-    image: Image.Image,
-    *,
-    row: str,
-    font: ImageFont.ImageFont,
-    x: int,
-    y: int,
-    ink_value: int,
-    bg_value: int,
-    tilt: bool,
-    rng: random.Random,
-) -> None:
-    if not tilt:
-        ImageDraw.Draw(image).text((x, y), row, fill=ink_value, font=font)
-        return
-
-    left, top, right, bottom = font.getbbox(row)
-    row_width = right - left
-    row_height = bottom - top
-    pad = max(8, row_height // 2)
-    line_img = Image.new("L", (row_width + 2 * pad, row_height + 2 * pad), color=bg_value)
-    ImageDraw.Draw(line_img).text((pad - left, pad - top), row, fill=ink_value, font=font)
-    angle = rng.uniform(-4.0, 4.0)
-    rotated = line_img.rotate(
-        angle,
-        center=(pad, pad),
-        expand=True,
-        resample=Image.Resampling.BICUBIC,
-        fillcolor=bg_value,
-    )
-    image.paste(rotated, (x - pad, y - pad))
-
-
-def _wrap_line(text: str, font: ImageFont.ImageFont, max_width: int) -> list[str]:
-    if not text:
-        return []
-    rows: list[str] = []
-    for word in text.split(" "):
-        if not word:
-            continue
-        if _text_width(font, word) > max_width:
-            if rows:
-                rows.extend(_wrap_long_word(word, font, max_width))
-            else:
-                rows = _wrap_long_word(word, font, max_width)
-            continue
-        if not rows:
-            rows.append(word)
-            continue
-        candidate = f"{rows[-1]} {word}"
-        if _text_width(font, candidate) > max_width:
-            rows.append(word)
-        else:
-            rows[-1] = candidate
-    return rows
-
-
-def render_text_sample(
-    width: int,
-    height: int,
-    rng: random.Random,
-    *,
-    line_counts: tuple[int, ...],
-    sentence_len_min: int,
-    sentence_len_max: int,
-    variations: RenderVariations | None = None,
-) -> RenderedSample:
-    """Render one grayscale image with text lines and return the transcription."""
-    v = variations or RenderVariations()
-    num_lines = rng.choice(line_counts)
-    per_line_max = max(sentence_len_min, sentence_len_max // max(1, num_lines))
-    per_line_min = min(sentence_len_min, per_line_max)
-    lines = [
-        _random_line(rng, per_line_min, min(sentence_len_max, per_line_max))
-        for _ in range(num_lines)
-    ]
-    text = _clamp_sentence("\n".join(lines), sentence_len_min, sentence_len_max)
-
-    short_side = min(width, height)
-    margin = max(8, short_side // 32)
-    bg_value = rng.randint(230, 255) if v.background else 255
-    image = Image.new("L", (width, height), color=bg_value)
-
-    y_cursor = margin
-    line_gap = max(6, short_side // 40)
-    default_font_size = max(18, short_side // 12)
-    rendered_rows: list[str] = []
-    canvas_full = False
-
-    for line in text.split("\n"):
-        handwritten = v.handwritten
-        if v.font_size:
-            font_size = rng.randint(max(14, short_side // 24), max(18, short_side // 10))
-        else:
-            font_size = default_font_size
-        font = _pick_font(rng, handwritten, font_size, randomize=v.font)
-        rows = _wrap_line(line.rstrip(), font, width - 2 * margin)
-        for row in rows:
-            _, _, row_width, row_height = _text_bbox(font, row)
-            if y_cursor + row_height > height - margin:
-                canvas_full = True
-                break
-            if v.x_offset:
-                max_x = width - margin - row_width
-                x = rng.randint(margin, max_x) if max_x >= margin else margin
-            else:
-                x = margin
-
-            ink_value = rng.randint(0, max(0, bg_value - 80)) if v.ink else 0
-            _draw_text_row(
-                image,
-                row=row,
-                font=font,
-                x=x,
-                y=y_cursor,
-                ink_value=ink_value,
-                bg_value=bg_value,
-                tilt=v.line_tilt,
-                rng=rng,
-            )
-            rendered_rows.append(row)
-            gap = rng.randint(4, line_gap) if v.line_spacing else line_gap
-            y_cursor += row_height + gap
-        if canvas_full:
-            break
-
-    text = "\n".join(rendered_rows)
-
-    if v.grain:
-        noise = np.random.default_rng(rng.randint(0, 2**31 - 1)).integers(
-            -8, 9, size=(height, width), dtype=np.int16
-        )
-        array = np.clip(np.asarray(image, dtype=np.int16) + noise, 0, 255).astype(np.uint8)
-        image = Image.fromarray(array, mode="L")
-
-    return RenderedSample(image=image, text=text, width=width, height=height)
 
 
 def image_to_tensor(image: Image.Image) -> torch.Tensor:
@@ -340,14 +30,15 @@ def image_to_tensor(image: Image.Image) -> torch.Tensor:
 
 
 class SyntheticOcrDataset(IterableDataset):
-    """Infinite stream of synthetic OCR training pairs."""
+    """Infinite stream of paragraph-style OCR training pairs."""
 
     def __init__(
         self,
         *,
         data: DataSettings,
+        corpus: WordCorpus,
         batch_size: int,
-        max_seq_len: int,
+        max_seq_len: StepSchedule[int],
         vocab: CharVocab,
         samples_per_epoch: int,
         seed: int | None = None,
@@ -355,6 +46,7 @@ class SyntheticOcrDataset(IterableDataset):
         prefetch_samples: int = 0,
     ) -> None:
         self._data = data
+        self._corpus = corpus
         self._batch_size = max(1, batch_size)
         self._max_seq_len = max_seq_len
         self._vocab = vocab
@@ -389,32 +81,62 @@ class SyntheticOcrDataset(IterableDataset):
         *,
         width: int,
         height: int,
+        max_seq_len: int,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        settings = self._data.at_step(self._current_training_step())
-        sample = render_text_sample(
-            width,
-            height,
-            rng,
-            line_counts=settings.line_counts,
-            sentence_len_min=settings.sentence_len_min,
-            sentence_len_max=settings.sentence_len_max,
-            variations=settings.variations,
+        """Render until label is non-empty drawn text with len(ids) <= max_seq_len."""
+        max_text_chars = max(1, max_seq_len - 2)
+        max_attempts = 16
+        for attempt in range(max_attempts):
+            shrink = min(0.75, 0.06 * attempt)
+            paragraph_len_max = min(
+                max_text_chars,
+                max(
+                    1,
+                    int(self._data.paragraph_len_max * (1.0 - shrink)),
+                ),
+            )
+            paragraph_len_min = min(self._data.paragraph_len_min, paragraph_len_max)
+            paragraph_counts = self._data.paragraph_counts
+            if max_text_chars < 120 or attempt >= max_attempts // 2:
+                paragraph_counts = (1,)
+
+            sample = render_paragraph_sample(
+                width,
+                height,
+                rng,
+                self._corpus,
+                paragraph_counts=paragraph_counts,
+                paragraph_len_min=paragraph_len_min,
+                paragraph_len_max=paragraph_len_max,
+            )
+            if not sample.text:
+                continue
+
+            token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
+            if len(sample.text) <= max_text_chars and len(token_ids) <= max_seq_len:
+                return image_to_tensor(sample.image), torch.tensor(token_ids, dtype=torch.long)
+
+        raise RuntimeError(
+            f"failed to render a sample within max_seq_len={max_seq_len} "
+            f"({max_text_chars} text chars) after {max_attempts} attempts",
         )
-        token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
-        if len(token_ids) > self._max_seq_len:
-            token_ids = token_ids[: self._max_seq_len]
-            if token_ids[-1] != self._vocab.eos_id:
-                token_ids[-1] = self._vocab.eos_id
-        return image_to_tensor(sample.image), torch.tensor(token_ids, dtype=torch.long)
 
     def _iter_samples(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         rng = random.Random((self._seed or 0) + self.epoch)
         width = height = 0
+        max_seq_len = self._max_seq_len.at(0)
         for index in range(self._samples_per_epoch):
             if index % self._batch_size == 0:
-                settings = self._data.at_step(self._current_training_step())
+                step = self._current_training_step()
+                settings = self._data.at_step(step)
                 width, height = rng.choice(settings.image_sizes)
-            yield self._generate_sample(rng, width=width, height=height)
+                max_seq_len = self._max_seq_len.at(step)
+            yield self._generate_sample(
+                rng,
+                width=width,
+                height=height,
+                max_seq_len=max_seq_len,
+            )
 
     def _iter_prefetched(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         queue: Queue[tuple[torch.Tensor, torch.Tensor] | None] = Queue(

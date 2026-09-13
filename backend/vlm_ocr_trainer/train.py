@@ -21,11 +21,13 @@ from benchmark import (
     run_benchmark,
     write_benchmark_score,
 )
-from holdout import manifest_path
+from holdout import holdout_manifest_path
 from references import print_benchmark_report
-from canvas import input_output_row
 from config import Config, load_config, print_data_schedule
-from data import OcrCollator, SyntheticOcrDataset, image_to_tensor, render_text_sample
+from data import OcrCollator, SyntheticOcrDataset, image_to_tensor
+from renderer.canvas import input_output_row
+from renderer.corpus import require_corpus
+from renderer.paragraph_render import render_paragraph_sample
 from device import training_device
 from model import OcrVlm, count_parameters, ocr_loss
 from preview import print_model
@@ -76,6 +78,7 @@ def _viz_row(
     model: OcrVlm,
     vocab: CharVocab,
     cfg: Config,
+    corpus,
     device: torch.device,
     *,
     seed: int,
@@ -84,17 +87,17 @@ def _viz_row(
     rng = random.Random(seed)
     settings = cfg.data.at_step(step)
     width, height = rng.choice(settings.image_sizes)
-    sample = render_text_sample(
+    sample = render_paragraph_sample(
         width,
         height,
         rng,
-        line_counts=settings.line_counts,
-        sentence_len_min=settings.sentence_len_min,
-        sentence_len_max=settings.sentence_len_max,
-        variations=settings.variations,
+        corpus,
+        paragraph_counts=cfg.data.paragraph_counts,
+        paragraph_len_min=cfg.data.paragraph_len_min,
+        paragraph_len_max=cfg.data.paragraph_len_max,
     )
     tensor = image_to_tensor(sample.image).unsqueeze(0).to(device)
-    generated = model.generate(tensor, max_length=cfg.max_seq_len)
+    generated = model.generate(tensor, max_length=cfg.max_seq_len.at(step))
     pred = vocab.decode(generated[0].tolist())
     return input_output_row(tensor[0], pred)
 
@@ -103,6 +106,7 @@ def _save_viz(
     model: OcrVlm,
     vocab: CharVocab,
     cfg: Config,
+    corpus,
     device: torch.device,
     out_dir: Path,
     step: int,
@@ -113,7 +117,9 @@ def _save_viz(
     step_dir = out_dir / f"step-{step:06d}"
     step_dir.mkdir(parents=True, exist_ok=True)
     for index in range(cfg.train.viz_samples):
-        panel = _viz_row(model, vocab, cfg, device, seed=seed + step + index, step=step)
+        panel = _viz_row(
+            model, vocab, cfg, corpus, device, seed=seed + step + index, step=step
+        )
         panel.save(step_dir / f"sample-{index:03d}.jpg", format="JPEG", quality=95)
     model.train()
     tqdm.write(f"viz → {step_dir} ({cfg.train.viz_samples} sample(s))")
@@ -145,7 +151,7 @@ def _run_step_benchmark(
     )
     print_benchmark_report(
         checkpoint=checkpoint_path,
-        holdout=manifest_path(cfg),
+        holdout=holdout_manifest_path(cfg),
         result=result,
         model_name="OcrVlm",
         model_params=count_parameters(model),
@@ -191,6 +197,7 @@ def _run_step_benchmark(
 def run(cfg: Config) -> None:
     device = training_device()
     vocab = CharVocab()
+    corpus = require_corpus(cfg.words.path)
     training_step_value = Value("i", 0)
     use_workers = cfg.train.num_workers > 0
     prefetch_samples = 0 if use_workers else cfg.train.prefetch_samples
@@ -198,6 +205,7 @@ def run(cfg: Config) -> None:
         prefetch_samples = cfg.train.batch_size * 2
     dataset = SyntheticOcrDataset(
         data=cfg.data,
+        corpus=corpus,
         batch_size=cfg.train.batch_size,
         max_seq_len=cfg.max_seq_len,
         vocab=vocab,
@@ -255,7 +263,6 @@ def run(cfg: Config) -> None:
     print("\n=== Dataset ===")
     print(f"synthetic:      on-the-fly random text lines")
     print_data_schedule(cfg)
-    print(f"max_seq_len:    {cfg.max_seq_len}")
     print(f"samples/epoch:  {cfg.data.samples_per_epoch:,}")
     print(f"vocab size:     {vocab.size}")
     benchmark_enabled = cfg.train.benchmark_steps > 0
@@ -337,6 +344,7 @@ def run(cfg: Config) -> None:
                     model,
                     vocab,
                     cfg,
+                    corpus,
                     device,
                     viz_dir,
                     step,

@@ -9,20 +9,18 @@ from pathlib import Path
 
 import torch
 
-from canvas import input_output_row, text_panel
 from config import CONFIG_PATH, Config, load_config, print_data_schedule
-from data import image_to_tensor, render_text_sample
+from data import image_to_tensor
+from renderer.canvas import input_output_row, text_panel
+from renderer.corpus import require_corpus
+from renderer.paragraph_render import render_paragraph_sample
 from device import training_device
 from model import (
-    DECODER_DIM,
-    DECODER_HEADS,
-    DECODER_LAYERS,
-    DECODER_MLP,
     OcrVlm,
-    VISION_DIM,
-    VISION_HEADS,
-    VISION_LAYERS,
-    VISION_MLP,
+    layer_order,
+    layer_param_counts,
+    print_architecture_summary,
+    print_vision_encode_summary,
 )
 from vocab import CharVocab
 
@@ -45,103 +43,6 @@ def _fmt_line(n: int, num_bytes: int) -> str:
     return f"{n:,} ({_fmt_params(n)}, {_fmt_mb(num_bytes)})"
 
 
-def _build_layer_order() -> tuple[str, ...]:
-    layers = ["stem"]
-    layers.extend(f"vision_blocks.{index}" for index in range(VISION_LAYERS))
-    layers.extend(["vision_norm", "vision_proj", "token_embedding"])
-    layers.extend(f"decoder_blocks.{index}" for index in range(DECODER_LAYERS))
-    layers.append("decoder_norm")
-    return tuple(layers)
-
-
-_LAYER_ORDER = _build_layer_order()
-
-
-def _print_architecture_summary(cfg: Config, vocab: CharVocab) -> None:
-    settings = cfg.data.at_final()
-    width, height = settings.image_sizes[0]
-    s1w, s1h = width // 2, height // 2
-    s2w, s2h = width // 4, height // 4
-    s3w, s3h = width // 8, height // 8
-    s4w, s4h = width // 16, height // 16
-
-    print("\n=== Architecture ===", flush=True)
-    print("Task:     grayscale text image → character transcription (autoregressive)", flush=True)
-    sizes = ", ".join(f"{w}×{h}" for w, h in cfg.data.all_image_sizes)
-    print(f"Input:    (1, H, W)   gray, normalized [-1, 1]   sizes: {sizes}", flush=True)
-    print(f"Output:   (seq, {vocab.size})   char logits → BOS…text…EOS", flush=True)
-    print(flush=True)
-    print("OcrVlm", flush=True)
-    print("├─ CnnStem", flush=True)
-    print(f"│  ├─ conv 3×3 stride 2     1→24 ch   @ {s1w}×{s1h}", flush=True)
-    print(f"│  ├─ dwsep stride 2        24→48 ch  @ {s2w}×{s2h}", flush=True)
-    print(f"│  ├─ local block stride 4  48→48 ch  @ {s2w}×{s2h}", flush=True)
-    print(f"│  ├─ dwsep stride 2        48→72 ch  @ {s3w}×{s3h}", flush=True)
-    print(f"│  ├─ local block stride 8  72→72 ch  @ {s3w}×{s3h}  ×2", flush=True)
-    print(f"│  └─ stride-16 fusion      72→96 ch  @ {s4w}×{s4h}", flush=True)
-    print(
-        f"├─ VisionEncoder ({VISION_LAYERS} layers, d={VISION_DIM}, "
-        f"heads={VISION_HEADS}, mlp={VISION_MLP}, 2D RoPE)",
-        flush=True,
-    )
-    for index in range(VISION_LAYERS):
-        branch = "│  └─" if index == VISION_LAYERS - 1 else "│  ├─"
-        print(f"{branch} block {index}   bidirectional self-attn (variable tokens)", flush=True)
-    print(f"├─ vision_proj            {VISION_DIM}→{DECODER_DIM}", flush=True)
-    print(
-        f"├─ TextDecoder ({DECODER_LAYERS} layers, d={DECODER_DIM}, "
-        f"heads={DECODER_HEADS}, mlp={DECODER_MLP}, 1D RoPE)",
-        flush=True,
-    )
-    print(f"│  ├─ token_embedding     {vocab.size}×{DECODER_DIM} (weight-tied lm_head)", flush=True)
-    for index in range(DECODER_LAYERS):
-        branch = "│  └─" if index == DECODER_LAYERS - 1 else "│  ├─"
-        print(
-            f"{branch} block {index}   causal self-attn + cross-attn → visual tokens",
-            flush=True,
-        )
-    print(f"└─ lm_head                {DECODER_DIM}→{vocab.size} (tied)", flush=True)
-
-
-def _print_input_summary(cfg: Config, vocab: CharVocab) -> None:
-    settings = cfg.data.at_final()
-    sizes = ", ".join(f"{w}×{h}" for w, h in cfg.data.all_image_sizes)
-    example_w, example_h = settings.image_sizes[0]
-    grid_w, grid_h = example_w // 16, example_h // 16
-    visual_tokens = grid_w * grid_h
-
-    print("\n=== Input ===", flush=True)
-    print("Source:   synthetic grayscale PIL image (random OCR-style text lines)", flush=True)
-    print(f"Canvas:   one of [{sizes}] px (width×height), chosen per sample", flush=True)
-    print(
-        f"Text:     {list(settings.line_counts)} lines (sampled), "
-        f"{settings.sentence_len_min}–{settings.sentence_len_max} chars total",
-        flush=True,
-    )
-    print(flush=True)
-    print("Preprocess pipeline:", flush=True)
-    print("  1. PIL grayscale (L) → float32 numpy", flush=True)
-    print("  2. Normalize:  x = pixel / 127.5 − 1   (range [-1, 1])", flush=True)
-    print("  3. Tensor shape:  [1, H, W]", flush=True)
-    print("  4. Batch: pad to max H×W in batch with 1.0 (white)", flush=True)
-    print(flush=True)
-    print("Vision encode (fixed for the whole decode loop):", flush=True)
-    print(f"  image [1, 1, H, W]", flush=True)
-    print(f"    → CNN stem ÷16", flush=True)
-    print(f"    → ViT encoder + 2D RoPE", flush=True)
-    print(f"    → linear {VISION_DIM}→{DECODER_DIM}", flush=True)
-    print(
-        f"    → visual tokens [1, H/16·W/16, {DECODER_DIM}]"
-        f"   (e.g. {example_w}×{example_h} → {grid_w}×{grid_h} = {visual_tokens} tokens)",
-        flush=True,
-    )
-    print(flush=True)
-    print("Training label (teacher forcing):", flush=True)
-    print('  text  "Room 203\\nWidth: 4.5m"', flush=True)
-    print(f"  ids   [<BOS>, R, o, o, m, …, <EOS>]   (max {cfg.max_seq_len} tokens)", flush=True)
-    print(f"  loss  cross-entropy on next-char prediction; <PAD> ignored", flush=True)
-
-
 def _print_prediction_summary(cfg: Config, vocab: CharVocab) -> None:
     print("\n=== Prediction ===", flush=True)
     print("Inference: greedy autoregressive decode (model.generate)", flush=True)
@@ -152,7 +53,7 @@ def _print_prediction_summary(cfg: Config, vocab: CharVocab) -> None:
     print("       logits = decoder(visual, generated_tokens)", flush=True)
     print("       next   = argmax(logits[:, -1])", flush=True)
     print("       append next to generated_tokens", flush=True)
-    print(f"  4. Stop at <EOS>  (id {vocab.eos_id})  or max_seq_len={cfg.max_seq_len}", flush=True)
+    print(f"  4. Stop at <EOS>  (id {vocab.eos_id})  or max_seq_len={cfg.max_seq_len.final}", flush=True)
     print("  5. Decode token ids → string (skip <BOS>, <EOS>, <PAD>)", flush=True)
     print(flush=True)
     print("Example generation trace:", flush=True)
@@ -165,34 +66,7 @@ def _print_prediction_summary(cfg: Config, vocab: CharVocab) -> None:
     print("Decoder at each step:", flush=True)
     print("  • causal self-attention over text tokens (1D RoPE)", flush=True)
     print("  • cross-attention to all visual tokens", flush=True)
-    print("  • lm_head → softmax over 99 char tokens", flush=True)
-
-
-def _match_layer(name: str) -> str:
-    if name.startswith("lm_head."):
-        return "token_embedding"
-    matched = next(
-        (key for key in _LAYER_ORDER if name == key or name.startswith(f"{key}.")),
-        None,
-    )
-    if matched is None:
-        raise RuntimeError(f"parameter not in known layers: {name}")
-    return matched
-
-
-def _layer_param_counts(model: OcrVlm) -> dict[str, tuple[int, int]]:
-    counts = {name: (0, 0) for name in _LAYER_ORDER}
-    seen: set[int] = set()
-    for name, param in model.named_parameters():
-        layer = _match_layer(name)
-        storage = param.untyped_storage().data_ptr()
-        if storage in seen:
-            continue
-        seen.add(storage)
-        count, size = counts[layer]
-        n = param.numel()
-        counts[layer] = (count + n, size + n * param.element_size())
-    return counts
+    print(f"  • lm_head → softmax over {vocab.size} char tokens", flush=True)
 
 
 def print_model(
@@ -206,7 +80,7 @@ def print_model(
     model = OcrVlm(vocab)
     model.eval()
 
-    layers = _layer_param_counts(model)
+    layers = layer_param_counts(model)
     total = trainable = 0
     total_bytes = trainable_bytes = 0
     for param in model.parameters():
@@ -218,11 +92,26 @@ def print_model(
             trainable += n
             trainable_bytes += nbytes
 
-    _print_architecture_summary(cfg, vocab)
-    _print_input_summary(cfg, vocab)
+    settings = cfg.data.at_final()
+    example_w, example_h = settings.image_sizes[0]
+    print_architecture_summary(
+        canvas_sizes=cfg.data.all_image_sizes,
+        example_width=example_w,
+        example_height=example_h,
+        vocab_size=vocab.size,
+    )
+    print_vision_encode_summary(
+        canvas_sizes=cfg.data.all_image_sizes,
+        example_width=example_w,
+        example_height=example_h,
+        paragraph_counts=cfg.data.paragraph_counts,
+        paragraph_len_min=cfg.data.paragraph_len_min,
+        paragraph_len_max=cfg.data.paragraph_len_max,
+        max_seq_len=cfg.max_seq_len.final,
+    )
     _print_prediction_summary(cfg, vocab)
     print("\n=== Parameters ===", flush=True)
-    for name in _LAYER_ORDER:
+    for name in layer_order():
         count, size = layers[name]
         print(f"{name + ':':<22} {_fmt_line(count, size)}", flush=True)
     print(f"{'trainable:':<22} {_fmt_line(trainable, trainable_bytes)}", flush=True)
@@ -256,23 +145,26 @@ def print_model(
 
 def export_sample_pair(cfg: Config, model: OcrVlm) -> None:
     vocab = model.vocab
+    corpus = require_corpus(cfg.words.path)
     rng = random.Random(cfg.data.seed)
     settings = cfg.data.at_final()
     width, height = rng.choice(settings.image_sizes)
-    sample = render_text_sample(
+    sample = render_paragraph_sample(
         width,
         height,
         rng,
-        line_counts=settings.line_counts,
-        sentence_len_min=settings.sentence_len_min,
-        sentence_len_max=settings.sentence_len_max,
-        variations=settings.variations,
+        corpus,
+        paragraph_counts=cfg.data.paragraph_counts,
+        paragraph_len_min=cfg.data.paragraph_len_min,
+        paragraph_len_max=cfg.data.paragraph_len_max,
     )
     device = training_device()
     model.to(device)
     tensor = image_to_tensor(sample.image).unsqueeze(0).to(device)
+    label_len = len(vocab.encode(sample.text, add_bos_eos=True))
+    max_length = min(label_len + 32, cfg.max_seq_len.final)
     with torch.no_grad():
-        generated = model.generate(tensor, max_length=cfg.max_seq_len)
+        generated = model.generate(tensor, max_length=max_length)
     pred = vocab.decode(generated[0].tolist())
     panel = input_output_row(sample.image, pred)
     gt_panel = text_panel(width, height, sample.text, label="gt")
@@ -308,7 +200,6 @@ def run(cfg: Config, *, export_sample: bool = True) -> None:
     model = print_model(cfg, dummy_forward=True)
     print("\n=== Config ===")
     print_data_schedule(cfg)
-    print(f"max_seq_len:    {cfg.max_seq_len}")
     print(f"samples/epoch:  {cfg.data.samples_per_epoch:,}")
     if export_sample:
         export_sample_pair(cfg, model)

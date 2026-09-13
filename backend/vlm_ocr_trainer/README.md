@@ -22,7 +22,8 @@ uv run vlm-ocr-train inspect
 # Skip _preview/ export
 uv run vlm-ocr-train inspect --no-sample
 
-# Generate the fixed holdout benchmark set (run once, or after data config changes)
+# Generate word collections then render holdout paragraphs
+uv run vlm-ocr-train words
 uv run vlm-ocr-train holdout
 uv run vlm-ocr-train holdout --force
 
@@ -34,47 +35,37 @@ uv run vlm-ocr-train benchmark
 uv run vlm-ocr-train benchmark --checkpoint training_session/best.pt
 ```
 
+## Model
+
+CNN stem uses anisotropic W÷4, H÷8 (`STEM_STRIDE_W`, `STEM_STRIDE_H` in `model.py`): 256×256 canvas → 64×32 visual grid (2048 tokens). Existing checkpoints are incompatible after architecture changes — retrain from scratch.
+
 ## Data config
 
-Training randomly picks one canvas size per sample from `data.image_sizes` (width×height).
+Training picks one canvas size per **batch** from the current step's `data.image_sizes` (width×height); all samples in that batch share the same H×W. Shorter text sequences are padded with `<PAD>` only — images are not spatially padded.
 
-Sentence length is controlled by `data.sentence_len_min` / `data.sentence_len_max` (characters in the full transcription).
+Training samples use the same paragraph pipeline as holdout: words, numbers, and punctuation from `renderer/words.json` are composed into 1–3 paragraphs and rendered with font/size/opacity/background/grain variation. Labels contain only text that fit on the canvas.
 
-### Curriculum (easy → hard)
-
-Start with all defaults, then widen one knob at a time. After each change, run a few thousand steps and inspect `training_session/viz/`.
-
-| Setting | Default (easy) | When enabled | Impact |
-| --- | --- | --- | --- |
-| `line_counts` | `[1]` | `[1, 2, 3, …]` | More lines per image; model must segment and order multiple strings. |
-| `variations.font` | `false` | `true` | Random printed font face per line instead of one fixed default. |
-| `variations.font_size` | `false` | `true` | Random text height per line. |
-| `variations.x_offset` | `false` | `true` | Random horizontal position per line (fixed left margin when off). |
-| `variations.line_spacing` | `false` | `true` | Random vertical gap between lines. |
-| `variations.background` | `false` | `true` | Off-white gray canvas instead of pure white. |
-| `variations.ink` | `false` | `true` | Gray ink instead of black. |
-| `variations.grain` | `false` | `true` | Pixel noise overlay (scan/photo-like). |
-| `variations.handwritten` | `false` | `true` | Handwriting/script font pool — largest style shift; enable last. |
-
-Suggested flag order: `font` → `font_size` → `x_offset` → `line_spacing` → `background` → `ink` → `grain` → `handwritten`.
-
-With every flag `false`, samples render on a white canvas with black text at a fixed top-left origin, one default printed font, and uniform line spacing.
+Tune `data.paragraph_counts` and `paragraph_len_min` / `paragraph_len_max` in `config.yaml` (defaults match `holdout.*`). Font size is random 8–16 px per sample.
 
 ## Holdout benchmark
 
 Training data is infinite synthetic text, but accuracy is measured on a **fixed holdout** written to disk:
 
-1. Run `uv run vlm-ocr-train holdout` — renders `holdout.num_samples` PNGs plus `holdout/manifest.jsonl`.
-2. During training, every `train.benchmark_every_epochs` epoch(s) the model runs greedy decode on the holdout.
-3. Metrics logged: **CER** (character error rate), **WER** (word error rate), **seq acc** (exact string match).
+1. Run `uv run vlm-ocr-train words` — writes `renderer/words.json` (topic → word lists + punctuation).
+2. Run `uv run vlm-ocr-train holdout` — samples words, numbers, and punctuation into 1–3 paragraphs, renders with font/size/opacity/background/grain/padding variation. Manifest labels contain **only text that fit on the canvas**.
+3. During training, every `train.benchmark_steps` optimizer steps the model runs greedy decode on the holdout.
+4. Metrics logged: **CER**, **WER**, **seq acc** (exact string match).
 
-Holdout generation uses `holdout.seed` (disjoint from `data.seed`) and the same render settings as training (`data.variations`, sizes, line counts). Regenerate holdout after changing those data knobs.
+Tune `words.*` and `holdout.paragraph_counts`, `paragraph_len_min` / `paragraph_len_max` in `config.yaml`.
 
 `train.save_best: true` writes `training_session/best.pt` when holdout CER improves. Per-epoch metrics append to `training_session/metrics.jsonl`.
 
 ## Output layout
 
 ```
+renderer/
+└── words.json
+
 holdout/
 ├── manifest.jsonl
 └── images/

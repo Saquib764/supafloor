@@ -1,4 +1,4 @@
-"""CLI: uv run vlm-ocr-train train|inspect|holdout|benchmark."""
+"""CLI: uv run vlm-ocr-train train|inspect|words|holdout|benchmark|infer."""
 
 from __future__ import annotations
 
@@ -23,7 +23,18 @@ def main(argv: list[str] | None = None) -> None:
         help="Skip exporting a sample input/output pair to _preview/",
     )
 
-    p_holdout = sub.add_parser("holdout", help="Generate the holdout benchmark dataset")
+    p_words = sub.add_parser("words", help="Generate word-collection JSON")
+    p_words.add_argument("--config", type=Path, default=CONFIG_PATH)
+    p_words.add_argument(
+        "--force",
+        action="store_true",
+        help="Regenerate words.json even if it already exists",
+    )
+
+    p_holdout = sub.add_parser(
+        "holdout",
+        help="Generate paragraph holdout dataset from words.json",
+    )
     p_holdout.add_argument("--config", type=Path, default=CONFIG_PATH)
     p_holdout.add_argument(
         "--force",
@@ -40,6 +51,33 @@ def main(argv: list[str] | None = None) -> None:
         help="Checkpoint path (default: infer.checkpoint from config)",
     )
 
+    p_infer = sub.add_parser("infer", help="Run OCR on images in test_images/")
+    p_infer.add_argument("--config", type=Path, default=CONFIG_PATH)
+    p_infer.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        help="Checkpoint path (default: infer.checkpoint from config)",
+    )
+    p_infer.add_argument(
+        "--input-dir",
+        type=Path,
+        default=None,
+        help="Directory of input images (default: test_images/)",
+    )
+    p_infer.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Directory for prepared inputs and previews (default: training_session/infer)",
+    )
+    p_infer.add_argument(
+        "--canvas-size",
+        type=int,
+        default=256,
+        help="Square white canvas size in pixels (default: 256)",
+    )
+
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
 
@@ -47,6 +85,12 @@ def main(argv: list[str] | None = None) -> None:
         from preview import run as run_preview
 
         run_preview(cfg, export_sample=not args.no_sample)
+        return
+
+    if args.cmd == "words":
+        from renderer.words_gen import generate_word_collections
+
+        generate_word_collections(cfg, force=args.force)
         return
 
     if args.cmd == "holdout":
@@ -59,6 +103,18 @@ def main(argv: list[str] | None = None) -> None:
         from benchmark import run as run_benchmark_cmd
 
         run_benchmark_cmd(cfg, checkpoint=args.checkpoint)
+        return
+
+    if args.cmd == "infer":
+        from infer import run as run_infer
+
+        run_infer(
+            cfg,
+            checkpoint=args.checkpoint,
+            input_dir=args.input_dir,
+            output_dir=args.output_dir,
+            canvas_size=args.canvas_size,
+        )
         return
 
     from train import run

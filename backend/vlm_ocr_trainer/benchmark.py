@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,7 +13,7 @@ from tqdm.auto import tqdm
 from config import Config
 from data import HoldoutCollator, HoldoutDataset
 from device import training_device
-from holdout import manifest_path
+from holdout import holdout_manifest_path
 from metrics import BenchmarkResult, benchmark_strings
 from model import OcrVlm, count_parameters
 from references import format_benchmark_line, format_params, print_benchmark_report
@@ -25,7 +24,7 @@ BENCHMARK_LATEST_NAME = "benchmark_latest.txt"
 
 
 def require_holdout(cfg: Config) -> Path:
-    path = manifest_path(cfg)
+    path = holdout_manifest_path(cfg)
     if not path.is_file():
         raise FileNotFoundError(
             f"holdout manifest missing: {path}\nRun: uv run vlm-ocr-train holdout"
@@ -35,7 +34,7 @@ def require_holdout(cfg: Config) -> Path:
 
 def build_holdout_loader(cfg: Config, batch_size: int) -> DataLoader:
     require_holdout(cfg)
-    dataset = HoldoutDataset(manifest_path(cfg), cfg.holdout.dir)
+    dataset = HoldoutDataset(holdout_manifest_path(cfg), cfg.holdout.dir)
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -63,7 +62,7 @@ def run_benchmark(
     for batch in tqdm(loader, desc=desc, unit="batch", leave=False):
         images = batch["images"].to(device, non_blocking=True)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-            generated = model.generate(images, max_length=cfg.max_seq_len)
+            generated = model.generate(images, max_length=cfg.max_seq_len.final)
         for index in range(generated.shape[0]):
             references.append(batch["texts"][index])
             hypotheses.append(vocab.decode(generated[index].tolist()))
@@ -99,7 +98,7 @@ def build_benchmark_record(
         "epoch": epoch,
         "step": step,
         "epochs_total": cfg.train.epochs,
-        "holdout": str(manifest_path(cfg)),
+        "holdout": str(holdout_manifest_path(cfg)),
         "holdout_samples": result.n,
         "holdout_seed": cfg.holdout.seed,
         "cer": result.cer,
@@ -111,8 +110,11 @@ def build_benchmark_record(
         "word_errors": result.word_errors,
         "word_count": result.word_count,
         "data_seed": cfg.data.seed,
-        "line_counts": list(cfg.holdout.line_counts),
-        "variations": asdict(cfg.holdout.variations),
+        "paragraph_counts": list(cfg.holdout.paragraph_counts),
+        "paragraph_len_min": cfg.holdout.paragraph_len_min,
+        "paragraph_len_max": cfg.holdout.paragraph_len_max,
+        "font_size": "8-16",
+        "words": str(cfg.holdout.words),
     }
 
 
@@ -132,8 +134,10 @@ def format_benchmark_score_file(record: dict[str, object]) -> str:
         f"checkpoint:      {record['checkpoint']} ({record['checkpoint_kind']})",
         f"holdout:         {record['holdout']} ({record['holdout_samples']} samples, seed {record['holdout_seed']})",
         f"data_seed:       {record['data_seed']}",
-        f"line_counts:     {record['line_counts']}",
-        f"variations:      {record['variations']}",
+        f"paragraph_counts: {record['paragraph_counts']}",
+        f"paragraph_len:   {record['paragraph_len_min']}-{record['paragraph_len_max']}",
+        f"font_size:       {record['font_size']}",
+        f"words:           {record['words']}",
         "",
         f"CER:             {record['cer']:.4f}",
         f"WER:             {record['wer']:.4f}",
@@ -210,7 +214,7 @@ def run(cfg: Config, *, checkpoint: Path | None = None) -> BenchmarkResult:
     result = run_benchmark(model, loader, model.vocab, cfg, device)
     print_benchmark_report(
         checkpoint=checkpoint_path,
-        holdout=manifest_path(cfg),
+        holdout=holdout_manifest_path(cfg),
         result=result,
         model_name="OcrVlm",
         model_params=model_params,

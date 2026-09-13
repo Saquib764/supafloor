@@ -6,11 +6,21 @@ import string
 
 PUNCTUATION = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
 
+# Extra symbols common in research text (beyond ASCII punctuation).
+RESEARCH_CHARS = "–—“”’×±≤≥αβμ²°"
+
 SPECIAL_TOKENS = ("<PAD>", "<BOS>", "<EOS>")
 
 
 def build_charset() -> str:
-    chars = string.ascii_lowercase + string.ascii_uppercase + string.digits + PUNCTUATION + " \n"
+    chars = (
+        string.ascii_lowercase
+        + string.ascii_uppercase
+        + string.digits
+        + PUNCTUATION
+        + RESEARCH_CHARS
+        + " \n"
+    )
     seen: set[str] = set()
     ordered: list[str] = []
     for ch in chars:
