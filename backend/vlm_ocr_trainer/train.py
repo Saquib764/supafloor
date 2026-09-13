@@ -92,6 +92,7 @@ def _viz_row(
         height,
         rng,
         corpus,
+        settings.variations,
         paragraph_counts=cfg.data.paragraph_counts,
         paragraph_len_min=cfg.data.paragraph_len_min,
         paragraph_len_max=cfg.data.paragraph_len_max,

@@ -8,6 +8,8 @@ import string
 from dataclasses import dataclass
 from pathlib import Path
 
+from config import VariationSettings, default_variation_settings
+
 _ATTACH_PUNCT = frozenset(".,;:!?)°²")
 _OPEN_PUNCT = frozenset("([“")
 _CLOSE_ATTACH = frozenset("”’")
@@ -151,15 +153,16 @@ def _next_token(
     *,
     words: tuple[str, ...],
     after_content: bool,
+    settings: VariationSettings,
 ) -> tuple[str, str]:
     roll = rng.random()
-    if after_content and roll < 0.12:
+    if after_content and roll < settings.research_prob:
         return _sample_research_snippet(rng, words=words), "research"
-    if after_content and roll < 0.24:
+    if after_content and roll < settings.research_prob + settings.punct_after_content_prob:
         return rng.choice(corpus.punctuation), "punct"
-    if not after_content and roll < 0.08:
+    if not after_content and roll < settings.punct_before_content_prob:
         return rng.choice(corpus.punctuation), "punct"
-    if roll < 0.28:
+    if roll < settings.number_prob:
         return _sample_number(rng), "number"
     return rng.choice(words), "word"
 
@@ -170,17 +173,25 @@ def sample_paragraph_tokens(
     *,
     min_len: int,
     max_len: int,
+    settings: VariationSettings | None = None,
     topic: TopicCollection | None = None,
 ) -> list[str]:
+    settings = settings or default_variation_settings()
     topic = topic or rng.choice(corpus.topics)
-    words = topic.words if rng.random() < 0.85 else corpus.all_words
+    words = topic.words if rng.random() < settings.topic_words_prob else corpus.all_words
     tokens: list[str] = []
     after_content = False
     need_cap = True
     length = 0
 
-    while length < min_len or (length < max_len and rng.random() < 0.65):
-        token, kind = _next_token(rng, corpus, words=words, after_content=after_content)
+    while length < min_len or (length < max_len and rng.random() < settings.continue_prob):
+        token, kind = _next_token(
+            rng,
+            corpus,
+            words=words,
+            after_content=after_content,
+            settings=settings,
+        )
         if kind == "word" and need_cap:
             token = token.capitalize()
             need_cap = False
@@ -203,14 +214,55 @@ def sample_paragraph_tokens(
     while tokens and tokens[-1] in corpus.punctuation and tokens[-1] not in ".!?":
         tokens.pop()
     if not tokens or tokens[-1] not in ".!?":
-        tokens.append(".")
+        if len(join_tokens([*tokens, "."])) <= max_len:
+            tokens.append(".")
+    while tokens and len(join_tokens(tokens)) > max_len:
+        tokens.pop()
+        while tokens and tokens[-1] in corpus.punctuation and tokens[-1] not in ".!?":
+            tokens.pop()
+    if tokens and tokens[-1] not in ".!?":
+        if len(join_tokens([*tokens, "."])) <= max_len:
+            tokens.append(".")
     return tokens
+
+
+def sample_bounded_paragraph(
+    rng: random.Random,
+    corpus: WordCorpus,
+    *,
+    max_chars: int,
+    settings: VariationSettings | None = None,
+) -> str:
+    """Sample one paragraph with len(text) <= max_chars."""
+    max_chars = max(1, max_chars)
+    if max_chars <= 3:
+        words = [word for word in corpus.all_words if len(word) <= max_chars]
+        return rng.choice(words or corpus.all_words)[:max_chars]
+
+    min_len = 1 if max_chars < 8 else min(max_chars - 1, max(1, max_chars // 2))
+    tokens = sample_paragraph_tokens(
+        rng,
+        corpus,
+        min_len=min_len,
+        max_len=max_chars,
+        settings=settings,
+    )
+    text = join_tokens(tokens)
+    while len(text) > max_chars and tokens:
+        tokens.pop()
+        while tokens and tokens[-1] in corpus.punctuation and tokens[-1] not in ".!?":
+            tokens.pop()
+        text = join_tokens(tokens)
+    if text and text[-1] not in ".!?" and len(text) + 1 <= max_chars:
+        text += "."
+    return text[:max_chars]
 
 
 def sample_document_paragraphs(
     rng: random.Random,
     corpus: WordCorpus,
     *,
+    settings: VariationSettings,
     paragraph_counts: tuple[int, ...],
     paragraph_len_min: int,
     paragraph_len_max: int,
@@ -228,6 +280,7 @@ def sample_document_paragraphs(
             corpus,
             min_len=target_min,
             max_len=target_max,
+            settings=settings,
         )
         paragraphs.append(join_tokens(tokens))
     return paragraphs

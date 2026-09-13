@@ -1,20 +1,20 @@
 # Step schedule: max label length (BOS…text…EOS) at each training step.
 max_seq_len:
   - [0, 16]
-  - [10000, 32]
-  - [15000, 64]
-  - [20000, 128]
-  - [25000, 256]
-  - [30000, 384]
-  - [35000, 512]
-  - [40000, 640]
-  - [45000, 768]
-  - [50000, 896]
-  - [55000, 1024]
-  - [60000, 1152]
-  - [65000, 1280]
-  - [70000, 1408]
-  - [75000, 1536]
+  - [20000, 32]
+  - [25000, 64]
+  - [30000, 128]
+  - [45000, 256]
+  - [50000, 384]
+  - [55000, 512]
+  - [60000, 640]
+  - [65000, 768]
+  - [70000, 896]
+  - [75000, 1024]
+  - [80000, 1152]
+  - [85000, 1280]
+  - [90000, 1408]
+  - [95000, 1536]
 
 data:
   seed: 42
@@ -22,11 +22,53 @@ data:
   # First entry must be at step 0. Training step = optimizer steps (after grad accum).
   image_sizes:
     - [0, [[128, 128]]]
-    - [10000, [[256, 128], [128, 256]]]
-    - [20000, [[256, 128], [128, 256], [256, 256]]]
+    - [20000, [[256, 256]]]
   paragraph_counts: [1, 2, 3]
   paragraph_len_min: 120
   paragraph_len_max: 400
+  # Each variation setting has its own [[step, value], ...] schedule (same format as max_seq_len).
+  # Omit a key to keep the default from default_variation_settings() in config.py.
+  variations:
+    font_size:
+      - [0, [10, 12]]
+      - [6000, [8, 16]]
+    handwritten_prob:
+      - [0, 0]
+      - [50000, 0.08]
+    bold_prob:
+      - [0, 0]
+      - [3000, 0.14]
+    italic_prob:
+      - [0, 0]
+      - [10000, 0.14]
+    letter_spacing_prob:
+      - [0, 0]
+      - [60000, 0.55]
+    antialias_prob:
+      - [0, 0]
+      - [11000, 0.35]
+    blur_prob:
+      - [0, 0]
+      - [2000, 0.45]
+    noise_prob:
+      - [0, 0.2]
+      - [7000, 0.85]
+    jpeg_prob:
+      - [0, 0]
+      - [15000, 0.4]
+    rotation_prob:
+      - [0, 0]
+      - [4000, 0.5]
+    rotation_degrees:
+      - [0, 0.0]
+      - [4000, 0.5]
+      - [12000, 1.0]
+    resize_prob:
+      - [0, 0]
+      - [18000, 0.45]
+    research_prob:
+      - [0, 0]
+      - [20000, 0.12]
   samples_per_epoch: 25000
 
 words:
@@ -47,7 +89,7 @@ holdout:
 train:
   session_dir: training_session
   epochs: 200
-  batch_size: 4
+  batch_size: 8
   grad_accum: 1
   learning_rate: 1.0e-3
   weight_decay: 0.01
@@ -55,7 +97,7 @@ train:
   bf16: true
   resume: true
   save_steps: 1000
-  viz_steps: 1000
+  viz_steps: 500
   viz_samples: 4
   max_grad_norm: 1.0
   num_workers: 8  # parallel CPU render workers; 0 = main process only

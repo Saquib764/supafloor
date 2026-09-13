@@ -14,9 +14,9 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset, IterableDataset
 
-from config import DataSettings, StepSchedule
-from renderer.corpus import WordCorpus
-from renderer.paragraph_render import render_paragraph_sample
+from config import DataSettings, StepSchedule, VariationSettings
+from renderer.corpus import WordCorpus, sample_bounded_paragraph
+from renderer.paragraph_render import render_paragraph_document, render_paragraph_sample
 from vocab import CharVocab
 
 
@@ -75,6 +75,11 @@ class SyntheticOcrDataset(IterableDataset):
     def __len__(self) -> int:
         return self._samples_per_epoch
 
+    def _fits_label(self, text: str, *, max_seq_len: int, max_text_chars: int) -> bool:
+        if not text or len(text) > max_text_chars:
+            return False
+        return len(self._vocab.encode(text, add_bos_eos=True)) <= max_seq_len
+
     def _generate_sample(
         self,
         rng: random.Random,
@@ -82,39 +87,76 @@ class SyntheticOcrDataset(IterableDataset):
         width: int,
         height: int,
         max_seq_len: int,
+        variations: VariationSettings,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Render until label is non-empty drawn text with len(ids) <= max_seq_len."""
         max_text_chars = max(1, max_seq_len - 2)
-        max_attempts = 16
+        tight_budget = max_text_chars < self._data.paragraph_len_min
+        max_attempts = 32
+
         for attempt in range(max_attempts):
-            shrink = min(0.75, 0.06 * attempt)
-            paragraph_len_max = min(
-                max_text_chars,
-                max(
-                    1,
-                    int(self._data.paragraph_len_max * (1.0 - shrink)),
-                ),
-            )
-            paragraph_len_min = min(self._data.paragraph_len_min, paragraph_len_max)
-            paragraph_counts = self._data.paragraph_counts
-            if max_text_chars < 120 or attempt >= max_attempts // 2:
-                paragraph_counts = (1,)
+            if tight_budget:
+                target_max = max(1, max_text_chars - attempt // 8)
+                paragraph = sample_bounded_paragraph(
+                    rng,
+                    self._corpus,
+                    max_chars=target_max,
+                    settings=variations,
+                )
+                sample = render_paragraph_document(
+                    width,
+                    height,
+                    rng,
+                    [paragraph],
+                    variations,
+                )
+            else:
+                shrink = min(0.75, 0.06 * attempt)
+                paragraph_len_max = min(
+                    max_text_chars,
+                    max(
+                        1,
+                        int(self._data.paragraph_len_max * (1.0 - shrink)),
+                    ),
+                )
+                paragraph_len_min = min(self._data.paragraph_len_min, paragraph_len_max)
+                paragraph_counts = self._data.paragraph_counts
+                if attempt >= max_attempts // 2:
+                    paragraph_counts = (1,)
 
-            sample = render_paragraph_sample(
-                width,
-                height,
-                rng,
-                self._corpus,
-                paragraph_counts=paragraph_counts,
-                paragraph_len_min=paragraph_len_min,
-                paragraph_len_max=paragraph_len_max,
-            )
-            if not sample.text:
-                continue
+                sample = render_paragraph_sample(
+                    width,
+                    height,
+                    rng,
+                    self._corpus,
+                    variations,
+                    paragraph_counts=paragraph_counts,
+                    paragraph_len_min=paragraph_len_min,
+                    paragraph_len_max=paragraph_len_max,
+                )
 
-            token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
-            if len(sample.text) <= max_text_chars and len(token_ids) <= max_seq_len:
+            if self._fits_label(sample.text, max_seq_len=max_seq_len, max_text_chars=max_text_chars):
+                token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
                 return image_to_tensor(sample.image), torch.tensor(token_ids, dtype=torch.long)
+
+        for word in sorted(self._corpus.all_words, key=len):
+            for candidate in (word.capitalize() + ".", word[:max_text_chars]):
+                if not candidate or len(candidate) > max_text_chars:
+                    continue
+                sample = render_paragraph_document(
+                    width,
+                    height,
+                    rng,
+                    [candidate],
+                    variations,
+                )
+                if self._fits_label(
+                    sample.text,
+                    max_seq_len=max_seq_len,
+                    max_text_chars=max_text_chars,
+                ):
+                    token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
+                    return image_to_tensor(sample.image), torch.tensor(token_ids, dtype=torch.long)
 
         raise RuntimeError(
             f"failed to render a sample within max_seq_len={max_seq_len} "
@@ -125,17 +167,20 @@ class SyntheticOcrDataset(IterableDataset):
         rng = random.Random((self._seed or 0) + self.epoch)
         width = height = 0
         max_seq_len = self._max_seq_len.at(0)
+        variations = self._data.variations.at(0)
         for index in range(self._samples_per_epoch):
             if index % self._batch_size == 0:
                 step = self._current_training_step()
                 settings = self._data.at_step(step)
                 width, height = rng.choice(settings.image_sizes)
                 max_seq_len = self._max_seq_len.at(step)
+                variations = settings.variations
             yield self._generate_sample(
                 rng,
                 width=width,
                 height=height,
                 max_seq_len=max_seq_len,
+                variations=variations,
             )
 
     def _iter_prefetched(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:

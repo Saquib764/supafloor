@@ -6,6 +6,7 @@ import random
 
 from PIL import Image, ImageDraw, ImageFont
 
+from config import VariationSettings
 from renderer.corpus import WordCorpus, sample_document_paragraphs
 from renderer.text import (
     BOLD_FONT_PATHS,
@@ -21,17 +22,21 @@ from renderer.text import (
 )
 from renderer.variations import apply_image_variations
 
-FONT_SIZE_MIN = 8
-FONT_SIZE_MAX = 16
 
-
-def _pick_font(rng: random.Random, size: int) -> ImageFont.ImageFont:
+def _pick_font(
+    rng: random.Random,
+    size: int,
+    settings: VariationSettings,
+) -> ImageFont.ImageFont:
     roll = rng.random()
-    if roll < 0.08 and HANDWRITTEN_FONT_PATHS:
+    if roll < settings.handwritten_prob and HANDWRITTEN_FONT_PATHS:
         pool = HANDWRITTEN_FONT_PATHS
-    elif roll < 0.22 and BOLD_FONT_PATHS:
+    elif roll < settings.handwritten_prob + settings.bold_prob and BOLD_FONT_PATHS:
         pool = BOLD_FONT_PATHS
-    elif roll < 0.36 and ITALIC_FONT_PATHS:
+    elif (
+        roll < settings.handwritten_prob + settings.bold_prob + settings.italic_prob
+        and ITALIC_FONT_PATHS
+    ):
         pool = ITALIC_FONT_PATHS
     else:
         pool = PRINTED_FONT_PATHS + SERIF_FONT_PATHS
@@ -45,20 +50,23 @@ def _render_text_layer(
     height: int,
     rng: random.Random,
     paragraphs: list[str],
+    settings: VariationSettings,
     *,
     scale: int = 1,
 ) -> tuple[Image.Image, str, int]:
     short_side = min(width, height)
     margin = rng.randint(max(8, short_side // 28), max(12, short_side // 16))
-    bg_value = rng.randint(210, 255)
-    contrast = rng.randint(35, 120)
+    bg_value = rng.randint(settings.bg_min, settings.bg_max)
+    contrast = rng.randint(settings.contrast_min, settings.contrast_max)
     ink_value = rng.randint(0, max(0, bg_value - contrast))
-    size = rng.randint(FONT_SIZE_MIN * scale, FONT_SIZE_MAX * scale)
-    font = _pick_font(rng, size)
+    size = rng.randint(settings.font_size_min * scale, settings.font_size_max * scale)
+    font = _pick_font(rng, size, settings)
     letter_spacing = (
-        rng.uniform(0.0, 1.8 * scale) if rng.random() < 0.55 else 0.0
+        rng.uniform(0.0, settings.letter_spacing_max * scale)
+        if rng.random() < settings.letter_spacing_prob
+        else 0.0
     )
-    line_gap = max(1, int(size * rng.uniform(0.15, 0.55)))
+    line_gap = max(1, int(size * rng.uniform(settings.line_gap_min, settings.line_gap_max)))
     paragraph_gap = rng.randint(max(size // 2, line_gap), size * 2)
 
     image = Image.new("L", (width, height), color=bg_value)
@@ -105,9 +113,10 @@ def render_paragraph_document(
     height: int,
     rng: random.Random,
     paragraphs: list[str],
+    settings: VariationSettings,
 ) -> RenderedSample:
     """Render paragraphs; label contains only text that fit on the canvas."""
-    aa_scale = 2 if rng.random() < 0.35 else 1
+    aa_scale = 2 if rng.random() < settings.antialias_prob else 1
     render_w = width * aa_scale
     render_h = height * aa_scale
     image, text, bg_value = _render_text_layer(
@@ -115,11 +124,12 @@ def render_paragraph_document(
         render_h,
         rng,
         paragraphs,
+        settings,
         scale=aa_scale,
     )
     if aa_scale > 1:
         image = image.resize((width, height), resample=Image.Resampling.LANCZOS)
-    image = apply_image_variations(image, rng, bg_value=bg_value)
+    image = apply_image_variations(image, rng, bg_value=bg_value, settings=settings)
     return RenderedSample(image=image, text=text, width=width, height=height)
 
 
@@ -128,6 +138,7 @@ def render_paragraph_sample(
     height: int,
     rng: random.Random,
     corpus: WordCorpus,
+    settings: VariationSettings,
     *,
     paragraph_counts: tuple[int, ...],
     paragraph_len_min: int,
@@ -136,8 +147,9 @@ def render_paragraph_sample(
     paragraphs = sample_document_paragraphs(
         rng,
         corpus,
+        settings=settings,
         paragraph_counts=paragraph_counts,
         paragraph_len_min=paragraph_len_min,
         paragraph_len_max=paragraph_len_max,
     )
-    return render_paragraph_document(width, height, rng, paragraphs)
+    return render_paragraph_document(width, height, rng, paragraphs, settings)
