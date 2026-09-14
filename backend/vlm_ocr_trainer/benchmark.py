@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from tqdm.auto import tqdm
 
 from config import Config
@@ -21,6 +21,7 @@ from vocab import CharVocab
 
 BENCHMARK_HISTORY_NAME = "benchmark_history.jsonl"
 BENCHMARK_LATEST_NAME = "benchmark_latest.txt"
+BENCHMARK_LENGTH_SLACK = 32
 
 
 def require_holdout(cfg: Config) -> Path:
@@ -32,9 +33,30 @@ def require_holdout(cfg: Config) -> Path:
     return path
 
 
-def build_holdout_loader(cfg: Config, batch_size: int) -> DataLoader:
+def benchmark_max_lengths(
+    texts: list[str],
+    vocab: CharVocab,
+    *,
+    cap: int,
+    slack: int = BENCHMARK_LENGTH_SLACK,
+) -> list[int]:
+    return [
+        min(len(vocab.encode(text, add_bos_eos=True)) + slack, cap)
+        for text in texts
+    ]
+
+
+def build_holdout_dataset(cfg: Config) -> HoldoutDataset | Subset:
     require_holdout(cfg)
     dataset = HoldoutDataset(holdout_manifest_path(cfg), cfg.holdout.dir)
+    if cfg.benchmark.num_samples is None:
+        return dataset
+    count = min(cfg.benchmark.num_samples, len(dataset))
+    return Subset(dataset, range(count))
+
+
+def build_holdout_loader(cfg: Config, batch_size: int) -> DataLoader:
+    dataset = build_holdout_dataset(cfg)
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -61,8 +83,13 @@ def run_benchmark(
     hypotheses: list[str] = []
     for batch in tqdm(loader, desc=desc, unit="batch", leave=False):
         images = batch["images"].to(device, non_blocking=True)
+        max_lengths = benchmark_max_lengths(
+            batch["texts"],
+            vocab,
+            cap=cfg.benchmark.max_seq_len,
+        )
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-            generated = model.generate(images, max_length=cfg.max_seq_len.final)
+            generated = model.generate(images, max_length=max_lengths)
         for index in range(generated.shape[0]):
             references.append(batch["texts"][index])
             hypotheses.append(vocab.decode(generated[index].tolist()))
@@ -208,7 +235,7 @@ def run(cfg: Config, *, checkpoint: Path | None = None) -> BenchmarkResult:
     model = load_model_from_checkpoint(cfg, checkpoint_path, device)
     model_params = count_parameters(model)
     epoch, step = load_checkpoint_training_state(checkpoint_path, device)
-    batch_size = cfg.train.benchmark_batch_size or cfg.train.batch_size
+    batch_size = cfg.benchmark.batch_size or cfg.train.batch_size
     loader = build_holdout_loader(cfg, batch_size)
     result = run_benchmark(model, loader, model.vocab, cfg, device)
     print_benchmark_report(

@@ -1,21 +1,26 @@
 # Step schedule: max label length (BOS…text…EOS) at each training step.
+# Each value is [[length, weight], ...]; one length is sampled per batch (weights normalized to 1).
 max_seq_len:
-  - [0, 8]
-  - [10000, 16]
-  - [20000, 32]
-  - [25000, 64]
-  - [30000, 128]
-  - [45000, 256]
-  - [50000, 384]
-  - [55000, 512]
-  - [60000, 640]
-  - [65000, 768]
-  - [70000, 896]
-  - [75000, 1024]
-  - [80000, 1152]
-  - [85000, 1280]
-  - [90000, 1408]
-  - [95000, 1536]
+  - [0, [[8, 0.7], [16, 0.3]]]
+  - [5000, [[8, 0.2], [16, 0.6], [32, 0.2]]]
+  - [10000, [[16, 0.2], [32, 0.6], [64, 0.2]]]
+  - [15000, [[32, 0.15], [64, 0.7], [128, 0.15]]]
+  - [20000, [[64, 0.15], [128, 0.7], [256, 0.15]]]
+  - [30000, [[128, 0.15], [256, 0.7], [384, 0.15]]]
+  - [40000, [[256, 0.15], [384, 0.7], [512, 0.15]]]
+  - [50000, [[384, 0.15], [512, 0.55], [768, 0.3]]]
+  - [60000, [[512, 0.15], [768, 0.55], [1024, 0.3]]]
+  - [75000, [[768, 0.15], [1024, 0.55], [1280, 0.3]]]
+  - [90000, [[1024, 0.15], [1280, 0.55], [1536, 0.3]]]
+  - [110000, [[1280, 0.15], [1536, 0.55], [1792, 0.3]]]
+  - [130000, [[1536, 0.15], [1792, 0.55], [2048, 0.3]]]
+  - [150000, [[1792, 0.15], [2048, 0.55], [2400, 0.3]]]
+  # All lengths retained; weights ramp with size so long sequences stay primary.
+  - [170000, [
+      [8, 1], [16, 1], [32, 1], [64, 1], [128, 2],
+      [256, 2], [384, 3], [512, 3], [768, 4],
+      [1024, 5], [1280, 6], [1536, 7], [1792, 8], [2048, 9], [2400, 10],
+    ]]
 
 data:
   seed: 43
@@ -86,6 +91,13 @@ holdout:
   paragraph_counts: [1, 2, 3]
   paragraph_len_max: 400
 
+benchmark:
+  max_seq_len: 384  # greedy decode cap on holdout (BOS…text…EOS)
+  num_samples: 32 # omit = full holdout; e.g. 64 for a quick eval
+  steps: 0  # holdout eval every N optimizer steps; 0 = off
+  batch_size: 32
+  save_best: true
+
 train:
   session_dir: training_session
   epochs: 200
@@ -103,9 +115,6 @@ train:
   num_workers: 8  # parallel CPU render workers; 0 = main process only
   prefetch_factor: 2  # DataLoader batches prefetched per worker (num_workers > 0)
   prefetch_samples: 64  # in-process thread prefetch when num_workers = 0
-  benchmark_steps: 1000  # holdout eval every N optimizer steps; 0 = off
-  benchmark_batch_size: 32
-  save_best: true
 
 infer:
   checkpoint: training_session/last.pt

@@ -53,7 +53,7 @@ def _print_prediction_summary(cfg: Config, vocab: CharVocab) -> None:
     print("       logits = decoder(visual, generated_tokens)", flush=True)
     print("       next   = argmax(logits[:, -1])", flush=True)
     print("       append next to generated_tokens", flush=True)
-    print(f"  4. Stop at <EOS>  (id {vocab.eos_id})  or max_seq_len={cfg.max_seq_len.final}", flush=True)
+    print(f"  4. Stop at <EOS>  (id {vocab.eos_id})  or max_seq_len={cfg.seq_len_cap}", flush=True)
     print("  5. Decode token ids → string (skip <BOS>, <EOS>, <PAD>)", flush=True)
     print(flush=True)
     print("Example generation trace:", flush=True)
@@ -106,7 +106,7 @@ def print_model(
         example_height=example_h,
         paragraph_counts=cfg.data.paragraph_counts,
         paragraph_len_max=cfg.data.paragraph_len_max,
-        max_seq_len=cfg.max_seq_len.final,
+        max_seq_len=cfg.seq_len_cap,
     )
     _print_prediction_summary(cfg, vocab)
     print("\n=== Parameters ===", flush=True)
@@ -161,7 +161,7 @@ def export_sample_pair(cfg: Config, model: OcrVlm) -> None:
     model.to(device)
     tensor = image_to_tensor(sample.image).unsqueeze(0).to(device)
     label_len = len(vocab.encode(sample.text, add_bos_eos=True))
-    max_length = min(label_len + 32, cfg.max_seq_len.final)
+    max_length = min(label_len + 32, cfg.seq_len_cap)
     with torch.no_grad():
         generated = model.generate(tensor, max_length=max_length)
     pred = vocab.decode(generated[0].tolist())

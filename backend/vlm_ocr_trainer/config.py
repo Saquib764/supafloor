@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generic, TypeVar
@@ -16,6 +17,8 @@ os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 T = TypeVar("T")
+
+SeqLenMix = tuple[tuple[int, float], ...]
 
 
 def _project_dir() -> Path:
@@ -311,6 +314,15 @@ class HoldoutSettings:
 
 
 @dataclass(frozen=True)
+class BenchmarkSettings:
+    max_seq_len: int
+    num_samples: int | None
+    steps: int
+    batch_size: int | None
+    save_best: bool
+
+
+@dataclass(frozen=True)
 class TrainSettings:
     session_dir: Path
     epochs: int
@@ -328,9 +340,6 @@ class TrainSettings:
     num_workers: int
     prefetch_factor: int
     prefetch_samples: int
-    benchmark_steps: int
-    benchmark_batch_size: int | None
-    save_best: bool
 
 
 @dataclass(frozen=True)
@@ -340,12 +349,21 @@ class InferSettings:
 
 @dataclass(frozen=True)
 class Config:
-    max_seq_len: StepSchedule[int]
+    max_seq_len: StepSchedule[SeqLenMix]
     data: DataSettings
     words: WordsSettings
     holdout: HoldoutSettings
+    benchmark: BenchmarkSettings
     train: TrainSettings
     infer: InferSettings
+
+    @property
+    def seq_len_cap(self) -> int:
+        return max(
+            length
+            for _step, mix in self.max_seq_len.thresholds
+            for length, _weight in mix
+        )
 
     @property
     def max_image_width(self) -> int:
@@ -435,6 +453,54 @@ def _parse_int_schedule(raw: Any, *, field_name: str) -> StepSchedule[int]:
             parse_value=lambda value: _parse_int_value(value, field_name=field_name),
         )
     return StepSchedule(((0, _parse_int_value(raw, field_name=field_name)),))
+
+
+def _parse_seq_len_value(raw: Any, *, field_name: str) -> int:
+    value = int(raw)
+    if value < 4:
+        raise ValueError(f"{field_name} length must be >= 4")
+    if value > DECODER_MAX_SEQ_LEN:
+        raise ValueError(
+            f"{field_name} length ({value}) exceeds DECODER_MAX_SEQ_LEN ({DECODER_MAX_SEQ_LEN})",
+        )
+    return value
+
+
+def _parse_max_seq_len_mix(raw: Any, *, field_name: str) -> SeqLenMix:
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(f"{field_name} must be [[length, weight], ...]")
+    choices: list[tuple[int, float]] = []
+    for entry in raw:
+        if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+            raise ValueError(
+                f"each {field_name} entry must be [length, weight], got {entry!r}",
+            )
+        length = _parse_seq_len_value(entry[0], field_name=field_name)
+        weight = float(entry[1])
+        if weight <= 0:
+            continue
+        choices.append((length, weight))
+    if not choices:
+        raise ValueError(f"{field_name} must include at least one positive weight")
+    total = sum(weight for _length, weight in choices)
+    return tuple((length, weight / total) for length, weight in choices)
+
+
+def _parse_max_seq_len_schedule(raw: Any, *, field_name: str) -> StepSchedule[SeqLenMix]:
+    if not _is_step_schedule(raw):
+        raise ValueError(
+            f"{field_name} must be a step schedule: [[step, [[length, weight], ...]], ...]",
+        )
+    return _parse_step_schedule(
+        raw,
+        field_name=field_name,
+        parse_value=lambda value: _parse_max_seq_len_mix(value, field_name=field_name),
+    )
+
+
+def sample_max_seq_len(mix: SeqLenMix, rng: random.Random) -> int:
+    values, weights = zip(*mix, strict=True)
+    return rng.choices(values, weights=weights, k=1)[0]
 
 
 def _parse_image_sizes(raw: Any) -> StepSchedule[tuple[tuple[int, int], ...]]:
@@ -763,6 +829,14 @@ def _format_step_schedule(name: str, schedule: StepSchedule[Any]) -> str:
     return f"{name + ':':<16} {' | '.join(parts)}"
 
 
+def _format_max_seq_len_schedule(schedule: StepSchedule[SeqLenMix]) -> str:
+    parts: list[str] = []
+    for threshold, mix in schedule.thresholds:
+        weights = ", ".join(f"{length}:{weight:.3g}" for length, weight in mix)
+        parts.append(f"step>={threshold}: [{weights}]")
+    return f"{'max_seq_len:':<16} {' | '.join(parts)}"
+
+
 def _format_variation_step(value: VariationSettings) -> str:
     return (
         f"font {value.font_size_min}-{value.font_size_max}px, "
@@ -798,7 +872,7 @@ def print_data_schedule(cfg: Config) -> None:
     for name, field_schedule in _variation_schedules(data.variations):
         if len(field_schedule.thresholds) > 1:
             print(_format_step_schedule(f"  {name}", field_schedule))
-    print(_format_step_schedule("max_seq_len", cfg.max_seq_len))
+    print(_format_max_seq_len_schedule(cfg.max_seq_len))
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -808,6 +882,7 @@ def load_config(path: Path | None = None) -> Config:
     data = raw["data"]
     holdout = raw.get("holdout") or {}
     words = raw.get("words") or {}
+    benchmark = raw.get("benchmark") or {}
     train = raw["train"]
     infer = raw.get("infer") or {}
     data_render = _parse_paragraph_render(data, field_prefix="data")
@@ -822,15 +897,24 @@ def load_config(path: Path | None = None) -> Config:
     holdout_num_samples = int(holdout.get("num_samples", 512))
     if holdout_num_samples < 1:
         raise ValueError("holdout.num_samples must be >= 1")
-    benchmark_steps = int(train.get("benchmark_steps", 0))
+    benchmark_max_seq_len = int(benchmark.get("max_seq_len", 384))
+    if benchmark_max_seq_len < 1:
+        raise ValueError("benchmark.max_seq_len must be >= 1")
+    benchmark_steps = int(benchmark.get("steps", 0))
     if benchmark_steps < 0:
-        raise ValueError("train.benchmark_steps must be >= 0")
-    benchmark_batch_size_raw = train.get("benchmark_batch_size")
+        raise ValueError("benchmark.steps must be >= 0")
+    benchmark_batch_size_raw = benchmark.get("batch_size")
     benchmark_batch_size = (
         int(benchmark_batch_size_raw) if benchmark_batch_size_raw is not None else None
     )
     if benchmark_batch_size is not None and benchmark_batch_size < 1:
-        raise ValueError("train.benchmark_batch_size must be >= 1")
+        raise ValueError("benchmark.batch_size must be >= 1")
+    benchmark_num_samples_raw = benchmark.get("num_samples")
+    benchmark_num_samples = (
+        int(benchmark_num_samples_raw) if benchmark_num_samples_raw is not None else None
+    )
+    if benchmark_num_samples is not None and benchmark_num_samples < 1:
+        raise ValueError("benchmark.num_samples must be >= 1")
     num_workers = int(train.get("num_workers", 0))
     if num_workers < 0:
         raise ValueError("train.num_workers must be >= 0")
@@ -840,12 +924,7 @@ def load_config(path: Path | None = None) -> Config:
     prefetch_samples = int(train.get("prefetch_samples", 0))
     if prefetch_samples < 0:
         raise ValueError("train.prefetch_samples must be >= 0")
-    max_seq_len = _parse_int_schedule(raw["max_seq_len"], field_name="max_seq_len")
-    if max_seq_len.final > DECODER_MAX_SEQ_LEN:
-        raise ValueError(
-            f"max_seq_len schedule final ({max_seq_len.final}) exceeds "
-            f"DECODER_MAX_SEQ_LEN ({DECODER_MAX_SEQ_LEN}) in model.py",
-        )
+    max_seq_len = _parse_max_seq_len_schedule(raw["max_seq_len"], field_name="max_seq_len")
     return Config(
         max_seq_len=max_seq_len,
         data=DataSettings(
@@ -867,6 +946,13 @@ def load_config(path: Path | None = None) -> Config:
             num_samples=holdout_num_samples,
             **holdout_render,
         ),
+        benchmark=BenchmarkSettings(
+            max_seq_len=benchmark_max_seq_len,
+            num_samples=benchmark_num_samples,
+            steps=benchmark_steps,
+            batch_size=benchmark_batch_size,
+            save_best=bool(benchmark.get("save_best", True)),
+        ),
         train=TrainSettings(
             session_dir=_resolve(Path(train["session_dir"]), base),
             epochs=int(train["epochs"]),
@@ -884,9 +970,6 @@ def load_config(path: Path | None = None) -> Config:
             num_workers=num_workers,
             prefetch_factor=prefetch_factor,
             prefetch_samples=prefetch_samples,
-            benchmark_steps=benchmark_steps,
-            benchmark_batch_size=benchmark_batch_size,
-            save_best=bool(train.get("save_best", True)),
         ),
         infer=InferSettings(
             checkpoint=_resolve(Path(infer.get("checkpoint") or "training_session/last.pt"), base),

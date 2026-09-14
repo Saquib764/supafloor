@@ -49,7 +49,7 @@ def infer_text(
     tensor = image_to_tensor(image).unsqueeze(0).to(device)
     amp = bool(cfg.train.bf16 and device.type == "cuda")
     with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-        generated = model.generate(tensor, max_length=cfg.max_seq_len.final)
+        generated = model.generate(tensor, max_length=cfg.seq_len_cap)
     return model.vocab.decode(generated[0].tolist())
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import random
+import time
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
@@ -14,10 +15,18 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset, IterableDataset
 
-from config import DataSettings, StepSchedule
+from config import DataSettings, StepSchedule, SeqLenMix, sample_max_seq_len
 from renderer.corpus import WordCorpus
 from renderer.training_sample import generate_training_sample
 from vocab import CharVocab
+
+
+def _batch_plan_rng(seed: int, epoch: int, global_batch_id: int) -> random.Random:
+    return random.Random(seed + epoch * 1_000_003 + global_batch_id * 9_171_231)
+
+
+def _content_rng(seed: int, epoch: int, worker_id: int, index: int) -> random.Random:
+    return random.Random(seed + epoch * 1_000_003 + worker_id * 1_000_009 + index * 7919)
 
 
 def image_to_tensor(image: Image.Image) -> torch.Tensor:
@@ -38,7 +47,7 @@ class SyntheticOcrDataset(IterableDataset):
         data: DataSettings,
         corpus: WordCorpus,
         batch_size: int,
-        max_seq_len: StepSchedule[int],
+        max_seq_len: StepSchedule[SeqLenMix],
         vocab: CharVocab,
         samples_per_epoch: int,
         seed: int | None = None,
@@ -58,6 +67,7 @@ class SyntheticOcrDataset(IterableDataset):
         self._prefetch_samples = max(0, prefetch_samples)
         self._local_epoch = 0
         self._local_training_step = 0
+        self._last_batch_data_sec = 0.0
 
     @property
     def epoch(self) -> int:
@@ -89,17 +99,22 @@ class SyntheticOcrDataset(IterableDataset):
             return int(self._epoch_value.value)
         return self._local_epoch
 
-    def _worker_shard(self) -> tuple[int, int]:
+    def _worker_batch_shard(self) -> tuple[int, int, int]:
         info = torch.utils.data.get_worker_info()
+        batches_per_epoch = self._samples_per_epoch // self._batch_size
         if info is None:
-            return 0, self._samples_per_epoch
-        per_worker = self._samples_per_epoch // info.num_workers
-        extra = self._samples_per_epoch % info.num_workers
+            return 0, 1, batches_per_epoch
+        per_worker = batches_per_epoch // info.num_workers
+        extra = batches_per_epoch % info.num_workers
         count = per_worker + (1 if info.id < extra else 0)
-        return info.id, count
+        return info.id, info.num_workers, count
 
     def __len__(self) -> int:
         return self._samples_per_epoch
+
+    @property
+    def last_batch_data_sec(self) -> float:
+        return self._last_batch_data_sec
 
     def _generate_sample(
         self,
@@ -123,35 +138,43 @@ class SyntheticOcrDataset(IterableDataset):
         token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
         return image_to_tensor(sample.image), torch.tensor(token_ids, dtype=torch.long)
 
-    def _iter_samples(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-        worker_id, count = self._worker_shard()
-        rng = random.Random((self._seed or 0) + self._current_epoch() * 1_000_003 + worker_id)
-        width = height = 0
-        max_seq_len = self._max_seq_len.at(0)
-        variations = self._data.variations.at(0)
-        for index in range(count):
-            if index % self._batch_size == 0:
-                step = self._current_training_step()
-                settings = self._data.at_step(step)
-                width, height = rng.choice(settings.image_sizes)
-                max_seq_len = self._max_seq_len.at(step)
-                variations = settings.variations
-            yield self._generate_sample(
-                rng,
+    def _build_batch(self, global_batch_id: int, worker_id: int) -> dict[str, torch.Tensor]:
+        seed = self._seed or 0
+        epoch = self._current_epoch()
+        step = self._current_training_step()
+        settings = self._data.at_step(step)
+        plan_rng = _batch_plan_rng(seed, epoch, global_batch_id)
+        width, height = plan_rng.choice(settings.image_sizes)
+        max_seq_len = sample_max_seq_len(self._max_seq_len.at(step), plan_rng)
+        variations = settings.variations
+        samples = [
+            self._generate_sample(
+                _content_rng(seed, epoch, worker_id, global_batch_id * self._batch_size + sample_idx),
                 width=width,
                 height=height,
                 max_seq_len=max_seq_len,
                 variations=variations,
             )
+            for sample_idx in range(self._batch_size)
+        ]
+        return OcrCollator(self._vocab.pad_id)(samples)
 
-    def _iter_prefetched(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-        queue: Queue[tuple[torch.Tensor, torch.Tensor] | None] = Queue(
-            maxsize=self._prefetch_samples,
+    def _iter_batches(self) -> Iterator[dict[str, torch.Tensor]]:
+        worker_id, num_workers, batch_count = self._worker_batch_shard()
+        for local_batch in range(batch_count):
+            global_batch_id = local_batch * num_workers + worker_id
+            t0 = time.perf_counter()
+            yield self._build_batch(global_batch_id, worker_id)
+            self._last_batch_data_sec = time.perf_counter() - t0
+
+    def _iter_prefetched(self) -> Iterator[dict[str, torch.Tensor]]:
+        queue: Queue[dict[str, torch.Tensor] | None] = Queue(
+            maxsize=max(1, self._prefetch_samples // self._batch_size),
         )
 
         def producer() -> None:
             try:
-                for item in self._iter_samples():
+                for item in self._iter_batches():
                     queue.put(item)
             finally:
                 queue.put(None)
@@ -169,11 +192,11 @@ class SyntheticOcrDataset(IterableDataset):
                 break
             yield item
 
-    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    def __iter__(self) -> Iterator[dict[str, torch.Tensor]]:
         if self._prefetch_samples > 0:
             yield from self._iter_prefetched()
             return
-        yield from self._iter_samples()
+        yield from self._iter_batches()
 
 
 class OcrCollator:
@@ -198,6 +221,13 @@ class OcrCollator:
             "images": torch.stack(images),
             "token_ids": torch.stack(padded_ids),
         }
+
+
+class OcrBatchCollator:
+    """Unwrap pre-built batches from SyntheticOcrDataset (DataLoader batch_size=1)."""
+
+    def __call__(self, batch: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
+        return batch[0]
 
 
 class HoldoutDataset(Dataset):
@@ -230,7 +260,7 @@ class HoldoutCollator:
         images, texts = zip(*batch, strict=True)
         shapes = {tuple(image.shape) for image in images}
         if len(shapes) != 1:
-            raise ValueError("holdout batch contains mixed image sizes; match benchmark batch_size")
+            raise ValueError("holdout batch contains mixed image sizes; match benchmark.batch_size")
         return {
             "images": torch.stack(images),
             "texts": list(texts),

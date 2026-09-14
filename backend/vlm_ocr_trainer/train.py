@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+import time
 from multiprocessing import Value
 from pathlib import Path
 
@@ -23,8 +24,8 @@ from benchmark import (
 )
 from holdout import holdout_manifest_path
 from references import print_benchmark_report
-from config import Config, load_config, print_data_schedule
-from data import OcrCollator, SyntheticOcrDataset, image_to_tensor
+from config import Config, load_config, print_data_schedule, sample_max_seq_len
+from data import OcrBatchCollator, SyntheticOcrDataset, image_to_tensor
 from renderer.canvas import training_viz_row
 from renderer.corpus import require_corpus
 from renderer.training_sample import generate_training_sample
@@ -39,6 +40,19 @@ BEST_CHECKPOINT_NAME = "best.pt"
 
 def use_bf16(cfg: Config) -> bool:
     return bool(cfg.train.bf16 and torch.cuda.is_available())
+
+
+def _sync_device(device: torch.device) -> None:
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    elif device.type == "mps":
+        synchronize = getattr(torch.mps, "synchronize", None)
+        if synchronize is not None:
+            synchronize()
+
+
+def _ema(prev: float, value: float, *, alpha: float = 0.1) -> float:
+    return value if prev == 0.0 else alpha * value + (1.0 - alpha) * prev
 
 
 def _lr_lambda(*, warmup_steps: int, total_steps: int):
@@ -86,7 +100,7 @@ def _viz_row(
 ) -> Image.Image:
     rng = random.Random(seed)
     settings = cfg.data.at_step(step)
-    max_seq_len = cfg.max_seq_len.at(step)
+    max_seq_len = sample_max_seq_len(cfg.max_seq_len.at(step), rng)
     width, height = rng.choice(settings.image_sizes)
     sample = generate_training_sample(
         width,
@@ -182,7 +196,7 @@ def _run_step_benchmark(
     )
     tqdm.write(f"score history → {history_path}")
     tqdm.write(f"latest score  → {latest_path}")
-    if cfg.train.save_best and result.cer < best_cer:
+    if cfg.benchmark.save_best and result.cer < best_cer:
         _save_checkpoint(
             best_path,
             model=model,
@@ -219,11 +233,11 @@ def run(cfg: Config) -> None:
         prefetch_samples=prefetch_samples,
     )
     loader_kwargs: dict[str, object] = {
-        "batch_size": cfg.train.batch_size,
+        "batch_size": 1,
         "shuffle": False,
         "num_workers": cfg.train.num_workers,
         "pin_memory": device.type == "cuda",
-        "collate_fn": OcrCollator(vocab.pad_id),
+        "collate_fn": OcrBatchCollator(),
     }
     if use_workers:
         loader_kwargs["prefetch_factor"] = cfg.train.prefetch_factor
@@ -270,17 +284,22 @@ def run(cfg: Config) -> None:
     print_data_schedule(cfg)
     print(f"samples/epoch:  {cfg.data.samples_per_epoch:,}")
     print(f"vocab size:     {vocab.size}")
-    benchmark_enabled = cfg.train.benchmark_steps > 0
+    benchmark_enabled = cfg.benchmark.steps > 0
     holdout_loader = None
     if benchmark_enabled:
         require_holdout(cfg)
-        benchmark_batch_size = cfg.train.benchmark_batch_size or cfg.train.batch_size
+        benchmark_batch_size = cfg.benchmark.batch_size or cfg.train.batch_size
         holdout_loader = build_holdout_loader(cfg, benchmark_batch_size)
     print("\n=== Holdout ===")
     print(f"dir:            {cfg.holdout.dir}")
     print(f"samples:        {cfg.holdout.num_samples:,}")
-    print(f"benchmark:      every {cfg.train.benchmark_steps} step(s)")
-    print(f"save_best:      {cfg.train.save_best}")
+    benchmark_samples = (
+        cfg.benchmark.num_samples
+        if cfg.benchmark.num_samples is not None
+        else cfg.holdout.num_samples
+    )
+    print(f"benchmark:      every {cfg.benchmark.steps} step(s), {benchmark_samples:,} sample(s)")
+    print(f"save_best:      {cfg.benchmark.save_best}")
     print("\n=== Training ===")
     print(f"output_dir:     {cfg.train.session_dir}")
     print(f"epochs:         {cfg.train.epochs}")
@@ -293,7 +312,7 @@ def run(cfg: Config) -> None:
     print(f"warmup_ratio:   {cfg.train.warmup_ratio}")
     print(f"resume:         {cfg.train.resume}")
     print(f"save_steps:     {cfg.train.save_steps}")
-    print(f"benchmark_steps:{cfg.train.benchmark_steps}")
+    print(f"benchmark_steps:{cfg.benchmark.steps}")
     print(f"viz_steps:      {cfg.train.viz_steps}")
     print(f"viz_samples:    {cfg.train.viz_samples}")
     print(f"num_workers:    {cfg.train.num_workers}")
@@ -310,6 +329,10 @@ def run(cfg: Config) -> None:
     accum = cfg.train.grad_accum
     optimizer.zero_grad(set_to_none=True)
     micro = 0
+    timing_ema = {"data": 0.0, "fwd": 0.0, "bwd": 0.0}
+    step_data_sec = step_fwd_sec = step_bwd_sec = 0.0
+    track_data_sec = cfg.train.num_workers == 0
+    batch_wait = time.perf_counter()
     progress = tqdm(
         total=total_steps,
         initial=step,
@@ -322,15 +345,29 @@ def run(cfg: Config) -> None:
         dataset.epoch = epoch
         training_step_value.value = step
         for batch in loader:
+            if track_data_sec:
+                data_sec = dataset.last_batch_data_sec
+            else:
+                data_sec = time.perf_counter() - batch_wait
             images = batch["images"].to(device, non_blocking=True)
             token_ids = batch["token_ids"].to(device, non_blocking=True)
             targets = token_ids[:, 1:]
+            fwd_start = time.perf_counter()
             with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
                 logits = model(images, token_ids)
                 loss = ocr_loss(logits, targets, pad_id=vocab.pad_id)
+            _sync_device(device)
+            fwd_sec = time.perf_counter() - fwd_start
+            bwd_start = time.perf_counter()
             (loss / accum).backward()
+            _sync_device(device)
+            bwd_sec = time.perf_counter() - bwd_start
+            step_data_sec += data_sec
+            step_fwd_sec += fwd_sec
+            step_bwd_sec += bwd_sec
             micro += 1
             if micro % accum != 0:
+                batch_wait = time.perf_counter()
                 continue
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.max_grad_norm)
             optimizer.step()
@@ -339,11 +376,19 @@ def run(cfg: Config) -> None:
             step += 1
             training_step_value.value = step
             progress.update(1)
+            timing_ema["data"] = _ema(timing_ema["data"], step_data_sec)
+            timing_ema["fwd"] = _ema(timing_ema["fwd"], step_fwd_sec)
+            timing_ema["bwd"] = _ema(timing_ema["bwd"], step_bwd_sec)
+            step_data_sec = step_fwd_sec = step_bwd_sec = 0.0
             progress.set_postfix_str(
                 f"{loss.item():.4f}, "
                 f"{float(optimizer.param_groups[0]['lr']):.2e}, "
-                f"{epoch + 1}/{cfg.train.epochs}"
+                f"{epoch + 1}/{cfg.train.epochs}, "
+                f"data={timing_ema['data']:.2f}s "
+                f"fwd={timing_ema['fwd']:.2f}s "
+                f"bwd={timing_ema['bwd']:.2f}s"
             )
+            batch_wait = time.perf_counter()
             if step % cfg.train.viz_steps == 0:
                 _save_viz(
                     model,
@@ -368,7 +413,7 @@ def run(cfg: Config) -> None:
             if (
                 benchmark_enabled
                 and holdout_loader is not None
-                and step % cfg.train.benchmark_steps == 0
+                and step % cfg.benchmark.steps == 0
             ):
                 best_cer = _run_step_benchmark(
                     model,

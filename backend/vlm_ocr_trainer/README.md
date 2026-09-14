@@ -41,7 +41,7 @@ CNN stem uses anisotropic W÷4, H÷8 (`STEM_STRIDE_W`, `STEM_STRIDE_H` in `model
 
 ## Data config
 
-Training picks one canvas size per **batch** from the current step's `data.image_sizes` (width×height); all samples in that batch share the same H×W. Shorter text sequences are padded with `<PAD>` only — images are not spatially padded.
+Training picks one canvas size and one `max_seq_len` per **DataLoader batch** from the current step's schedules; all samples in that batch share the same H×W and length budget (including with `num_workers > 0`). Shorter text sequences are padded with `<PAD>` only — images are not spatially padded.
 
 Training samples use the same paragraph pipeline as holdout: words, numbers, and punctuation from `renderer/words.json` are composed into 1–3 paragraphs and rendered with font/size/opacity/background/grain variation. Labels contain only text that fit on the canvas.
 
@@ -53,12 +53,12 @@ Training data is infinite synthetic text, but accuracy is measured on a **fixed 
 
 1. Run `uv run vlm-ocr-train words` — writes `renderer/words.json` (topic → word lists + punctuation).
 2. Run `uv run vlm-ocr-train holdout` — samples words, numbers, and punctuation into 1–3 paragraphs, renders with font/size/opacity/background/grain/padding variation. Manifest labels contain **only text that fit on the canvas**.
-3. During training, every `train.benchmark_steps` optimizer steps the model runs greedy decode on the holdout.
+3. During training, every `benchmark.steps` optimizer steps the model runs greedy decode on the holdout.
 4. Metrics logged: **CER**, **WER**, **seq acc** (exact string match).
 
-Tune `words.*` and `holdout.paragraph_counts`, `paragraph_len_max` in `config.yaml`.
+Tune `words.*`, `holdout.paragraph_counts`, `holdout.paragraph_len_max`, and `benchmark.*` in `config.yaml`. `benchmark.max_seq_len` caps greedy decode length on holdout (separate from training `max_seq_len`). Set `benchmark.num_samples` (e.g. `64`) for a quick eval; omit it to use the full holdout.
 
-`train.save_best: true` writes `training_session/best.pt` when holdout CER improves. Per-epoch metrics append to `training_session/metrics.jsonl`.
+`benchmark.save_best: true` writes `training_session/best.pt` when holdout CER improves. Per-epoch metrics append to `training_session/metrics.jsonl`.
 
 ## Output layout
 

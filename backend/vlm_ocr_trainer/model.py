@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal
 
 import torch
@@ -22,7 +23,7 @@ VISION_HEADS = 4
 DECODER_HEADS = 4
 VISION_MLP = 192
 DECODER_MLP = 256
-DECODER_MAX_SEQ_LEN = 2048
+DECODER_MAX_SEQ_LEN = 2400
 
 
 def validate_image_size(width: int, height: int) -> None:
@@ -335,9 +336,13 @@ class RoPE1D(nn.Module):
         x1, x2 = x.chunk(2, dim=-1)
         return torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1)
 
-    def apply(self, x: Tensor) -> Tensor:
+    def apply(self, x: Tensor, *, offset: int = 0) -> Tensor:
         seq_len = x.shape[-2]
-        return self._rotate(x, self.cos[..., :seq_len, :], self.sin[..., :seq_len, :])
+        return self._rotate(
+            x,
+            self.cos[..., offset : offset + seq_len, :],
+            self.sin[..., offset : offset + seq_len, :],
+        )
 
 
 class MultiHeadSelfAttention(nn.Module):
@@ -458,8 +463,8 @@ class MultiHeadCrossAttention(nn.Module):
 
     def forward(self, x: Tensor, context: Tensor) -> Tensor:
         batch, seq_len, _ = x.shape
-        context_len = context.shape[1]
         q = self.q(x).reshape(batch, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        context_len = context.shape[1]
         kv = self.kv(context).reshape(batch, context_len, 2, self.num_heads, self.head_dim)
         kv = kv.permute(2, 0, 3, 1, 4)
         k, v = kv[0], kv[1]
@@ -521,7 +526,12 @@ class DecoderBlock(nn.Module):
         self.norm3 = nn.LayerNorm(dim)
         self.mlp = Mlp(dim, mlp_dim)
 
-    def forward(self, x: Tensor, context: Tensor, attn_mask: Tensor | None = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        context: Tensor,
+        attn_mask: Tensor | None = None,
+    ) -> Tensor:
         x = x + self.self_attn(self.norm1(x), attn_mask=attn_mask)
         x = x + self.cross_attn(self.norm2(x), context)
         x = x + self.mlp(self.norm3(x))
@@ -592,22 +602,36 @@ class OcrVlm(nn.Module):
         self,
         images: Tensor,
         *,
-        max_length: int,
+        max_length: int | Sequence[int],
         bos_id: int | None = None,
         eos_id: int | None = None,
     ) -> Tensor:
         bos_id = self.vocab.bos_id if bos_id is None else bos_id
         eos_id = self.vocab.eos_id if eos_id is None else eos_id
         batch = images.shape[0]
+        if isinstance(max_length, int):
+            length_limits = torch.full(
+                (batch,),
+                max_length,
+                dtype=torch.long,
+                device=images.device,
+            )
+        else:
+            if len(max_length) != batch:
+                raise ValueError(
+                    f"max_length length ({len(max_length)}) != batch size ({batch})",
+                )
+            length_limits = torch.tensor(max_length, dtype=torch.long, device=images.device)
         visual = self.encode_image(images)
         generated = torch.full((batch, 1), bos_id, dtype=torch.long, device=images.device)
         finished = torch.zeros(batch, dtype=torch.bool, device=images.device)
-        for _ in range(max_length - 1):
+        for _ in range(int(length_limits.max().item()) - 1):
             logits = self.decode(visual, generated)
             next_token = logits[:, -1].argmax(dim=-1, keepdim=True)
             next_token = next_token.masked_fill(finished.unsqueeze(1), eos_id)
             generated = torch.cat([generated, next_token], dim=1)
             finished |= next_token.squeeze(1) == eos_id
+            finished |= generated.shape[1] >= length_limits
             if finished.all():
                 break
         return generated
