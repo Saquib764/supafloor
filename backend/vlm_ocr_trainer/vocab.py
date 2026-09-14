@@ -32,6 +32,9 @@ def build_charset() -> str:
 
 CHARSET = build_charset()
 
+# Random training strings draw from every vocab character (no newline).
+TRAINING_CHARSET: tuple[str, ...] = tuple(ch for ch in CHARSET if ch != "\n")
+
 
 class CharVocab:
     def __init__(self) -> None:

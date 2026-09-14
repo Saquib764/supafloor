@@ -137,10 +137,8 @@ def build_benchmark_record(
         "word_errors": result.word_errors,
         "word_count": result.word_count,
         "data_seed": cfg.data.seed,
-        "paragraph_counts": list(cfg.holdout.paragraph_counts),
-        "paragraph_len_max": cfg.holdout.paragraph_len_max,
+        "max_text_len": cfg.holdout.max_text_len,
         "font_size": "8-16",
-        "words": str(cfg.holdout.words),
     }
 
 
@@ -160,10 +158,8 @@ def format_benchmark_score_file(record: dict[str, object]) -> str:
         f"checkpoint:      {record['checkpoint']} ({record['checkpoint_kind']})",
         f"holdout:         {record['holdout']} ({record['holdout_samples']} samples, seed {record['holdout_seed']})",
         f"data_seed:       {record['data_seed']}",
-        f"paragraph_counts: {record['paragraph_counts']}",
-        f"paragraph_len:   up to {record['paragraph_len_max']}",
+        f"max_text_len:    {record['max_text_len']}",
         f"font_size:       {record['font_size']}",
-        f"words:           {record['words']}",
         "",
         f"CER:             {record['cer']:.4f}",
         f"WER:             {record['wer']:.4f}",

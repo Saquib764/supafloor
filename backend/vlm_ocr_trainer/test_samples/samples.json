@@ -1,0 +1,119 @@
+{
+  "width": 128,
+  "height": 128,
+  "background": 255,
+  "noise_prob": 0,
+  "001": {
+    "text": "Room 203",
+    "seed": 852929253,
+    "variations": {
+      "padding": [11, 9, 8, 10],
+      "bg_value": 255,
+      "contrast": 62,
+      "ink_value": 10,
+      "font_size": 16,
+      "font_style": "printed",
+      "font_path": "/System/Library/Fonts/Supplemental/Verdana.ttf",
+      "letter_spacing": 0.0,
+      "line_gap": 6,
+      "paragraph_gap": 26,
+      "image_effects": {
+        "jpeg": {
+          "quality": 90
+        },
+        "rotation": {
+          "degrees": 0
+        }
+      }
+    }
+  },
+  "002": {
+    "text": "Yadobike I am Saquib",
+    "seed": 180110053,
+    "variations": {
+      "padding": [4, 12, 2, 11],
+      "bg_value": 255,
+      "contrast": 45,
+      "ink_value": 109,
+      "font_size": 16,
+      "font_style": "printed",
+      "font_path": "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+      "letter_spacing": 0.3462939111445255,
+      "line_gap": 4,
+      "paragraph_gap": 8,
+      "image_effects": {}
+    }
+  },
+  "003": {
+    "text": "The quick brown fox jumps over the lazy dogs.",
+    "seed": 1918697754,
+    "variations": {
+      "padding": [8, 12, 7, 9],
+      "bg_value": 255,
+      "contrast": 0,
+      "ink_value": 30,
+      "font_size": 12,
+      "font_style": "printed",
+      "font_path": "/System/Library/Fonts/Supplemental/Arial.ttf",
+      "letter_spacing": 1.7161174370995793,
+      "line_gap": 3,
+      "paragraph_gap": 12,
+      "image_effects": {
+        "jpeg": {
+          "quality": 90
+        },
+        "rotation": {
+          "degrees": 0.0
+        }
+      }
+    }
+  },
+  "004": {
+    "text": "Invoice #1042\nTotal: $1,280.00",
+    "seed": 286034030,
+    "variations": {
+      "padding": [7, 5, 10, 7],
+      "bg_value": 255,
+      "contrast": 69,
+      "ink_value": 76,
+      "font_size": 12,
+      "font_style": "printed",
+      "font_path": "/System/Library/Fonts/Supplemental/Verdana.ttf",
+      "letter_spacing": 0.0,
+      "line_gap": 7,
+      "paragraph_gap": 23,
+      "image_effects": {
+        "jpeg": {
+          "quality": 78
+        },
+        "rotation": {
+          "degrees": -0.8544980517063594
+        }
+      }
+    }
+  },
+  "005": {
+    "text": "Exit → 12 m",
+    "seed": 650302715,
+    "variations": {
+      "padding": [2, 10, 11, 5],
+      "bg_value": 255,
+      "contrast": 63,
+      "ink_value": 104,
+      "font_size": 11,
+      "font_style": "printed",
+      "font_path": "/System/Library/Fonts/Supplemental/Arial.ttf",
+      "letter_spacing": 0.0,
+      "line_gap": 5,
+      "paragraph_gap": 10,
+      "image_effects": {
+        "blur": {
+          "radius": 0.6718514254597037
+        },
+        "jpeg": {
+          "quality": 79
+        }
+      }
+    }
+  }
+}

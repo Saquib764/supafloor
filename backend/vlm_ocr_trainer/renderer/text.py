@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from PIL import ImageDraw, ImageFont
 
@@ -83,6 +84,7 @@ class RenderedSample:
     text: str
     width: int
     height: int
+    variations: dict[str, Any] | None = None
 
 
 def text_width(font: ImageFont.ImageFont, text: str, *, letter_spacing: float = 0.0) -> float:

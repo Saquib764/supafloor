@@ -2,25 +2,14 @@
 # Each value is [[length, weight], ...]; one length is sampled per batch (weights normalized to 1).
 max_seq_len:
   - [0, [[8, 0.7], [16, 0.3]]]
-  - [5000, [[8, 0.2], [16, 0.6], [32, 0.2]]]
-  - [10000, [[16, 0.2], [32, 0.6], [64, 0.2]]]
-  - [15000, [[32, 0.15], [64, 0.7], [128, 0.15]]]
-  - [20000, [[64, 0.15], [128, 0.7], [256, 0.15]]]
-  - [30000, [[128, 0.15], [256, 0.7], [384, 0.15]]]
-  - [40000, [[256, 0.15], [384, 0.7], [512, 0.15]]]
-  - [50000, [[384, 0.15], [512, 0.55], [768, 0.3]]]
-  - [60000, [[512, 0.15], [768, 0.55], [1024, 0.3]]]
-  - [75000, [[768, 0.15], [1024, 0.55], [1280, 0.3]]]
-  - [90000, [[1024, 0.15], [1280, 0.55], [1536, 0.3]]]
-  - [110000, [[1280, 0.15], [1536, 0.55], [1792, 0.3]]]
-  - [130000, [[1536, 0.15], [1792, 0.55], [2048, 0.3]]]
-  - [150000, [[1792, 0.15], [2048, 0.55], [2400, 0.3]]]
-  # All lengths retained; weights ramp with size so long sequences stay primary.
-  - [170000, [
-      [8, 1], [16, 1], [32, 1], [64, 1], [128, 2],
-      [256, 2], [384, 3], [512, 3], [768, 4],
-      [1024, 5], [1280, 6], [1536, 7], [1792, 8], [2048, 9], [2400, 10],
-    ]]
+  - [15000, [[8, 0.2], [16, 0.6], [32, 0.2]]]
+  - [20000, [[16, 0.2], [32, 0.6], [64, 0.2]]]
+  - [35000, [[32, 0.15], [64, 0.7], [128, 0.15]]]
+  - [50000, [[64, 0.15], [128, 0.7], [256, 0.15]]]
+  # - [30000, [[128, 0.15], [256, 0.7], [384, 0.15]]]
+  # - [40000, [[256, 0.15], [384, 0.7], [512, 0.15]]]
+  # - [50000, [[384, 0.15], [512, 0.55], [768, 0.3]]]
+  # - [60000, [[512, 0.15], [768, 0.75], [1024, 0.1]]]
 
 data:
   seed: 43
@@ -28,68 +17,74 @@ data:
   # First entry must be at step 0. Training step = optimizer steps (after grad accum).
   image_sizes:
     - [0, [[128, 128]]]
-    - [20000, [[256, 256]]]
-    - [50000, [[256, 256], [512, 256]]]
-  paragraph_counts: [1, 2, 3]
-  paragraph_len_max: 400
-  # Each variation setting has its own [[step, value], ...] schedule (same format as max_seq_len).
-  # Omit a key to keep the default from default_variation_settings() in config.py.
+    - [70000, [[256, 128]]]
+    - [90000, [[256, 128], [512, 128]]]
+  max_text_len: 400
+  # Each variation has its own [[step, value], ...] schedule. Omit a key → default in config.py.
+  # Omitted defaults: contrast [35,120] ink=bg−rand; letter_spacing_max 1.8px;
+  # line_gap [0.15,0.55]×font_size; blur_radius [0.25,0.9]; noise_sigma [1.0,5.0];
+  # jpeg_quality [35,88]; topic_words_prob 0.85;
+  # punct_after_content_prob 0.12; punct_before_content_prob 0.08; number_prob 0.28; continue_prob 0.65.
   variations:
+    # Canvas fill gray level [min,max] 0–255; ink = bg − rand(contrast [35,120]).
+    background:
+      - [0, [230, 255]]
+    # Text inset px per side; each side rand [min,max]: top, right, bottom, left.
+    padding:
+      - [0, [[2, 12], [2, 12], [2, 12], [2, 12]]]
+    # P(apply Gaussian blur); radius uniform blur_radius [0.25, 0.9] px.
     blur_prob:
-      - [0, 0]
+      - [0, 0.]
       - [9000, 0.2]
+    # P(pick bold font from BOLD_FONT_PATHS).
     bold_prob:
-      - [0, 0]
+      - [0, 0.]
       - [11000, 0.14]
+    # P(add extra letter spacing); spacing uniform [0, letter_spacing_max 1.8] px.
     letter_spacing_prob:
-      - [0, 0]
+      - [0, 0.2]
       - [13000, 0.55]
+    # P(rotate image); angle uniform ±rotation_degrees.
     rotation_prob:
-      - [0, 0]
+      - [0, 0.2]
       - [15000, 0.5]
+    # P(pick italic font from ITALIC_FONT_PATHS).
     italic_prob:
-      - [0, 0]
+      - [0, 0.2]
       - [17000, 0.14]
+    # Max rotation angle (degrees); used when rotation_prob fires; fill = sampled background.
     rotation_degrees:
-      - [0, 0.0]
+      - [0, 0.5]
       - [15000, 0.5]
       - [20000, 1.0]
+    # Font size range [min,max] px.
     font_size:
-      - [0, [10, 12]]
+      - [0, [8, 16]]
       - [20000, [8, 16]]
+    # P(add Gaussian pixel noise); sigma uniform noise_sigma [1.0, 5.0].
     noise_prob:
-      - [0, 0.2]
-      - [21000, 0.85]
-    antialias_prob:
-      - [0, 0]
-      - [25000, 0.35]
+      - [0, 0.3]
+      - [21000, 0.55]
+    # P(JPEG re-encode round-trip); quality uniform jpeg_quality [35, 88].
     jpeg_prob:
-      - [0, 0]
+      - [0, 0.4]
       - [25000, 0.4]
-    resize_prob:
-      - [0, 0]
-      - [30000, 0.45]
+    # P(insert citation-style research snippet after content token).
     research_prob:
-      - [0, 0]
+      - [0, 0.3]
       - [35000, 0.12]
+    # P(pick handwritten font from HANDWRITTEN_FONT_PATHS).
     handwritten_prob:
-      - [0, 0]
-      - [50000, 0.08]
-  samples_per_epoch: 25000
-
-words:
-  path: renderer/words.json
-  num_topics: 200
-  words_per_topic: 100
-  seed: 42
+      - [0, 0.1]
+      - [55000, 0.58]
+  samples_per_epoch: 1000000
 
 holdout:
   dir: holdout
   seed: 900001
   num_samples: 512
   image_size: [256, 256]
-  paragraph_counts: [1, 2, 3]
-  paragraph_len_max: 400
+  max_text_len: 400
 
 benchmark:
   max_seq_len: 384  # greedy decode cap on holdout (BOS…text…EOS)
@@ -100,7 +95,8 @@ benchmark:
 
 train:
   session_dir: training_session
-  epochs: 200
+  init_checkpoint:  # weights from prior session; new optimizer/schedule
+  epochs: 2
   batch_size: 8
   grad_accum: 1
   learning_rate: 1.0e-3
@@ -117,4 +113,4 @@ train:
   prefetch_samples: 64  # in-process thread prefetch when num_workers = 0
 
 infer:
-  checkpoint: training_session/last.pt
+  checkpoint: training_session_2/last.pt

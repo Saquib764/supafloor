@@ -16,9 +16,8 @@ from PIL import Image
 from torch.utils.data import Dataset, IterableDataset
 
 from config import DataSettings, StepSchedule, SeqLenMix, sample_max_seq_len
-from renderer.corpus import WordCorpus
-from renderer.training_sample import generate_training_sample
-from vocab import CharVocab
+from renderer.paragraph_render import render_paragraph_document
+from vocab import TRAINING_CHARSET, CharVocab
 
 
 def _batch_plan_rng(seed: int, epoch: int, global_batch_id: int) -> random.Random:
@@ -27,6 +26,32 @@ def _batch_plan_rng(seed: int, epoch: int, global_batch_id: int) -> random.Rando
 
 def _content_rng(seed: int, epoch: int, worker_id: int, index: int) -> random.Random:
     return random.Random(seed + epoch * 1_000_003 + worker_id * 1_000_009 + index * 7919)
+
+
+def sample_random_text(
+    rng: random.Random,
+    charset: tuple[str, ...],
+    *,
+    max_text_chars: int,
+) -> str:
+    """Sample a random-length string with uniformly distributed characters.
+
+    Characters are drawn from a repeatedly shuffled copy of the full charset so
+    every letter is seen evenly before any character repeats.
+    """
+    if not charset:
+        raise ValueError("charset must not be empty")
+    count = rng.randint(1, max(1, max_text_chars))
+    parts: list[str] = []
+    deck = list(charset)
+    rng.shuffle(deck)
+    while len(parts) < count:
+        if not deck:
+            deck = list(charset)
+            rng.shuffle(deck)
+        parts.append(deck.pop())
+    rng.shuffle(parts)
+    return "".join(parts)
 
 
 def image_to_tensor(image: Image.Image) -> torch.Tensor:
@@ -39,13 +64,12 @@ def image_to_tensor(image: Image.Image) -> torch.Tensor:
 
 
 class SyntheticOcrDataset(IterableDataset):
-    """Infinite stream of paragraph-style OCR training pairs."""
+    """Infinite stream of synthetic OCR training pairs."""
 
     def __init__(
         self,
         *,
         data: DataSettings,
-        corpus: WordCorpus,
         batch_size: int,
         max_seq_len: StepSchedule[SeqLenMix],
         vocab: CharVocab,
@@ -56,10 +80,10 @@ class SyntheticOcrDataset(IterableDataset):
         prefetch_samples: int = 0,
     ) -> None:
         self._data = data
-        self._corpus = corpus
         self._batch_size = max(1, batch_size)
         self._max_seq_len = max_seq_len
         self._vocab = vocab
+        self._charset = TRAINING_CHARSET
         self._samples_per_epoch = samples_per_epoch
         self._seed = seed
         self._training_step_value = training_step_value
@@ -125,16 +149,12 @@ class SyntheticOcrDataset(IterableDataset):
         max_seq_len: int,
         variations,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        sample = generate_training_sample(
-            width,
-            height,
+        text = sample_random_text(
             rng,
-            self._corpus,
-            variations,
-            self._vocab,
-            max_seq_len=max_seq_len,
-            paragraph_counts=self._data.paragraph_counts,
+            self._charset,
+            max_text_chars=max(1, max_seq_len - 2),
         )
+        sample = render_paragraph_document(width, height, rng, [text], variations)
         token_ids = self._vocab.encode(sample.text, add_bos_eos=True)
         return image_to_tensor(sample.image), torch.tensor(token_ids, dtype=torch.long)
 

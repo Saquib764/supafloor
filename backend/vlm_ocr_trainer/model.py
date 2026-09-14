@@ -151,8 +151,7 @@ def print_vision_encode_summary(
     canvas_sizes: tuple[tuple[int, int], ...],
     example_width: int,
     example_height: int,
-    paragraph_counts: tuple[int, ...],
-    paragraph_len_max: int,
+    max_text_len: int,
     max_seq_len: int,
 ) -> None:
     sizes = ", ".join(f"{w}×{h}" for w, h in canvas_sizes)
@@ -160,13 +159,9 @@ def print_vision_encode_summary(
     visual_tokens = visual_token_count(example_width, example_height)
 
     print("\n=== Input ===", flush=True)
-    print("Source:   synthetic grayscale PIL image (paragraph documents from words.json)", flush=True)
+    print("Source:   synthetic grayscale PIL image (random charset text)", flush=True)
     print(f"Canvas:   one of [{sizes}] px (width×height), chosen per batch", flush=True)
-    print(
-        f"Text:     {list(paragraph_counts)} paragraphs (sampled), "
-        f"up to {paragraph_len_max} chars each",
-        flush=True,
-    )
+    print(f"Text:     random vocabulary chars, up to {max_text_len} per sample", flush=True)
     print(flush=True)
     print("Preprocess pipeline:", flush=True)
     print("  1. PIL grayscale (L) → float32 numpy", flush=True)

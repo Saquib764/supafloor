@@ -1,4 +1,4 @@
-"""CLI: uv run vlm-ocr-train train|inspect|words|holdout|benchmark|infer."""
+"""CLI: uv run vlm-ocr-train train|inspect|holdout|benchmark|infer."""
 
 from __future__ import annotations
 
@@ -23,18 +23,7 @@ def main(argv: list[str] | None = None) -> None:
         help="Skip exporting a sample input/output pair to _preview/",
     )
 
-    p_words = sub.add_parser("words", help="Generate word-collection JSON")
-    p_words.add_argument("--config", type=Path, default=CONFIG_PATH)
-    p_words.add_argument(
-        "--force",
-        action="store_true",
-        help="Regenerate words.json even if it already exists",
-    )
-
-    p_holdout = sub.add_parser(
-        "holdout",
-        help="Generate paragraph holdout dataset from words.json",
-    )
+    p_holdout = sub.add_parser("holdout", help="Generate holdout dataset")
     p_holdout.add_argument("--config", type=Path, default=CONFIG_PATH)
     p_holdout.add_argument(
         "--force",
@@ -51,7 +40,7 @@ def main(argv: list[str] | None = None) -> None:
         help="Checkpoint path (default: infer.checkpoint from config)",
     )
 
-    p_infer = sub.add_parser("infer", help="Run OCR on images in test_images/")
+    p_infer = sub.add_parser("infer", help="Run OCR on rendered test_samples/")
     p_infer.add_argument("--config", type=Path, default=CONFIG_PATH)
     p_infer.add_argument(
         "--checkpoint",
@@ -60,22 +49,33 @@ def main(argv: list[str] | None = None) -> None:
         help="Checkpoint path (default: infer.checkpoint from config)",
     )
     p_infer.add_argument(
-        "--input-dir",
+        "--samples",
         type=Path,
         default=None,
-        help="Directory of input images (default: test_images/)",
+        help="Sample definitions JSON (default: test_samples/samples.json)",
     )
     p_infer.add_argument(
         "--output-dir",
         type=Path,
         default=None,
-        help="Directory for prepared inputs and previews (default: training_session/infer)",
+        help="Directory for preview panels (default: training_session/infer)",
     )
     p_infer.add_argument(
-        "--canvas-size",
+        "--width",
         type=int,
-        default=256,
-        help="Square white canvas size in pixels (default: 256)",
+        default=None,
+        help="Override canvas width in pixels (default: width from samples JSON)",
+    )
+    p_infer.add_argument(
+        "--height",
+        type=int,
+        default=None,
+        help="Override canvas height in pixels (default: height from samples JSON)",
+    )
+    p_infer.add_argument(
+        "--reseed",
+        action="store_true",
+        help="Ignore saved seeds and generate new random render variations",
     )
 
     args = parser.parse_args(argv)
@@ -85,12 +85,6 @@ def main(argv: list[str] | None = None) -> None:
         from preview import run as run_preview
 
         run_preview(cfg, export_sample=not args.no_sample)
-        return
-
-    if args.cmd == "words":
-        from renderer.words_gen import generate_word_collections
-
-        generate_word_collections(cfg, force=args.force)
         return
 
     if args.cmd == "holdout":
@@ -111,9 +105,17 @@ def main(argv: list[str] | None = None) -> None:
         run_infer(
             cfg,
             checkpoint=args.checkpoint,
-            input_dir=args.input_dir,
+            samples_path=args.samples,
             output_dir=args.output_dir,
-            canvas_size=args.canvas_size,
+            canvas_size=(
+                (
+                    args.width if args.width is not None else 256,
+                    args.height if args.height is not None else 256,
+                )
+                if args.width is not None or args.height is not None
+                else None
+            ),
+            reseed=args.reseed,
         )
         return
 

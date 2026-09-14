@@ -19,6 +19,7 @@ _PACKAGE_DIR = Path(__file__).resolve().parent
 T = TypeVar("T")
 
 SeqLenMix = tuple[tuple[int, float], ...]
+PaddingRanges = tuple[tuple[int, int], tuple[int, int], tuple[int, int], tuple[int, int]]
 
 
 def _project_dir() -> Path:
@@ -68,7 +69,6 @@ class VariationSettings:
     letter_spacing_max: float
     line_gap_min: float
     line_gap_max: float
-    antialias_prob: float
     blur_prob: float
     blur_radius_min: float
     blur_radius_max: float
@@ -80,9 +80,14 @@ class VariationSettings:
     jpeg_quality_max: int
     rotation_prob: float
     rotation_degrees: float
-    resize_prob: float
-    resize_scale_min: float
-    resize_scale_max: float
+    padding_top_min: int
+    padding_top_max: int
+    padding_right_min: int
+    padding_right_max: int
+    padding_bottom_min: int
+    padding_bottom_max: int
+    padding_left_min: int
+    padding_left_max: int
     topic_words_prob: float
     research_prob: float
     punct_after_content_prob: float
@@ -106,7 +111,6 @@ def default_variation_settings() -> VariationSettings:
         letter_spacing_max=1.8,
         line_gap_min=0.15,
         line_gap_max=0.55,
-        antialias_prob=0.35,
         blur_prob=0.45,
         blur_radius_min=0.25,
         blur_radius_max=0.9,
@@ -118,9 +122,14 @@ def default_variation_settings() -> VariationSettings:
         jpeg_quality_max=88,
         rotation_prob=0.5,
         rotation_degrees=0.5,
-        resize_prob=0.45,
-        resize_scale_min=0.82,
-        resize_scale_max=0.96,
+        padding_top_min=8,
+        padding_top_max=12,
+        padding_right_min=8,
+        padding_right_max=12,
+        padding_bottom_min=8,
+        padding_bottom_max=12,
+        padding_left_min=8,
+        padding_left_max=12,
         topic_words_prob=0.85,
         research_prob=0.12,
         punct_after_content_prob=0.12,
@@ -136,12 +145,11 @@ class VariationSchedule:
     handwritten_prob: StepSchedule[float]
     bold_prob: StepSchedule[float]
     italic_prob: StepSchedule[float]
-    bg_value: StepSchedule[tuple[int, int]]
+    background: StepSchedule[tuple[int, int]]
     contrast: StepSchedule[tuple[int, int]]
     letter_spacing_prob: StepSchedule[float]
     letter_spacing_max: StepSchedule[float]
     line_gap: StepSchedule[tuple[float, float]]
-    antialias_prob: StepSchedule[float]
     blur_prob: StepSchedule[float]
     blur_radius: StepSchedule[tuple[float, float]]
     noise_prob: StepSchedule[float]
@@ -150,8 +158,7 @@ class VariationSchedule:
     jpeg_quality: StepSchedule[tuple[int, int]]
     rotation_prob: StepSchedule[float]
     rotation_degrees: StepSchedule[float]
-    resize_prob: StepSchedule[float]
-    resize_scale: StepSchedule[tuple[float, float]]
+    padding: StepSchedule[PaddingRanges]
     topic_words_prob: StepSchedule[float]
     research_prob: StepSchedule[float]
     punct_after_content_prob: StepSchedule[float]
@@ -161,13 +168,16 @@ class VariationSchedule:
 
     def at(self, step: int) -> VariationSettings:
         font_size_min, font_size_max = self.font_size.at(step)
-        bg_min, bg_max = self.bg_value.at(step)
+        bg_min, bg_max = self.background.at(step)
         contrast_min, contrast_max = self.contrast.at(step)
         line_gap_min, line_gap_max = self.line_gap.at(step)
         blur_radius_min, blur_radius_max = self.blur_radius.at(step)
         noise_sigma_min, noise_sigma_max = self.noise_sigma.at(step)
         jpeg_quality_min, jpeg_quality_max = self.jpeg_quality.at(step)
-        resize_scale_min, resize_scale_max = self.resize_scale.at(step)
+        (padding_top_min, padding_top_max), (padding_right_min, padding_right_max), (
+            padding_bottom_min,
+            padding_bottom_max,
+        ), (padding_left_min, padding_left_max) = self.padding.at(step)
         return VariationSettings(
             font_size_min=font_size_min,
             font_size_max=font_size_max,
@@ -182,7 +192,6 @@ class VariationSchedule:
             letter_spacing_max=self.letter_spacing_max.at(step),
             line_gap_min=line_gap_min,
             line_gap_max=line_gap_max,
-            antialias_prob=self.antialias_prob.at(step),
             blur_prob=self.blur_prob.at(step),
             blur_radius_min=blur_radius_min,
             blur_radius_max=blur_radius_max,
@@ -194,9 +203,14 @@ class VariationSchedule:
             jpeg_quality_max=jpeg_quality_max,
             rotation_prob=self.rotation_prob.at(step),
             rotation_degrees=self.rotation_degrees.at(step),
-            resize_prob=self.resize_prob.at(step),
-            resize_scale_min=resize_scale_min,
-            resize_scale_max=resize_scale_max,
+            padding_top_min=padding_top_min,
+            padding_top_max=padding_top_max,
+            padding_right_min=padding_right_min,
+            padding_right_max=padding_right_max,
+            padding_bottom_min=padding_bottom_min,
+            padding_bottom_max=padding_bottom_max,
+            padding_left_min=padding_left_min,
+            padding_left_max=padding_left_max,
             topic_words_prob=self.topic_words_prob.at(step),
             research_prob=self.research_prob.at(step),
             punct_after_content_prob=self.punct_after_content_prob.at(step),
@@ -208,13 +222,16 @@ class VariationSchedule:
     @property
     def final(self) -> VariationSettings:
         font_size_min, font_size_max = self.font_size.final
-        bg_min, bg_max = self.bg_value.final
+        bg_min, bg_max = self.background.final
         contrast_min, contrast_max = self.contrast.final
         line_gap_min, line_gap_max = self.line_gap.final
         blur_radius_min, blur_radius_max = self.blur_radius.final
         noise_sigma_min, noise_sigma_max = self.noise_sigma.final
         jpeg_quality_min, jpeg_quality_max = self.jpeg_quality.final
-        resize_scale_min, resize_scale_max = self.resize_scale.final
+        (padding_top_min, padding_top_max), (padding_right_min, padding_right_max), (
+            padding_bottom_min,
+            padding_bottom_max,
+        ), (padding_left_min, padding_left_max) = self.padding.final
         return VariationSettings(
             font_size_min=font_size_min,
             font_size_max=font_size_max,
@@ -229,7 +246,6 @@ class VariationSchedule:
             letter_spacing_max=self.letter_spacing_max.final,
             line_gap_min=line_gap_min,
             line_gap_max=line_gap_max,
-            antialias_prob=self.antialias_prob.final,
             blur_prob=self.blur_prob.final,
             blur_radius_min=blur_radius_min,
             blur_radius_max=blur_radius_max,
@@ -241,9 +257,14 @@ class VariationSchedule:
             jpeg_quality_max=jpeg_quality_max,
             rotation_prob=self.rotation_prob.final,
             rotation_degrees=self.rotation_degrees.final,
-            resize_prob=self.resize_prob.final,
-            resize_scale_min=resize_scale_min,
-            resize_scale_max=resize_scale_max,
+            padding_top_min=padding_top_min,
+            padding_top_max=padding_top_max,
+            padding_right_min=padding_right_min,
+            padding_right_max=padding_right_max,
+            padding_bottom_min=padding_bottom_min,
+            padding_bottom_max=padding_bottom_max,
+            padding_left_min=padding_left_min,
+            padding_left_max=padding_left_max,
             topic_words_prob=self.topic_words_prob.final,
             research_prob=self.research_prob.final,
             punct_after_content_prob=self.punct_after_content_prob.final,
@@ -264,8 +285,7 @@ class DataSettings:
     seed: int | None
     image_sizes: StepSchedule[tuple[tuple[int, int], ...]]
     variations: VariationSchedule
-    paragraph_counts: tuple[int, ...]
-    paragraph_len_max: int
+    max_text_len: int
     samples_per_epoch: int
 
     def at_step(self, step: int) -> DataAtStep:
@@ -294,23 +314,13 @@ class DataSettings:
 
 
 @dataclass(frozen=True)
-class WordsSettings:
-    path: Path
-    num_topics: int
-    words_per_topic: int
-    seed: int
-
-
-@dataclass(frozen=True)
 class HoldoutSettings:
     dir: Path
     seed: int
     num_samples: int
     width: int
     height: int
-    paragraph_counts: tuple[int, ...]
-    paragraph_len_max: int
-    words: Path
+    max_text_len: int
 
 
 @dataclass(frozen=True)
@@ -325,6 +335,7 @@ class BenchmarkSettings:
 @dataclass(frozen=True)
 class TrainSettings:
     session_dir: Path
+    init_checkpoint: Path | None
     epochs: int
     batch_size: int
     grad_accum: int
@@ -351,7 +362,6 @@ class InferSettings:
 class Config:
     max_seq_len: StepSchedule[SeqLenMix]
     data: DataSettings
-    words: WordsSettings
     holdout: HoldoutSettings
     benchmark: BenchmarkSettings
     train: TrainSettings
@@ -549,6 +559,24 @@ def _parse_font_size_value(raw: Any, *, field_name: str) -> tuple[int, int]:
     return lo, hi
 
 
+_PADDING_SIDES = ("top", "right", "bottom", "left")
+
+
+def _parse_padding_value(raw: Any, *, field_name: str) -> PaddingRanges:
+    if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+        raise ValueError(
+            f"{field_name} must be [[top_min, top_max], [right_min, right_max], "
+            f"[bottom_min, bottom_max], [left_min, left_max]]",
+        )
+    sides: list[tuple[int, int]] = []
+    for side, entry in zip(_PADDING_SIDES, raw, strict=True):
+        lo, hi = _parse_int_range_value(entry, field_name=f"{field_name}.{side}")
+        if lo < 0:
+            raise ValueError(f"{field_name}.{side} min must be >= 0")
+        sides.append((lo, hi))
+    return (sides[0], sides[1], sides[2], sides[3])
+
+
 def _parse_prob_schedule(
     raw: Any,
     *,
@@ -624,6 +652,30 @@ def _parse_font_size_schedule(
     )
 
 
+def _default_padding_ranges(settings: VariationSettings) -> PaddingRanges:
+    return (
+        (settings.padding_top_min, settings.padding_top_max),
+        (settings.padding_right_min, settings.padding_right_max),
+        (settings.padding_bottom_min, settings.padding_bottom_max),
+        (settings.padding_left_min, settings.padding_left_max),
+    )
+
+
+def _parse_padding_schedule(
+    raw: Any,
+    *,
+    field_name: str,
+    default: PaddingRanges,
+) -> StepSchedule[PaddingRanges]:
+    if raw is None:
+        return StepSchedule(((0, default),))
+    return _parse_step_schedule(
+        raw,
+        field_name=field_name,
+        parse_value=lambda value: _parse_padding_value(value, field_name=field_name),
+    )
+
+
 def _is_grouped_variation_schedule(raw: Any) -> bool:
     if not _is_step_schedule(raw):
         return False
@@ -665,9 +717,9 @@ def _parse_variations(raw: Any) -> VariationSchedule:
             field_name=f"{prefix}.italic_prob",
             default=defaults.italic_prob,
         ),
-        bg_value=_parse_int_range_schedule(
-            fields.get("bg_value"),
-            field_name=f"{prefix}.bg_value",
+        background=_parse_int_range_schedule(
+            fields.get("background") or fields.get("bg_value"),
+            field_name=f"{prefix}.background",
             default=(defaults.bg_min, defaults.bg_max),
         ),
         contrast=_parse_int_range_schedule(
@@ -689,11 +741,6 @@ def _parse_variations(raw: Any) -> VariationSchedule:
             fields.get("line_gap"),
             field_name=f"{prefix}.line_gap",
             default=(defaults.line_gap_min, defaults.line_gap_max),
-        ),
-        antialias_prob=_parse_prob_schedule(
-            fields.get("antialias_prob"),
-            field_name=f"{prefix}.antialias_prob",
-            default=defaults.antialias_prob,
         ),
         blur_prob=_parse_prob_schedule(
             fields.get("blur_prob"),
@@ -735,15 +782,10 @@ def _parse_variations(raw: Any) -> VariationSchedule:
             field_name=f"{prefix}.rotation_degrees",
             default=defaults.rotation_degrees,
         ),
-        resize_prob=_parse_prob_schedule(
-            fields.get("resize_prob"),
-            field_name=f"{prefix}.resize_prob",
-            default=defaults.resize_prob,
-        ),
-        resize_scale=_parse_float_range_schedule(
-            fields.get("resize_scale"),
-            field_name=f"{prefix}.resize_scale",
-            default=(defaults.resize_scale_min, defaults.resize_scale_max),
+        padding=_parse_padding_schedule(
+            fields.get("padding"),
+            field_name=f"{prefix}.padding",
+            default=_default_padding_ranges(defaults),
         ),
         topic_words_prob=_parse_prob_schedule(
             fields.get("topic_words_prob"),
@@ -778,27 +820,11 @@ def _parse_variations(raw: Any) -> VariationSchedule:
     )
 
 
-def _parse_counts_value(raw: Any, *, field_name: str) -> tuple[int, ...]:
-    counts = tuple(int(value) for value in raw)
-    if not counts:
-        raise ValueError(f"{field_name} must not be empty")
-    if any(value < 1 for value in counts):
-        raise ValueError(f"each {field_name} entry must be >= 1")
-    return counts
-
-
-def _parse_paragraph_render(raw: dict[str, Any], *, field_prefix: str) -> dict[str, Any]:
-    paragraph_len_max = int(raw.get("paragraph_len_max", 400))
-    if paragraph_len_max < 1:
-        raise ValueError(f"{field_prefix}.paragraph_len_max must be >= 1")
-    paragraph_counts = _parse_counts_value(
-        raw.get("paragraph_counts", [1, 2, 3]),
-        field_name=f"{field_prefix}.paragraph_counts",
-    )
-    return {
-        "paragraph_counts": paragraph_counts,
-        "paragraph_len_max": paragraph_len_max,
-    }
+def _parse_max_text_len(raw: dict[str, Any], *, field_prefix: str) -> int:
+    value = int(raw.get("max_text_len", raw.get("paragraph_len_max", 400)))
+    if value < 1:
+        raise ValueError(f"{field_prefix}.max_text_len must be >= 1")
+    return value
 
 
 def _parse_single_image_size(raw: Any, *, field_name: str) -> tuple[int, int]:
@@ -807,7 +833,7 @@ def _parse_single_image_size(raw: Any, *, field_name: str) -> tuple[int, int]:
     return _parse_image_sizes_value([raw])[0]
 
 
-def _parse_holdout(holdout: dict[str, Any], *, words_path: Path) -> dict[str, Any]:
+def _parse_holdout(holdout: dict[str, Any]) -> dict[str, Any]:
     image_size = holdout.get("image_size")
     if image_size is None:
         width = int(holdout["width"])
@@ -815,12 +841,10 @@ def _parse_holdout(holdout: dict[str, Any], *, words_path: Path) -> dict[str, An
         validate_image_size(width, height)
     else:
         width, height = _parse_single_image_size(image_size, field_name="holdout.image_size")
-    render = _parse_paragraph_render(holdout, field_prefix="holdout")
     return {
         "width": width,
         "height": height,
-        "words": words_path,
-        **render,
+        "max_text_len": _parse_max_text_len(holdout, field_prefix="holdout"),
     }
 
 
@@ -840,20 +864,22 @@ def _format_max_seq_len_schedule(schedule: StepSchedule[SeqLenMix]) -> str:
 def _format_variation_step(value: VariationSettings) -> str:
     return (
         f"font {value.font_size_min}-{value.font_size_max}px, "
-        f"AA {value.antialias_prob:.0%}, blur {value.blur_prob:.0%}, "
+        f"bg {value.bg_min}-{value.bg_max}, "
+        f"blur {value.blur_prob:.0%}, "
         f"noise {value.noise_prob:.0%}, jpeg {value.jpeg_prob:.0%}, "
-        f"rot {value.rotation_prob:.0%}, resize {value.resize_prob:.0%}"
+        f"rot {value.rotation_prob:.0%}"
     )
 
 
 def _variation_schedules(schedule: VariationSchedule) -> list[tuple[str, StepSchedule[Any]]]:
     return [
         ("font_size", schedule.font_size),
+        ("background", schedule.background),
+        ("padding", schedule.padding),
         ("blur_prob", schedule.blur_prob),
         ("noise_prob", schedule.noise_prob),
         ("jpeg_prob", schedule.jpeg_prob),
         ("rotation_prob", schedule.rotation_prob),
-        ("resize_prob", schedule.resize_prob),
         ("research_prob", schedule.research_prob),
     ]
 
@@ -865,8 +891,7 @@ def print_data_schedule(cfg: Config) -> None:
         f"(256×256 → 64×32 visual grid)",
     )
     print(_format_step_schedule("image_sizes", data.image_sizes))
-    print(f"paragraph_counts: {list(data.paragraph_counts)}")
-    print(f"paragraph_len:    up to {data.paragraph_len_max}")
+    print(f"max_text_len:     {data.max_text_len}")
     print(f"variations@0:     {_format_variation_step(data.variations.at(0))}")
     print(f"variations@final: {_format_variation_step(data.variations.final)}")
     for name, field_schedule in _variation_schedules(data.variations):
@@ -881,19 +906,10 @@ def load_config(path: Path | None = None) -> Config:
     base = config_path.parent
     data = raw["data"]
     holdout = raw.get("holdout") or {}
-    words = raw.get("words") or {}
     benchmark = raw.get("benchmark") or {}
     train = raw["train"]
     infer = raw.get("infer") or {}
-    data_render = _parse_paragraph_render(data, field_prefix="data")
-    words_path = _resolve(Path(words.get("path") or holdout.get("words") or "renderer/words.json"), base)
-    num_topics = int(words.get("num_topics", 24))
-    if num_topics < 1:
-        raise ValueError("words.num_topics must be >= 1")
-    words_per_topic = int(words.get("words_per_topic", 100))
-    if words_per_topic < 10:
-        raise ValueError("words.words_per_topic must be >= 10")
-    holdout_render = _parse_holdout(holdout, words_path=words_path)
+    holdout_render = _parse_holdout(holdout)
     holdout_num_samples = int(holdout.get("num_samples", 512))
     if holdout_num_samples < 1:
         raise ValueError("holdout.num_samples must be >= 1")
@@ -932,13 +948,7 @@ def load_config(path: Path | None = None) -> Config:
             image_sizes=_parse_image_sizes(data.get("image_sizes") or raw.get("image_sizes")),
             variations=_parse_variations(data.get("variations")),
             samples_per_epoch=int(data["samples_per_epoch"]),
-            **data_render,
-        ),
-        words=WordsSettings(
-            path=words_path,
-            num_topics=num_topics,
-            words_per_topic=words_per_topic,
-            seed=int(words.get("seed", 42)),
+            max_text_len=_parse_max_text_len(data, field_prefix="data"),
         ),
         holdout=HoldoutSettings(
             dir=_resolve(Path(holdout.get("dir") or "holdout"), base),
@@ -955,6 +965,11 @@ def load_config(path: Path | None = None) -> Config:
         ),
         train=TrainSettings(
             session_dir=_resolve(Path(train["session_dir"]), base),
+            init_checkpoint=(
+                _resolve(Path(init_raw), base)
+                if (init_raw := train.get("init_checkpoint"))
+                else None
+            ),
             epochs=int(train["epochs"]),
             batch_size=int(train["batch_size"]),
             grad_accum=max(1, int(train.get("grad_accum", 1))),

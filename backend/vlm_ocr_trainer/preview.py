@@ -10,10 +10,9 @@ from pathlib import Path
 import torch
 
 from config import CONFIG_PATH, Config, load_config, print_data_schedule
-from data import image_to_tensor
+from data import image_to_tensor, sample_random_text
 from renderer.canvas import input_output_row, text_panel
-from renderer.corpus import require_corpus
-from renderer.paragraph_render import render_paragraph_sample
+from renderer.paragraph_render import render_paragraph_document
 from device import training_device
 from model import (
     OcrVlm,
@@ -22,7 +21,7 @@ from model import (
     print_architecture_summary,
     print_vision_encode_summary,
 )
-from vocab import CharVocab
+from vocab import TRAINING_CHARSET, CharVocab
 
 _PREVIEW_DIR = CONFIG_PATH.parent / "_preview"
 
@@ -104,8 +103,7 @@ def print_model(
         canvas_sizes=cfg.data.all_image_sizes,
         example_width=example_w,
         example_height=example_h,
-        paragraph_counts=cfg.data.paragraph_counts,
-        paragraph_len_max=cfg.data.paragraph_len_max,
+        max_text_len=cfg.data.max_text_len,
         max_seq_len=cfg.seq_len_cap,
     )
     _print_prediction_summary(cfg, vocab)
@@ -144,18 +142,20 @@ def print_model(
 
 def export_sample_pair(cfg: Config, model: OcrVlm) -> None:
     vocab = model.vocab
-    corpus = require_corpus(cfg.words.path)
     rng = random.Random(cfg.data.seed)
     settings = cfg.data.at_final()
     width, height = rng.choice(settings.image_sizes)
-    sample = render_paragraph_sample(
+    text = sample_random_text(
+        rng,
+        TRAINING_CHARSET,
+        max_text_chars=cfg.data.max_text_len,
+    )
+    sample = render_paragraph_document(
         width,
         height,
         rng,
-        corpus,
+        [text],
         settings.variations,
-        paragraph_counts=cfg.data.paragraph_counts,
-        paragraph_len_max=cfg.data.paragraph_len_max,
     )
     device = training_device()
     model.to(device)

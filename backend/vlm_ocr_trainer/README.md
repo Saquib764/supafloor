@@ -22,8 +22,7 @@ uv run vlm-ocr-train inspect
 # Skip _preview/ export
 uv run vlm-ocr-train inspect --no-sample
 
-# Generate word collections then render holdout paragraphs
-uv run vlm-ocr-train words
+# Generate holdout dataset
 uv run vlm-ocr-train holdout
 uv run vlm-ocr-train holdout --force
 
@@ -43,29 +42,25 @@ CNN stem uses anisotropic W÷4, H÷8 (`STEM_STRIDE_W`, `STEM_STRIDE_H` in `model
 
 Training picks one canvas size and one `max_seq_len` per **DataLoader batch** from the current step's schedules; all samples in that batch share the same H×W and length budget (including with `num_workers > 0`). Shorter text sequences are padded with `<PAD>` only — images are not spatially padded.
 
-Training samples use the same paragraph pipeline as holdout: words, numbers, and punctuation from `renderer/words.json` are composed into 1–3 paragraphs and rendered with font/size/opacity/background/grain variation. Labels contain only text that fit on the canvas.
+Training samples randomly draw characters from the vocabulary charset, render them with font/size/opacity/background/grain variation, and label only the text that fit on the canvas.
 
-Tune `data.paragraph_counts` and `paragraph_len_max` in `config.yaml` (defaults match `holdout.*`). Font size is random 8–16 px per sample.
+Tune `data.max_text_len` in `config.yaml` (defaults match `holdout.max_text_len`). Font size is random 8–16 px per sample.
 
 ## Holdout benchmark
 
 Training data is infinite synthetic text, but accuracy is measured on a **fixed holdout** written to disk:
 
-1. Run `uv run vlm-ocr-train words` — writes `renderer/words.json` (topic → word lists + punctuation).
-2. Run `uv run vlm-ocr-train holdout` — samples words, numbers, and punctuation into 1–3 paragraphs, renders with font/size/opacity/background/grain/padding variation. Manifest labels contain **only text that fit on the canvas**.
-3. During training, every `benchmark.steps` optimizer steps the model runs greedy decode on the holdout.
-4. Metrics logged: **CER**, **WER**, **seq acc** (exact string match).
+1. Run `uv run vlm-ocr-train holdout` — renders random charset text with font/size/opacity/background/grain/padding variation. Manifest labels contain **only text that fit on the canvas**.
+2. During training, every `benchmark.steps` optimizer steps the model runs greedy decode on the holdout.
+3. Metrics logged: **CER**, **WER**, **seq acc** (exact string match).
 
-Tune `words.*`, `holdout.paragraph_counts`, `holdout.paragraph_len_max`, and `benchmark.*` in `config.yaml`. `benchmark.max_seq_len` caps greedy decode length on holdout (separate from training `max_seq_len`). Set `benchmark.num_samples` (e.g. `64`) for a quick eval; omit it to use the full holdout.
+Tune `holdout.max_text_len` and `benchmark.*` in `config.yaml`. `benchmark.max_seq_len` caps greedy decode length on holdout (separate from training `max_seq_len`). Set `benchmark.num_samples` (e.g. `64`) for a quick eval; omit it to use the full holdout.
 
 `benchmark.save_best: true` writes `training_session/best.pt` when holdout CER improves. Per-epoch metrics append to `training_session/metrics.jsonl`.
 
 ## Output layout
 
 ```
-renderer/
-└── words.json
-
 holdout/
 ├── manifest.jsonl
 └── images/

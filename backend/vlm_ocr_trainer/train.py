@@ -25,14 +25,13 @@ from benchmark import (
 from holdout import holdout_manifest_path
 from references import print_benchmark_report
 from config import Config, load_config, print_data_schedule, sample_max_seq_len
-from data import OcrBatchCollator, SyntheticOcrDataset, image_to_tensor
+from data import OcrBatchCollator, SyntheticOcrDataset, image_to_tensor, sample_random_text
 from renderer.canvas import training_viz_row
-from renderer.corpus import require_corpus
-from renderer.training_sample import generate_training_sample
+from renderer.paragraph_render import render_paragraph_document
 from device import training_device
 from model import OcrVlm, count_parameters, ocr_loss
 from preview import print_model
-from vocab import CharVocab
+from vocab import TRAINING_CHARSET, CharVocab
 
 CHECKPOINT_NAME = "last.pt"
 BEST_CHECKPOINT_NAME = "best.pt"
@@ -92,7 +91,6 @@ def _viz_row(
     model: OcrVlm,
     vocab: CharVocab,
     cfg: Config,
-    corpus,
     device: torch.device,
     *,
     seed: int,
@@ -102,15 +100,17 @@ def _viz_row(
     settings = cfg.data.at_step(step)
     max_seq_len = sample_max_seq_len(cfg.max_seq_len.at(step), rng)
     width, height = rng.choice(settings.image_sizes)
-    sample = generate_training_sample(
+    text = sample_random_text(
+        rng,
+        TRAINING_CHARSET,
+        max_text_chars=max(1, max_seq_len - 2),
+    )
+    sample = render_paragraph_document(
         width,
         height,
         rng,
-        corpus,
+        [text],
         settings.variations,
-        vocab,
-        max_seq_len=max_seq_len,
-        paragraph_counts=cfg.data.paragraph_counts,
     )
     tensor = image_to_tensor(sample.image).unsqueeze(0).to(device)
     generated = model.generate(tensor, max_length=max_seq_len)
@@ -122,7 +122,6 @@ def _save_viz(
     model: OcrVlm,
     vocab: CharVocab,
     cfg: Config,
-    corpus,
     device: torch.device,
     out_dir: Path,
     step: int,
@@ -134,7 +133,7 @@ def _save_viz(
     step_dir.mkdir(parents=True, exist_ok=True)
     for index in range(cfg.train.viz_samples):
         panel = _viz_row(
-            model, vocab, cfg, corpus, device, seed=seed + step + index, step=step
+            model, vocab, cfg, device, seed=seed + step + index, step=step
         )
         panel.save(step_dir / f"sample-{index:03d}.jpg", format="JPEG", quality=95)
     model.train()
@@ -213,7 +212,6 @@ def _run_step_benchmark(
 def run(cfg: Config) -> None:
     device = training_device()
     vocab = CharVocab()
-    corpus = require_corpus(cfg.words.path)
     training_step_value = Value("i", 0)
     epoch_value = Value("i", 0)
     use_workers = cfg.train.num_workers > 0
@@ -222,7 +220,6 @@ def run(cfg: Config) -> None:
         prefetch_samples = cfg.train.batch_size * 2
     dataset = SyntheticOcrDataset(
         data=cfg.data,
-        corpus=corpus,
         batch_size=cfg.train.batch_size,
         max_seq_len=cfg.max_seq_len,
         vocab=vocab,
@@ -275,6 +272,13 @@ def run(cfg: Config) -> None:
         training_step_value.value = step
         dataset.epoch = start_epoch
         tqdm.write(f"Resumed step {step} epoch {start_epoch} ← {checkpoint_path}")
+    elif cfg.train.init_checkpoint is not None:
+        init_path = cfg.train.init_checkpoint
+        if not init_path.is_file():
+            raise FileNotFoundError(f"init checkpoint not found: {init_path}")
+        state = torch.load(init_path, map_location=device, weights_only=False)
+        model.load_state_dict(state["model"])
+        tqdm.write(f"Initialized weights from {init_path} (new session, step 0)")
 
     print("\n=== Device ===")
     print(f"device:         {device}")
@@ -302,6 +306,7 @@ def run(cfg: Config) -> None:
     print(f"save_best:      {cfg.benchmark.save_best}")
     print("\n=== Training ===")
     print(f"output_dir:     {cfg.train.session_dir}")
+    print(f"init_checkpoint:{cfg.train.init_checkpoint or '(none)'}")
     print(f"epochs:         {cfg.train.epochs}")
     print(f"batch_size:     {cfg.train.batch_size}")
     print(f"grad_accum:     {cfg.train.grad_accum}")
@@ -394,7 +399,6 @@ def run(cfg: Config) -> None:
                     model,
                     vocab,
                     cfg,
-                    corpus,
                     device,
                     viz_dir,
                     step,

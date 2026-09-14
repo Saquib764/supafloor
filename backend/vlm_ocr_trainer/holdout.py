@@ -10,9 +10,9 @@ from pathlib import Path
 from tqdm.auto import tqdm
 
 from config import Config
-from renderer.corpus import require_corpus
-from renderer.paragraph_render import render_paragraph_sample
-from renderer.words_gen import words_path
+from data import sample_random_text
+from renderer.paragraph_render import render_paragraph_document
+from vocab import TRAINING_CHARSET
 
 
 def holdout_manifest_path(cfg: Config) -> Path:
@@ -20,7 +20,7 @@ def holdout_manifest_path(cfg: Config) -> Path:
 
 
 def generate_holdout(cfg: Config, *, force: bool = False) -> Path:
-    """Render paragraph holdout samples to cfg.holdout.dir and write manifest.jsonl."""
+    """Render holdout samples to cfg.holdout.dir and write manifest.jsonl."""
     holdout = cfg.holdout
     manifest = holdout_manifest_path(cfg)
     if manifest.is_file() and not force:
@@ -29,7 +29,7 @@ def generate_holdout(cfg: Config, *, force: bool = False) -> Path:
         print("Use --force to regenerate.")
         return manifest
 
-    corpus = require_corpus(words_path(cfg))
+    charset = TRAINING_CHARSET
     out_dir = holdout.dir
     images_dir = out_dir / "images"
     if out_dir.exists():
@@ -39,14 +39,17 @@ def generate_holdout(cfg: Config, *, force: bool = False) -> Path:
     records: list[dict[str, object]] = []
     for index in tqdm(range(holdout.num_samples), desc="Holdout", unit="sample"):
         sample_rng = random.Random(holdout.seed + index)
-        sample = render_paragraph_sample(
+        text = sample_random_text(
+            sample_rng,
+            charset,
+            max_text_chars=holdout.max_text_len,
+        )
+        sample = render_paragraph_document(
             holdout.width,
             holdout.height,
             sample_rng,
-            corpus,
+            [text],
             cfg.data.variations.final,
-            paragraph_counts=holdout.paragraph_counts,
-            paragraph_len_max=holdout.paragraph_len_max,
         )
         image_name = f"{index:06d}.png"
         sample.image.save(images_dir / image_name, format="PNG")
