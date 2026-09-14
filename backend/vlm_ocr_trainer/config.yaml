@@ -18,12 +18,13 @@ max_seq_len:
   - [95000, 1536]
 
 data:
-  seed: 42
+  seed: 43
   # Step schedules: [[training_step, value], ...]. At step >= threshold, use that value.
   # First entry must be at step 0. Training step = optimizer steps (after grad accum).
   image_sizes:
     - [0, [[128, 128]]]
     - [20000, [[256, 256]]]
+    - [50000, [[256, 256], [512, 256]]]
   paragraph_counts: [1, 2, 3]
   paragraph_len_max: 400
   # Each variation setting has its own [[step, value], ...] schedule (same format as max_seq_len).
@@ -102,7 +103,7 @@ train:
   num_workers: 8  # parallel CPU render workers; 0 = main process only
   prefetch_factor: 2  # DataLoader batches prefetched per worker (num_workers > 0)
   prefetch_samples: 64  # in-process thread prefetch when num_workers = 0
-  benchmark_steps: 5000  # holdout eval every N optimizer steps; 0 = off
+  benchmark_steps: 1000  # holdout eval every N optimizer steps; 0 = off
   benchmark_batch_size: 32
   save_best: true
 
