@@ -37,6 +37,7 @@ infer-sam-fit = "infer_sam_fit:main"
 infer-image-edit = "infer_image_edit:main"
 infer-fpn = "infer_fpn:main"
 infer-ui-simple = "infer_ui_simple:main"
+label-data = "label_data:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["util"]
@@ -49,6 +50,7 @@ dev-mode-dirs = ["."]
 "infer_image_edit.py" = "infer_image_edit.py"
 "infer_fpn.py" = "infer_fpn.py"
 "infer_ui_simple.py" = "infer_ui_simple.py"
+"label_data.py" = "label_data.py"
 "config.py" = "config.py"
 "config.yaml" = "config.yaml"
 

@@ -97,7 +97,7 @@ train:
   session_dir: training_session
   init_checkpoint:  # weights from prior session; new optimizer/schedule
   epochs: 2
-  batch_size: 8
+  batch_size: 64
   grad_accum: 1
   learning_rate: 1.0e-3
   weight_decay: 0.01
@@ -113,4 +113,4 @@ train:
   prefetch_samples: 64  # in-process thread prefetch when num_workers = 0
 
 infer:
-  checkpoint: training_session_2/last.pt
+  checkpoint: training_session/last.pt
