@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import random
 import shutil
 from pathlib import Path
@@ -14,12 +13,9 @@ from canvas import columns_input_masks, stack_rows
 from config import CONFIG_PATH, Config, datasets_cache_dir, load_config
 from data import (
     augment_sample,
-    build_floorplan_targets,
-    extraction_scale,
     image_to_tensor,
     load_train_split,
-    prepare_image,
-    scale_extraction,
+    load_training_sample,
 )
 from device import training_device
 from net.model import FloorplanFPN, build_model
@@ -195,18 +191,20 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     train_rows, _train_count, _test_count = load_train_split(
         cfg.data.dataset,
         test_fraction=cfg.data.test_fraction,
+        source=cfg.data.source,
         revision=cfg.data.revision,
         cache_dir=cache_dir,
     )
     row = train_rows[90]
     stem = str(row["stem"])
     size = max(cfg.input_sizes)
-    image = prepare_image(row["image"], size)
-    extraction = scale_extraction(
-        json.loads(str(row["extraction"])),
-        extraction_scale(size),
+    image, gt_targets = load_training_sample(
+        row,
+        dataset_name=cfg.data.dataset,
+        size=size,
+        mask_channels=cfg.mask_channels,
+        image_key="image",
     )
-    gt_targets = build_floorplan_targets(extraction, size, cfg.mask_channels)
     rng = random.Random(cfg.data.seed)
     image, gt_targets = augment_sample(
         image,
@@ -214,6 +212,7 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
         rng=rng,
         augment=cfg.data.augment,
         background_channel=cfg.mask_channels.background,
+        size=size,
     )
     mask_labels = cfg.mask_channels.labels()
 

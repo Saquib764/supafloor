@@ -16,6 +16,12 @@ def main(argv: list[str] | None = None) -> None:
 
     p_train = sub.add_parser("train", help="Train on Hub floor-plan rows")
     p_train.add_argument("--config", type=Path, default=CONFIG_PATH)
+    p_train.add_argument(
+        "--init-checkpoint",
+        type=Path,
+        default=None,
+        help="Prior session last.pt — load weights only into train.session_dir",
+    )
 
     p_inspect = sub.add_parser("inspect", help="Print model architecture and dummy-forward shapes")
     p_inspect.add_argument("--config", type=Path, default=CONFIG_PATH)
@@ -39,8 +45,15 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.cmd == "train":
+        from dataclasses import replace
+
         from train import run
 
+        if args.init_checkpoint is not None:
+            cfg = replace(
+                cfg,
+                train=replace(cfg.train, init_checkpoint=args.init_checkpoint, resume=False),
+            )
         run(cfg)
         return
 

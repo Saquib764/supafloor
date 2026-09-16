@@ -20,6 +20,7 @@ node_modules/
 uv.lock
 image-to-floorplan/
 /floorplan-manual/
+/floorplan-manual-mask/
 backend/florence_trainer/training_session
 backend/florence_trainer/training_session_*
 backend/florence_trainer/hf_cache/

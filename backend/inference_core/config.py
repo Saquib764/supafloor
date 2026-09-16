@@ -36,7 +36,8 @@ class FpnRoomComponentsSettings:
 @dataclass(frozen=True)
 class FpnSettings:
     sizes: tuple[int, ...]
-    checkpoint: Path
+    checkpoint_latest: Path
+    checkpoint_old: Path
     output_dir: Path
     mask_clean: FpnMaskCleanSettings
     floorplan_region: FpnFloorplanRegionSettings
@@ -228,11 +229,23 @@ def load_config(path: Path | None = None) -> Config:
         ),
         fpn=FpnSettings(
             sizes=tuple(int(s) for s in fpn.get("sizes", [512, 768, 1024])),
-            checkpoint=_resolve(
+            checkpoint_latest=_resolve(
                 Path(
                     fpn.get(
-                        "checkpoint",
-                        "fpn_five_trainer/training_session/last.pt",
+                        "checkpoint_latest",
+                        fpn.get(
+                            "checkpoint",
+                            "fpn_five_trainer/training_session/last.pt",
+                        ),
+                    )
+                ),
+                backend_root,
+            ),
+            checkpoint_old=_resolve(
+                Path(
+                    fpn.get(
+                        "checkpoint_old",
+                        "fpn_five_trainer/training_session_bkp/last.pt",
                     )
                 ),
                 backend_root,

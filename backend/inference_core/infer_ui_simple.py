@@ -2,9 +2,9 @@
 """Simple pygame UI for the FPN inference pipeline.
 
 Left panel lists test_image/ files; click to preview the source floor plan.
-Right panel has Run inference and Clear buttons for the selected image.
-After completion the main viewer shows wall-subtract (left) and wall-centerline
-(right) side by side, with skimage skeleton below.
+Right panel has Run old / Run latest and Clear buttons for the selected image.
+The viewer compares old vs latest checkpoints side by side for wall-subtract,
+wall centerline, and skimage skeleton.
 
 Usage (from backend/inference_core):
 
@@ -16,15 +16,28 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+
+CheckpointVariant = Literal["old", "latest"]
 
 import pygame
 from PIL import Image
 
 from config import CONFIG_PATH, load_config
-from util.fpn_pipeline import run_fpn_pipeline
+
+DOOR_COLOR = (220, 50, 50)
+WINDOW_COLOR = (64, 255, 64)
+WALL_OVERLAY_COLOR = (0, 100, 0)
+
+LEGEND_ENTRIES: list[tuple[str, tuple[int, int, int]]] = [
+    ("Door", DOOR_COLOR),
+    ("Window", WINDOW_COLOR),
+    ("Wall overlay", WALL_OVERLAY_COLOR),
+]
 
 _ROOT = Path(__file__).resolve().parent
 TEST_DIR = _ROOT / "test_image"
@@ -35,7 +48,7 @@ PANEL_WIDTH = 220
 LIST_ITEM_HEIGHT = 22
 LIST_HEADER_HEIGHT = 24
 VIEWER_GAP = 8
-DISPLAY_SCALE = 0.45
+DISPLAY_SCALE = 0.28
 
 SIDE_BG = (28, 28, 28)
 LIST_BG = (22, 22, 22)
@@ -80,8 +93,13 @@ class DisplayRow:
     panels: list[tuple[str, pygame.Surface, int]]
 
 
-def saved_output_paths(output_dir: Path, image_path: Path) -> dict[str, Path]:
-    stem_dir = output_dir / image_path.stem
+def saved_output_paths(
+    output_dir: Path,
+    image_path: Path,
+    *,
+    variant: CheckpointVariant,
+) -> dict[str, Path]:
+    stem_dir = output_dir / variant / image_path.stem
     structure_dir = stem_dir / "structure-polygons"
     return {
         "overlays": stem_dir / "room-mask-overlays.jpg",
@@ -152,15 +170,23 @@ class Button:
 
 
 class InferUISimple:
-    def __init__(self, cfg, test_images: list[Path]) -> None:
+    def __init__(self, cfg, test_images: list[Path], *, config_path: Path) -> None:
         if not test_images:
             raise ValueError(f"No images found in {TEST_DIR}")
         self.cfg = cfg
+        self.config_path = config_path
         self.test_images = test_images
         self.selected_index = 0
         self.list_scroll = 0
-        self.status = f"Loaded {test_images[0].name} — click Run inference."
-        self.running_inference = False
+        self.status = f"Loaded {test_images[0].name} — run old or latest."
+        self.running_inference: CheckpointVariant | None = None
+        self.checkpoint_by_variant: dict[CheckpointVariant, Path] = {
+            "old": cfg.fpn.checkpoint_old,
+            "latest": cfg.fpn.checkpoint_latest,
+        }
+        self.output_dir_by_variant: dict[CheckpointVariant, Path] = {
+            variant: cfg.fpn.output_dir / variant for variant in ("old", "latest")
+        }
         self.component_size = cfg.fpn.room_components.component_size
         self.col_width = max(1, int(self.component_size * DISPLAY_SCALE))
         self.viewer_area_width = self.col_width
@@ -180,14 +206,15 @@ class InferUISimple:
     def _layout_buttons(self) -> None:
         x = self.panel_x + 10
         btn_w = self.panel_w - 20
-        self.infer_btn = Button(pygame.Rect(x, 10, btn_w, 32), "Run inference")
-        self.clear_btn = Button(pygame.Rect(x, 48, btn_w, 32), "Clear")
-        self.status_y = 94
+        self.infer_old_btn = Button(pygame.Rect(x, 10, btn_w, 32), "Run old")
+        self.infer_latest_btn = Button(pygame.Rect(x, 48, btn_w, 32), "Run latest")
+        self.clear_btn = Button(pygame.Rect(x, 86, btn_w, 32), "Clear")
+        self.status_y = 132
 
     def _update_layout_geometry(self) -> None:
         self.panel_x = self.viewer_x + self.viewer_area_width
         self.window_w = self.panel_x + self.panel_w
-        if hasattr(self, "infer_btn"):
+        if hasattr(self, "infer_old_btn"):
             self._layout_buttons()
 
     def _scale_panel(self, image: Image.Image, width: int) -> tuple[pygame.Surface, int]:
@@ -235,32 +262,36 @@ class InferUISimple:
         self.window = pygame.display.set_mode((self.window_w, self.window_h))
 
     def _rebuild_surfaces(self) -> None:
-        wall_subtract, centerline, skimage = self.panels
         full_width = self.col_width * 2 + VIEWER_GAP
-        skimage_height = self._skimage_row_height(full_width)
         self.viewer_area_width = full_width
-        left, left_h = self._slot_surface(
-            wall_subtract.image,
-            self.col_width,
-            fallback_height=self.col_width,
-        )
-        right, right_h = self._slot_surface(
-            centerline.image,
-            self.col_width,
-            fallback_height=self.col_width,
-        )
-        bottom, bottom_h = self._slot_surface(
-            skimage.image,
-            full_width,
-            fallback_height=skimage_height,
-        )
-        self.display_rows = [
-            DisplayRow(
-                "pair",
-                [(wall_subtract.label, left, left_h), (centerline.label, right, right_h)],
-            ),
-            DisplayRow("single", [(skimage.label, bottom, bottom_h)]),
-        ]
+        self.display_rows = []
+        for panel_index, panel_name in enumerate(("Wall-subtract", "Wall centerline", "Skimage skeleton")):
+            old_panel = self.panels_by_variant["old"][panel_index]
+            latest_panel = self.panels_by_variant["latest"][panel_index]
+            fallback_height = (
+                self._skimage_row_height(full_width)
+                if panel_name == "Skimage skeleton"
+                else self.col_width
+            )
+            old_surface, old_h = self._slot_surface(
+                old_panel.image,
+                self.col_width,
+                fallback_height=fallback_height,
+            )
+            latest_surface, latest_h = self._slot_surface(
+                latest_panel.image,
+                self.col_width,
+                fallback_height=fallback_height,
+            )
+            self.display_rows.append(
+                DisplayRow(
+                    "pair",
+                    [
+                        (f"Old · {panel_name}", old_surface, old_h),
+                        (f"Latest · {panel_name}", latest_surface, latest_h),
+                    ],
+                )
+            )
         self._update_layout_geometry()
 
     def _list_visible_count(self) -> int:
@@ -286,19 +317,30 @@ class InferUISimple:
             return None
         return index
 
-    def _output_dir_for(self, image_path: Path) -> Path:
-        return self.cfg.fpn.output_dir / image_path.stem
+    def _output_dir_for(self, image_path: Path, variant: CheckpointVariant) -> Path:
+        return self.output_dir_by_variant[variant] / image_path.stem
 
-    def _saved_output_paths(self, image_path: Path) -> dict[str, Path]:
-        return saved_output_paths(self.cfg.fpn.output_dir, image_path)
+    def _saved_output_paths(
+        self,
+        image_path: Path,
+        variant: CheckpointVariant,
+    ) -> dict[str, Path]:
+        return saved_output_paths(self.cfg.fpn.output_dir, image_path, variant=variant)
 
-    def _panels_for_path(self, image_path: Path) -> list[ViewerPanel]:
+    def _panels_for_path(self, image_path: Path) -> dict[CheckpointVariant, list[ViewerPanel]]:
         source = Image.open(image_path).convert("RGB")
-        return panels_from_source(
-            source,
-            self._saved_output_paths(image_path),
-            component_size=self.component_size,
-        )
+        return {
+            variant: panels_from_source(
+                source,
+                self._saved_output_paths(image_path, variant),
+                component_size=self.component_size,
+            )
+            for variant in ("old", "latest")
+        }
+
+    def _variant_has_outputs(self, image_path: Path, variant: CheckpointVariant) -> bool:
+        paths = self._saved_output_paths(image_path, variant)
+        return all(path_entry.is_file() for path_entry in paths.values())
 
     def _load_test_image(self, index: int, *, initial: bool = False) -> None:
         path = self.test_images[index]
@@ -306,61 +348,83 @@ class InferUISimple:
         if not initial:
             self._ensure_list_visible(index)
         self.source_image = Image.open(path).convert("RGB")
-        self.panels = self._panels_for_path(path)
-        paths = self._saved_output_paths(path)
-        if all(path_entry.is_file() for path_entry in paths.values()):
-            self.status = f"Loaded saved output — {path.name}"
+        self.panels_by_variant = self._panels_for_path(path)
+        has_old = self._variant_has_outputs(path, "old")
+        has_latest = self._variant_has_outputs(path, "latest")
+        if has_old and has_latest:
+            self.status = f"Loaded old + latest outputs — {path.name}"
+        elif has_old or has_latest:
+            ready = "old" if has_old else "latest"
+            self.status = f"Loaded {ready} output — {path.name}"
         else:
-            self.status = f"Loaded {path.name} — click Run inference."
+            self.status = f"Loaded {path.name} — run old or latest."
         self._rebuild_surfaces()
         if not initial:
             self._resize_window()
 
-    def _apply_pipeline_outputs(self, outputs: dict[str, object]) -> None:
-        rooms = outputs["rooms"]
-        structure = outputs["structure_polygons"]
-        paths = {
-            "overlays": rooms["overlays"],
-            "wall_centerline": structure["wall_centerline"],
-            "skimage_skeleton": structure["skimage_skeleton"],
-        }
-        self.panels = load_result_panels(paths, component_size=self.component_size)
-        self.status = f"Inference complete — {self.test_images[self.selected_index].name}"
+    def _reload_inference_results(self, variant: CheckpointVariant) -> None:
+        path = self.test_images[self.selected_index]
+        paths = self._saved_output_paths(path, variant)
+        missing = [name for name, output_path in paths.items() if not output_path.is_file()]
+        if missing:
+            raise FileNotFoundError(f"Missing {variant} pipeline outputs: {', '.join(missing)}")
+        self.panels_by_variant[variant] = load_result_panels(
+            paths,
+            component_size=self.component_size,
+        )
+        self.status = f"{variant.capitalize()} inference complete — {path.name}"
         self._rebuild_surfaces()
         self._resize_window()
 
-    def _on_run_inference(self) -> None:
-        if self.running_inference:
+    def _on_run_inference(self, variant: CheckpointVariant) -> None:
+        if self.running_inference is not None:
             return
         path = self.test_images[self.selected_index]
-        self.running_inference = True
-        self.status = f"Running FPN pipeline on {path.name}..."
+        self.running_inference = variant
+        self.status = f"Running {variant} checkpoint on {path.name}..."
         self._draw()
         pygame.display.flip()
         try:
-            outputs = run_fpn_pipeline(self.cfg, path)
-            self._apply_pipeline_outputs(outputs)
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(_ROOT / "infer_fpn.py"),
+                    "--config",
+                    str(self.config_path),
+                    "--image",
+                    str(path),
+                    "--checkpoint",
+                    str(self.checkpoint_by_variant[variant]),
+                    "--output-dir",
+                    str(self.output_dir_by_variant[variant]),
+                ],
+                check=True,
+                cwd=str(_ROOT),
+            )
+            self._reload_inference_results(variant)
+        except subprocess.CalledProcessError as exc:
+            self.status = f"{variant.capitalize()} inference failed (exit {exc.returncode})"
         except Exception as exc:
-            self.status = f"Inference failed: {exc}"
+            self.status = f"{variant.capitalize()} inference failed: {exc}"
         finally:
-            self.running_inference = False
+            self.running_inference = None
 
     def _on_clear(self) -> None:
-        if self.running_inference:
+        if self.running_inference is not None:
             return
         path = self.test_images[self.selected_index]
-        out_dir = self._output_dir_for(path)
-        if out_dir.is_dir():
-            shutil.rmtree(out_dir)
-            self.status = f"Cleared outputs — {path.name}"
+        cleared = False
+        for variant in ("old", "latest"):
+            out_dir = self._output_dir_for(path, variant)
+            if out_dir.is_dir():
+                shutil.rmtree(out_dir)
+                cleared = True
+        if cleared:
+            self.status = f"Cleared old + latest outputs — {path.name}"
         else:
             self.status = f"No outputs to clear — {path.name}"
         self.source_image = Image.open(path).convert("RGB")
-        self.panels = panels_from_source(
-            self.source_image,
-            self._saved_output_paths(path),
-            component_size=self.component_size,
-        )
+        self.panels_by_variant = self._panels_for_path(path)
         self._rebuild_surfaces()
 
     def _handle_click(self, pos: tuple[int, int]) -> None:
@@ -369,8 +433,11 @@ class InferUISimple:
             if list_index != self.selected_index:
                 self._load_test_image(list_index)
             return
-        if self.infer_btn.hit(pos):
-            self._on_run_inference()
+        if self.infer_old_btn.hit(pos):
+            self._on_run_inference("old")
+            return
+        if self.infer_latest_btn.hit(pos):
+            self._on_run_inference("latest")
             return
         if self.clear_btn.hit(pos):
             self._on_clear()
@@ -447,11 +514,16 @@ class InferUISimple:
             1,
         )
         mouse = pygame.mouse.get_pos()
-        disabled = self.running_inference
-        self.infer_btn.draw(
+        disabled = self.running_inference is not None
+        self.infer_old_btn.draw(
             self.window,
             self.btn_font,
-            hover=self.infer_btn.hit(mouse) and not disabled,
+            hover=self.infer_old_btn.hit(mouse) and not disabled,
+        )
+        self.infer_latest_btn.draw(
+            self.window,
+            self.btn_font,
+            hover=self.infer_latest_btn.hit(mouse) and not disabled,
         )
         self.clear_btn.draw(
             self.window,
@@ -459,13 +531,26 @@ class InferUISimple:
             hover=self.clear_btn.hit(mouse) and not disabled,
         )
         status = self.status
-        if self.running_inference:
+        if self.running_inference is not None:
             status = f"{status} (please wait)"
         wrapped = self._wrap_text(status, self.panel_w - 20)
         y = self.status_y
         for line in wrapped:
             text = self.font.render(line, True, STATUS_COLOR)
             self.window.blit(text, (self.panel_x + 10, y))
+            y += 18
+        self._draw_legend(y + 10)
+
+    def _draw_legend(self, start_y: int) -> None:
+        header = self.label_font.render("Legend", True, PANEL_LABEL_COLOR)
+        self.window.blit(header, (self.panel_x + 10, start_y))
+        y = start_y + 20
+        for label, color in LEGEND_ENTRIES:
+            swatch = pygame.Rect(self.panel_x + 10, y + 2, 14, 14)
+            pygame.draw.rect(self.window, color, swatch)
+            pygame.draw.rect(self.window, (90, 90, 90), swatch, 1)
+            text = self.font.render(label, True, LIST_TEXT)
+            self.window.blit(text, (self.panel_x + 30, y))
             y += 18
 
     def _wrap_text(self, text: str, max_width: int) -> list[str]:
@@ -525,7 +610,7 @@ def main() -> None:
         raise SystemExit(f"No images found in {TEST_DIR}")
 
     print(f"Ready — {len(test_images)} test image(s), showing {test_images[0].name}.")
-    ui = InferUISimple(cfg, test_images)
+    ui = InferUISimple(cfg, test_images, config_path=args.config)
     ui.run()
     pygame.quit()
 

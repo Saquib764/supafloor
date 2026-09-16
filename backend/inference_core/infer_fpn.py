@@ -22,10 +22,27 @@ def main(argv: list[str] | None = None) -> None:
         default=_ROOT / "test_image" / "fp01.jpg",
         help="Floor plan image path",
     )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        help="Override fpn checkpoint path",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Override fpn output base directory (per-image stem dirs are created beneath it)",
+    )
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
-    outputs = run_fpn_pipeline(cfg, args.image)
+    outputs = run_fpn_pipeline(
+        cfg,
+        args.image,
+        checkpoint=args.checkpoint,
+        output_dir=args.output_dir,
+    )
     for step, paths in outputs.items():
         if step == "floorplan_region":
             region_paths = paths

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "inference-core"
-version = "0.1.29"
+version = "0.1.32"
 description = "SAM mask-fit room polygon inference for floor plans"
 requires-python = ">=3.11"
 dependencies = [
@@ -12,7 +12,7 @@ dependencies = [
   "dataset-manager",
   "huggingface_hub>=0.26.0",
   "numpy>=1.26.0",
-  "opencv-contrib-python>=4.10.0",
+  "opencv-contrib-python-headless>=4.10.0",
   "scikit-image>=0.24.0",
   "peft>=0.13.0",
   "pillow>=10.4.0",

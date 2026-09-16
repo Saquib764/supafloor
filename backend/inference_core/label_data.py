@@ -127,7 +127,7 @@ def infer_structure_masks(cfg, image_path: Path) -> tuple[Image.Image, dict[Mask
     """Run FPN Five on the canvas-fitted image and return cleaned editable masks."""
     canvas_size = cfg.canvas_size
     full_canvas = fit_to_canvas_rgb(Image.open(image_path), size=canvas_size)
-    runtime = FpnFiveRuntime.load(checkpoint=cfg.fpn.checkpoint)
+    runtime = FpnFiveRuntime.load(checkpoint=cfg.fpn.checkpoint_latest)
     channels = runtime.channels
 
     region_size = cfg.fpn.floorplan_region.size
@@ -290,6 +290,10 @@ class LabelDataUI:
         self.panel_w = PANEL_WIDTH
         self.viewer_x = self.list_w
         self.status = ""
+        try:
+            self.model_address = str(cfg.fpn.checkpoint_latest.relative_to(_ROOT.parent))
+        except ValueError:
+            self.model_address = str(cfg.fpn.checkpoint_latest)
         self._load_test_image(0, initial=True)
         self.display_w = max(1, int(self.canvas_size * DISPLAY_SCALE))
         self.display_h = max(1, int(self.canvas_size * DISPLAY_SCALE))
@@ -607,18 +611,39 @@ class LabelDataUI:
             text = self.font.render(line, True, STATUS_COLOR)
             self.window.blit(text, (self.panel_x + 10, y))
             y += 18
+        self._draw_model_address()
 
-    def _wrap_text(self, text: str, max_width: int) -> list[str]:
+    def _draw_model_address(self) -> None:
+        path_lines = self._wrap_text(self.model_address, self.panel_w - 20, font=self.small_font)
+        line_h = 16
+        block_h = 18 + len(path_lines) * line_h
+        y = self.window_h - block_h - 8
+        header = self.label_font.render("Model", True, LABEL_COLOR)
+        self.window.blit(header, (self.panel_x + 10, y))
+        y += 18
+        for line in path_lines:
+            text = self.small_font.render(line, True, LABEL_COLOR)
+            self.window.blit(text, (self.panel_x + 10, y))
+            y += line_h
+
+    def _wrap_text(
+        self,
+        text: str,
+        max_width: int,
+        *,
+        font: pygame.font.Font | None = None,
+    ) -> list[str]:
         if not text:
             return [""]
+        font = font or self.font
         lines: list[str] = []
         current = text
         while current:
-            if self.font.size(current)[0] <= max_width:
+            if font.size(current)[0] <= max_width:
                 lines.append(current)
                 break
             cut = len(current)
-            while cut > 1 and self.font.size(current[:cut] + "…")[0] > max_width:
+            while cut > 1 and font.size(current[:cut] + "…")[0] > max_width:
                 cut -= 1
             lines.append(current[:cut] + "…")
             current = current[cut:].lstrip()

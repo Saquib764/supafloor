@@ -147,12 +147,16 @@ def run_fpn_pipeline(
     image_path: Path,
     *,
     runtime: FpnFiveRuntime | None = None,
+    checkpoint: Path | None = None,
+    output_dir: Path | None = None,
 ) -> dict[str, object]:
     full_canvas = fit_to_canvas_rgb(Image.open(image_path), size=cfg.canvas_size)
-    runtime = runtime or FpnFiveRuntime.load(checkpoint=cfg.fpn.checkpoint)
+    runtime = runtime or FpnFiveRuntime.load(
+        checkpoint=checkpoint or cfg.fpn.checkpoint_latest,
+    )
     channels = runtime.channels
 
-    out_dir = cfg.fpn.output_dir / image_path.stem
+    out_dir = (output_dir or cfg.fpn.output_dir) / image_path.stem
     step_zero_dir = out_dir / "step-000"
     region_size = cfg.fpn.floorplan_region.size
     room_settings = cfg.fpn.room_components

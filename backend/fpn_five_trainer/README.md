@@ -12,7 +12,7 @@ Model architecture, module explanations, and size variants: **[MODEL.md](MODEL.m
 |---|---|
 | Input | Floor-plan → grayscale → invert (white walls on black), single channel |
 | Output | 5-channel mask: background / walls / rooms / doors / windows |
-| Dataset | `floorplan-to-json` (Hub stream) |
+| Dataset | `floorplan-to-json` or `floorplan-manual-mask` (set `data.dataset` in `config.yaml`) |
 | Resolution | `input_size: [512, 768]` (Hub images resized; extraction coords scaled from 1024 canvas) |
 
 Channel order:
@@ -50,6 +50,19 @@ uv run fpn-train infer --image test_image/001.jpeg
 ```
 
 Checkpoints write `training_session/last.pt`. Every `viz_steps`, test-set overlays land in `training_session/viz/step-NNNNNN/<stem>.jpg`: `input | pred | target`.
+
+Continue in the same folder: `train.resume: true` loads `session_dir/last.pt` (model, optimizer, step).
+
+Start a **new** session from prior weights: set `train.init_checkpoint` to the old `last.pt` and a new `session_dir`. Optimizer and step counter restart at zero.
+
+```yaml
+train:
+  session_dir: training_session_2
+  init_checkpoint: training_session/last.pt
+  resume: false
+```
+
+CLI override: `uv run fpn-train train --init-checkpoint training_session/last.pt`
 
 ## Loss
 

@@ -21,6 +21,7 @@ Registered today:
 |---|---|---|---|
 | `floorplan-to-json` | Synthetic export publish/download + Florence/SAM training | `image-to-floorplan/basic_5000` | `saquiboye/floorplan-to-json` |
 | `floorplan-manual` | Manual annotation publish/download + Florence training | `floorplan-manual` | `saquiboye/floorplan-manual` |
+| `floorplan-manual-mask` | Manual five-class mask publish/download + FPN Five training | `floorplan-manual-mask` | `saquiboye/floorplan-manual-mask` |
 | `floorplan-vae` | VAE view (`stem`, `plan_id`, `variant`, `image`, `simple_image`) | — | reads `floorplan-to-json` |
 
 Both uploadable datasets share the same local folder layout:
@@ -31,7 +32,21 @@ Both uploadable datasets share the same local folder layout:
 <input_dir>/output2/<stem>.jpg
 ```
 
-Hub columns match for both uploadable datasets (`stem`, `plan_id`, `variant`, `image`, `extraction`, `simple_image`). Manual samples always use `variant: 0` and get a random 12-char `plan_id` at upload time.
+Hub columns match for both JSON uploadable datasets (`stem`, `plan_id`, `variant`, `image`, `extraction`, `simple_image`). Manual samples always use `variant: 0` and get a random 12-char `plan_id` at upload time.
+
+Manual mask layout (`floorplan-manual-mask`):
+
+```
+<input_dir>/input/<stem>.jpg
+<input_dir>/output/<stem>/{background,room,wall,door,window}.png
+```
+
+Sample processing for trainers lives in `processing/`:
+
+| Module | Used when `data.dataset` is |
+|---|---|
+| `processing/floorplan_mask.py` | `floorplan-to-json` — renders masks from extraction JSON |
+| `processing/manual_mask.py` | `floorplan-manual-mask` — loads pre-rendered PNG masks |
 
 ## Upload to Hugging Face
 

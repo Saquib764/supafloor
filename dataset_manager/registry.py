@@ -82,6 +82,74 @@ def load_hub_dataset(name: str, *, revision: str | None = None, cache_dir: Path 
     return schema.load_from_hub(repo, revision=rev, cache_dir=cache_dir)
 
 
+def local_dataset_root(name: str) -> Path | None:
+    meta = _metadata(name)
+    if not meta.get("local_root"):
+        return None
+    return _local_root(meta, name)
+
+
+def local_dataset_available(name: str) -> bool:
+    root = local_dataset_root(name)
+    return root is not None and (root / "input").is_dir()
+
+
+def load_local_dataset(name: str) -> Dataset:
+    meta = _metadata(name)
+    schema = _schema(name)
+    if not hasattr(schema, "build_from_local"):
+        raise ValueError(f"Dataset {name!r} does not support local loading")
+    return schema.build_from_local(_local_root(meta, name))
+
+
+def load_dataset(
+    name: str,
+    *,
+    revision: str | None = None,
+    cache_dir: Path | None = None,
+    source: str = "auto",
+) -> Dataset:
+    """Load from local_root when available (or forced), otherwise from the Hub."""
+    if source not in ("auto", "local", "hub"):
+        raise ValueError(f"source must be auto, local, or hub, got {source!r}")
+    if source in ("auto", "local") and local_dataset_available(name):
+        schema = _schema(name)
+        if hasattr(schema, "build_from_local"):
+            dataset = load_local_dataset(name)
+            if len(dataset) > 0:
+                return dataset
+            if source == "local":
+                raise FileNotFoundError(f"No rows under local dataset {name!r}")
+    if source == "local":
+        raise FileNotFoundError(f"Local folder not found for dataset {name!r}")
+    return load_hub_dataset(name, revision=revision, cache_dir=cache_dir)
+
+
+def dataset_row_count(
+    name: str,
+    *,
+    revision: str | None = None,
+    cache_dir: Path | None = None,
+    source: str = "auto",
+) -> int:
+    return len(load_dataset(name, revision=revision, cache_dir=cache_dir, source=source))
+
+
+def load_rows_at(
+    dataset: Dataset,
+    indices: range | list[int],
+    *,
+    columns: tuple[str, ...] | None = None,
+) -> list[dict]:
+    rows = dataset
+    if columns is not None:
+        missing = [col for col in columns if col not in rows.column_names]
+        if missing:
+            raise KeyError(f"Dataset missing columns: {missing}")
+        rows = rows.select_columns(list(columns))
+    return [rows[int(index)] for index in indices]
+
+
 def hub_dataset_row_count(
     name: str,
     *,

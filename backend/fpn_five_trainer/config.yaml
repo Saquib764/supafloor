@@ -1,5 +1,5 @@
 hf_cache: ../hf_cache
-input_size: [512, 768, 1024]
+input_size: [512,512,512, 768,768, 1024]
 
 mask_channels:
   background: 0
@@ -9,14 +9,17 @@ mask_channels:
   windows: 4
 
 data:
-  dataset: floorplan-to-json
+  dataset: floorplan-manual-mask
+  source: local  # auto | local | hub
   seed: 42
   test_fraction: 0.1
-  num_workers: 2
+  num_workers: 0  # 0 = in-process thread prefetch; raise when dataset is large
+  prefetch_factor: 2
+  prefetch_samples: 0
   augment:
     scale_min: 0.5
     scale_max: 1.5
-    opacity_min: 0.1
+    opacity_min: 0.4
     opacity_max: 1.0
 
 net:
@@ -36,19 +39,20 @@ net:
 loss:
   focal_alpha: 0.25
   focal_gamma: 2.0
-  channel_weights: [1.20, 1.0, 1.0, 1.0, 1.0]
-  extra_opening_penalty: 0.0
+  channel_weights: [1.20, 1.0, 1.0, 1.50, 1.30]
+  extra_opening_penalty: 2.0
 
 train:
-  session_dir: training_session
-  epochs: 10
+  session_dir: training_session_2
+  epochs: 200
   batch_size: 2
   grad_accum: 2
-  learning_rate: 1.0e-4
+  learning_rate: 1.0e-5
   warmup_ratio: 0.03
   weight_decay: 0.01
   bf16: true
-  resume: true
+  init_checkpoint: training_session/last.pt
+  resume: false
   save_steps: 1000
   viz_steps: 100
   viz_samples: 10
@@ -56,4 +60,4 @@ train:
 
 infer:
   size: 512
-  checkpoint: training_session/last.pt
+  checkpoint: training_session_2/last.pt

@@ -1,0 +1,5 @@
+name: floorplan-manual-mask
+hf_repo: saquiboye/floorplan-manual-mask
+local_root: floorplan-manual-mask
+private: true
+revision: main

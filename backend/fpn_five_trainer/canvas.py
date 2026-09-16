@@ -17,8 +17,10 @@ def masks_to_rgb(masks: np.ndarray) -> Image.Image:
     return Image.fromarray(rgb, mode="RGB")
 
 
-def to_gray_image(image: Image.Image) -> Image.Image:
+def to_gray_image(image: Image.Image | np.ndarray) -> Image.Image:
     """Single-channel view for preview panels."""
+    if isinstance(image, np.ndarray):
+        return Image.fromarray(image, mode="L")
     return image.convert("L")
 
 
@@ -77,7 +79,7 @@ def with_label(image: Image.Image, label: str) -> Image.Image:
 
 
 def columns_input_masks(
-    image: Image.Image,
+    image: Image.Image | np.ndarray,
     masks: np.ndarray,
     *,
     mask_labels: tuple[str, ...] | None = None,

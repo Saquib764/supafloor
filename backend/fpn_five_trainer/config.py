@@ -11,6 +11,7 @@ os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", "120")
 os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "120")
 
 import yaml
+from processing import MaskChannels
 from registry import ROOT as _DATASET_MANAGER_DIR, load_dotenv
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
@@ -33,58 +34,6 @@ def _load_dotenv() -> None:
     load_dotenv(_project_dir(), _DATASET_MANAGER_DIR, Path.cwd())
 
 
-_MASK_CHANNEL_FIELDS = ("background", "walls", "rooms", "doors", "windows")
-
-
-@dataclass(frozen=True)
-class MaskChannels:
-    background: int
-    walls: int
-    rooms: int
-    doors: int
-    windows: int
-
-    @classmethod
-    def from_dict(cls, raw: dict[str, Any] | None) -> MaskChannels:
-        values = dict(_DEFAULT_MASK_CHANNELS)
-        if raw:
-            for name in _MASK_CHANNEL_FIELDS:
-                if name in raw:
-                    values[name] = int(raw[name])
-        return cls(**values)
-
-    @property
-    def count(self) -> int:
-        return len(_MASK_CHANNEL_FIELDS)
-
-    def indices(self) -> tuple[int, ...]:
-        return tuple(getattr(self, name) for name in _MASK_CHANNEL_FIELDS)
-
-    def labels(self) -> tuple[str, ...]:
-        ordered = sorted((getattr(self, name), name) for name in _MASK_CHANNEL_FIELDS)
-        return tuple(name for _, name in ordered)
-
-    def validate(self, out_channels: int) -> None:
-        indices = self.indices()
-        if len(set(indices)) != len(indices):
-            raise ValueError(f"mask_channels indices must be unique, got {indices}")
-        expected = list(range(out_channels))
-        if sorted(indices) != expected:
-            raise ValueError(
-                f"mask_channels must be exactly {expected} for net.out_channels={out_channels}, "
-                f"got {indices}"
-            )
-
-
-_DEFAULT_MASK_CHANNELS = {
-    "background": 0,
-    "rooms": 1,
-    "walls": 2,
-    "doors": 3,
-    "windows": 4,
-}
-
-
 @dataclass(frozen=True)
 class AugmentSettings:
     scale_min: float
@@ -97,9 +46,12 @@ class AugmentSettings:
 class DataSettings:
     dataset: str
     test_fraction: float
+    source: str
     revision: str | None = None
     seed: int | None = None
     num_workers: int = 0
+    prefetch_factor: int = 2
+    prefetch_samples: int = 0
     augment: AugmentSettings = AugmentSettings(0.5, 2.0, 0.4, 1.0)
 
 
@@ -141,6 +93,7 @@ class TrainSettings:
     warmup_ratio: float
     weight_decay: float
     bf16: bool
+    init_checkpoint: Path | None
     resume: bool
     save_steps: int
     viz_steps: int
@@ -288,6 +241,9 @@ def load_config(path: Path | None = None) -> Config:
     dataset = str(data.get("dataset") or "").strip()
     if not dataset:
         raise ValueError("data.dataset is required (dataset_manager registry name)")
+    source = str(data.get("source") or "auto").strip().lower()
+    if source not in ("auto", "local", "hub"):
+        raise ValueError("data.source must be auto, local, or hub")
     input_sizes = _parse_input_sizes(raw["input_size"])
     hf_cache = apply_hf_cache(_resolve(Path(raw["hf_cache"]), base))
     net_settings = _load_net_settings(net)
@@ -308,9 +264,12 @@ def load_config(path: Path | None = None) -> Config:
         data=DataSettings(
             dataset=dataset,
             test_fraction=float(data["test_fraction"]),
+            source=source,
             revision=str(data["revision"]).strip() if data.get("revision") else None,
             seed=int(data["seed"]) if data.get("seed") is not None else None,
             num_workers=int(data.get("num_workers", 0)),
+            prefetch_factor=int(data.get("prefetch_factor", 2)),
+            prefetch_samples=int(data.get("prefetch_samples", 0)),
             augment=_load_augment_settings(data.get("augment")),
         ),
         net=net_settings,
@@ -329,6 +288,11 @@ def load_config(path: Path | None = None) -> Config:
             warmup_ratio=float(train.get("warmup_ratio", 0.0)),
             weight_decay=float(train["weight_decay"]),
             bf16=bool(train["bf16"]),
+            init_checkpoint=(
+                _resolve(Path(init_raw), base)
+                if (init_raw := train.get("init_checkpoint"))
+                else None
+            ),
             resume=bool(train.get("resume", False)),
             save_steps=int(train["save_steps"]),
             viz_steps=int(train["viz_steps"]),

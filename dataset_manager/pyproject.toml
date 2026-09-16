@@ -4,14 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dataset-manager"
-version = "0.2.0"
+version = "0.3.0"
 description = "Registry + upload/download for Supafloor Hugging Face datasets"
 requires-python = ">=3.11"
 dependencies = [
   "datasets>=3.0.0",
   "huggingface_hub>=0.26.0",
+  "numpy>=1.26.0",
+  "opencv-python-headless>=4.10.0",
   "pillow>=10.4.0",
   "pyyaml>=6.0.2",
+  "shapely>=2.0.6",
 ]
 
 [project.scripts]
@@ -25,6 +28,7 @@ packages = []
 "cli.py" = "cli.py"
 "README.md" = "README.md"
 "datasets" = "datasets"
+"processing" = "processing"
 
 [tool.hatch.build.targets.editable]
 dev-mode-dirs = ["."]
