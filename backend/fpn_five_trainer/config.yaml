@@ -39,20 +39,20 @@ net:
 loss:
   focal_alpha: 0.25
   focal_gamma: 2.0
-  channel_weights: [1.20, 1.0, 1.0, 1.50, 1.30]
+  channel_weights: [1.0, 1.40, 1.20, 1.0, 1.0]
   extra_opening_penalty: 2.0
 
 train:
   session_dir: training_session_2
-  epochs: 300
+  epochs: 501
   batch_size: 2
   grad_accum: 2
   learning_rate: 3.0e-5
   warmup_ratio: 0.03
   weight_decay: 0.01
   bf16: true
-  init_checkpoint: training_session/last.pt
-  resume: false
+  # init_checkpoint: training_session/last.pt
+  resume: true
   save_steps: 1000
   viz_steps: 100
   viz_samples: 10
