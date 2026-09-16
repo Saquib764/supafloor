@@ -3,7 +3,7 @@
 
 Source images live in ``test_image/``. Saves into ``floorplan-manual-mask/``:
 
-  input/<id>.jpg           — 1024×1024 canvas image
+  input/<id>.jpg           — source image fit to 1024×1024 canvas (unmasked)
   output/<id>/wall.png     — white = active
   output/<id>/door.png
   output/<id>/window.png
@@ -124,7 +124,7 @@ def empty_masks(size: int) -> dict[MaskLayer, np.ndarray]:
 
 
 def infer_structure_masks(cfg, image_path: Path) -> tuple[Image.Image, dict[MaskLayer, np.ndarray]]:
-    """Run FPN Five on the canvas-fitted image and return cleaned editable masks."""
+    """Run FPN Five and return canvas-fitted source image plus cleaned editable masks."""
     canvas_size = cfg.canvas_size
     full_canvas = fit_to_canvas_rgb(Image.open(image_path), size=canvas_size)
     runtime = FpnFiveRuntime.load(checkpoint=cfg.fpn.checkpoint_latest)
@@ -165,11 +165,8 @@ def infer_structure_masks(cfg, image_path: Path) -> tuple[Image.Image, dict[Mask
                 interpolation=cv2.INTER_NEAREST,
             ).astype(bool)
         masks = resized
-        canvas = masked_canvas
-    else:
-        canvas = masked_canvas
 
-    return canvas, masks
+    return full_canvas, masks
 
 
 def mask_to_gray_image(mask: np.ndarray) -> Image.Image:
@@ -196,15 +193,6 @@ def load_saved_masks(stem: str, size: int) -> dict[MaskLayer, np.ndarray] | None
     if background_path.is_file():
         masks["background"] = _load_mask_png(background_path, size)
     return masks
-
-
-def load_saved_canvas(stem: str, size: int) -> Image.Image | None:
-    for ext in (".jpg", ".jpeg", ".png", ".webp"):
-        path = INPUT_DIR / f"{stem}{ext}"
-        if path.is_file():
-            image = fit_to_canvas_rgb(Image.open(path), size=size)
-            return image
-    return None
 
 
 def save_manual_masks(
@@ -349,14 +337,12 @@ class LabelDataUI:
         if not initial:
             self._ensure_list_visible(index)
         stem = path.stem
-        saved_canvas = load_saved_canvas(stem, self.canvas_size)
+        self.source_canvas = fit_to_canvas_rgb(Image.open(path), size=self.canvas_size)
         saved_masks = load_saved_masks(stem, self.canvas_size)
-        if saved_canvas is not None and saved_masks is not None:
-            self.source_canvas = saved_canvas
+        if saved_masks is not None:
             self.masks = saved_masks
             self.status = f"Loaded saved masks — {path.name}"
         else:
-            self.source_canvas = fit_to_canvas_rgb(Image.open(path), size=self.canvas_size)
             self.masks = empty_masks(self.canvas_size)
             self.status = f"Loaded {path.name} — infer or paint masks."
         self.painting = False
@@ -445,8 +431,7 @@ class LabelDataUI:
         self._draw()
         pygame.display.flip()
         try:
-            canvas, masks = infer_structure_masks(self.cfg, path)
-            self.source_canvas = canvas
+            _, masks = infer_structure_masks(self.cfg, path)
             self.masks = masks
             self.masks["background"] = np.zeros((self.canvas_size, self.canvas_size), dtype=bool)
             self.status = f"Inference loaded — refine {self.active_layer}, then save."

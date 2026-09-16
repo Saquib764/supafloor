@@ -9,7 +9,7 @@ from pathlib import Path
 
 import torch
 
-from canvas import columns_input_masks, stack_rows
+from canvas import columns_input_masks, stack_rows, to_gray_image
 from config import CONFIG_PATH, Config, datasets_cache_dir, load_config
 from data import (
     augment_sample,
@@ -188,14 +188,15 @@ def print_model(cfg: Config, *, dummy_forward: bool = True) -> FloorplanFPN:
 def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     cache_dir = datasets_cache_dir(cfg)
     print(f"Loading sample row from {cfg.data.dataset} …")
-    train_rows, _train_count, _test_count = load_train_split(
+    train_rows, train_count, _test_count = load_train_split(
         cfg.data.dataset,
         test_fraction=cfg.data.test_fraction,
         source=cfg.data.source,
         revision=cfg.data.revision,
         cache_dir=cache_dir,
     )
-    row = train_rows[90]
+    rng = random.Random(cfg.data.seed)
+    row = train_rows[rng.randrange(train_count)]
     stem = str(row["stem"])
     size = max(cfg.input_sizes)
     image, gt_targets = load_training_sample(
@@ -205,7 +206,6 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
         mask_channels=cfg.mask_channels,
         image_key="image",
     )
-    rng = random.Random(cfg.data.seed)
     image, gt_targets = augment_sample(
         image,
         gt_targets,
@@ -236,7 +236,7 @@ def export_sample_pair(cfg: Config, model: FloorplanFPN) -> None:
     gt_path = _PREVIEW_DIR / "gt.jpg"
     output_path = _PREVIEW_DIR / "output.jpg"
     panel_path = _PREVIEW_DIR / "preview.jpg"
-    image.save(input_path, format="JPEG", quality=95)
+    to_gray_image(image).save(input_path, format="JPEG", quality=95)
     gt_row.save(gt_path, format="JPEG", quality=95)
     pred_row.save(output_path, format="JPEG", quality=95)
     panel.save(panel_path, format="JPEG", quality=95)

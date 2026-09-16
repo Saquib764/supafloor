@@ -42,11 +42,8 @@ def build_from_local(local_root: Path) -> Dataset:
     local_root = Path(local_root)
     if not (local_root / "input").is_dir():
         raise FileNotFoundError(f"Missing input/ under {local_root}")
-    dataset = Dataset.from_generator(
-        _iter_local_rows,
-        gen_kwargs={"src": local_root},
-        features=FEATURES,
-    )
+    rows = list(_iter_local_rows(local_root))
+    dataset = Dataset.from_list(rows, features=FEATURES)
     if len(dataset) == 0:
         raise FileNotFoundError(f"No complete input/output pairs under {local_root}")
     return dataset

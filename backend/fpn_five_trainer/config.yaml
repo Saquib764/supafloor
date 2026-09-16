@@ -44,10 +44,10 @@ loss:
 
 train:
   session_dir: training_session_2
-  epochs: 200
+  epochs: 300
   batch_size: 2
   grad_accum: 2
-  learning_rate: 1.0e-5
+  learning_rate: 3.0e-5
   warmup_ratio: 0.03
   weight_decay: 0.01
   bf16: true
