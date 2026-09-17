@@ -59,7 +59,7 @@ Mask head output width: `out_channels: 5`.
 net/
 ├── blocks.py         ConvBnSiLU, ResidualBlock
 ├── backbone.py       CnnBackbone → [c2,c3,c4,c5]
-├── fpn.py            YoloLikeFPN (lateral + L5 transformer + top-down)
+├── fpn.py            YoloLikeFPN (lateral + shared L4/L5 transformer + top-down)
 ├── l5_transformer.py L5Transformer, Rotary2D (y,x) with i/(L-1) normalized coords
 ├── mask_head.py      FPNMaskHead → 5 mask logits
 ├── loss.py           five_mask_loss

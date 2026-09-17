@@ -105,7 +105,7 @@ def _print_architecture_summary(cfg: Config) -> None:
     l5 = cfg.net.l5_transformer
     if l5 is not None:
         print(
-            f"│  ├─ L5Transformer  {width}→{l5.dim} ch, depth={l5.depth}, "
+            f"│  ├─ L5Transformer  shared L4+L5, {width}→{l5.dim} ch, depth={l5.depth}, "
             f"heads={l5.heads}, 2D RoPE (y/(H-1), x/(W-1))",
             flush=True,
         )

@@ -55,7 +55,7 @@ output: output
 
 fpn:
   sizes: [512, 768, 1024]
-  checkpoint_latest: fpn_five_trainer/training_session_2/last.pt
+  checkpoint_latest: fpn_five_trainer/training_session_3/last.pt
   checkpoint_old: fpn_five_trainer/training_session_bkp/last.pt
   output_dir: output/fpn
   mask_clean:

@@ -292,6 +292,7 @@ class FloorplanDataset(IterableDataset):
         seed: int | None = None,
         prefetch_samples: int = 0,
     ) -> None:
+        self._dataset = dataset
         self._adapter = get_adapter(dataset_name)
         self._mask_channels = mask_channels
         self._input_sizes = input_sizes
@@ -299,23 +300,26 @@ class FloorplanDataset(IterableDataset):
         self._augment = augment
         self._seed = seed
         self._prefetch_samples = max(0, prefetch_samples)
+        self._cache_size = cache_size
         self.epoch = 0
-        self._cache: list[_CachedSample] = []
-        for dataset_index in range(num_rows):
-            row = dataset[dataset_index]
-            for image_key in self._adapter.image_keys:
-                self._cache.append(
-                    _cache_sample(
-                        row,
-                        adapter=self._adapter,
-                        mask_channels=mask_channels,
-                        image_key=image_key,
-                        cache_size=cache_size,
-                    )
-                )
+        self._entries = [
+            (dataset_index, image_key)
+            for dataset_index in range(num_rows)
+            for image_key in self._adapter.image_keys
+        ]
 
     def __len__(self) -> int:
-        return len(self._cache)
+        return len(self._entries)
+
+    def _load_sample(self, dataset_index: int, image_key: str) -> _CachedSample:
+        row = self._dataset[dataset_index]
+        return _cache_sample(
+            row,
+            adapter=self._adapter,
+            mask_channels=self._mask_channels,
+            image_key=image_key,
+            cache_size=self._cache_size,
+        )
 
     def _worker_indices(self, indices: list[int]) -> list[int]:
         info = torch.utils.data.get_worker_info()
@@ -324,14 +328,15 @@ class FloorplanDataset(IterableDataset):
         return indices[info.id :: info.num_workers]
 
     def _iter_samples(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-        indices = list(range(len(self._cache)))
+        indices = list(range(len(self._entries)))
         rng = random.Random((self._seed or 0) + self.epoch)
         rng.shuffle(indices)
         indices = self._worker_indices(indices)
         current_size: int | None = None
         yields_in_batch = 0
-        for cache_index in indices:
-            sample = self._cache[cache_index]
+        for entry_index in indices:
+            dataset_index, image_key = self._entries[entry_index]
+            sample = self._load_sample(dataset_index, image_key)
             if yields_in_batch % self._batch_size == 0:
                 current_size = rng.choice(self._input_sizes)
             gray, masks = augment_sample(
@@ -357,18 +362,21 @@ class FloorplanDataset(IterableDataset):
             finally:
                 queue.put(None)
 
-        thread = Thread(target=producer, daemon=True)
+        thread = Thread(target=producer, daemon=False)
         thread.start()
-        while True:
-            try:
-                item = queue.get(timeout=0.1)
-            except Empty:
-                if not thread.is_alive() and queue.empty():
+        try:
+            while True:
+                try:
+                    item = queue.get(timeout=0.1)
+                except Empty:
+                    if not thread.is_alive() and queue.empty():
+                        break
+                    continue
+                if item is None:
                     break
-                continue
-            if item is None:
-                break
-            yield item
+                yield item
+        finally:
+            thread.join()
 
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         if self._prefetch_samples > 0:

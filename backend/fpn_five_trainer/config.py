@@ -203,12 +203,12 @@ def _parse_input_sizes(raw: Any) -> tuple[int, ...]:
 def _validate_l5_grid_side(input_size: int, l5_transformer: L5TransformerSettings | None) -> None:
     if l5_transformer is None:
         return
-    l5_side = input_size // 32
-    if l5_side > l5_transformer.max_l5_grid_side:
+    l4_side = input_size // 16
+    if l4_side > l5_transformer.max_l5_grid_side:
         raise ValueError(
-            f"input_size ({input_size}) needs L5 grid {l5_side}×{l5_side}, "
+            f"input_size ({input_size}) needs L4 grid {l4_side}×{l4_side}, "
             f"but net.l5_transformer.max_l5_grid_side is {l5_transformer.max_l5_grid_side} "
-            f"(supports input_size up to {l5_transformer.max_l5_grid_side * 32})"
+            f"(supports input_size up to {l5_transformer.max_l5_grid_side * 16})"
         )
 
 

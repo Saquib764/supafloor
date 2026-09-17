@@ -9,8 +9,9 @@ mask_channels:
   windows: 4
 
 data:
+  # dataset: floorplan-to-json
   dataset: floorplan-manual-mask
-  source: local  # auto | local | hub
+  source: auto  # auto | local | hub
   seed: 42
   test_fraction: 0.1
   num_workers: 0  # 0 = in-process thread prefetch; raise when dataset is large
@@ -43,16 +44,16 @@ loss:
   extra_opening_penalty: 2.0
 
 train:
-  session_dir: training_session_2
-  epochs: 501
+  session_dir: training_session_3
+  epochs: 500
   batch_size: 2
   grad_accum: 2
   learning_rate: 3.0e-5
   warmup_ratio: 0.03
   weight_decay: 0.01
   bf16: true
-  # init_checkpoint: training_session/last.pt
-  resume: true
+  init_checkpoint: training_session_2/last.pt
+  resume: false
   save_steps: 1000
   viz_steps: 100
   viz_samples: 10
@@ -60,4 +61,4 @@ train:
 
 infer:
   size: 512
-  checkpoint: training_session_2/last.pt
+  checkpoint: training_session_3/last.pt
