@@ -54,6 +54,19 @@ def compute_floorplan_region(
     return FloorplanRegion(mask=region_mask.astype(bool), polygon=polygon)
 
 
+def region_mask_for_image(region_mask: np.ndarray, image_size: tuple[int, int]) -> np.ndarray:
+    """Resize a region mask to match image width × height."""
+    width, height = image_size
+    mask = region_mask > 0.5
+    if mask.shape == (height, width):
+        return mask
+    return cv2.resize(
+        mask.astype(np.uint8),
+        (width, height),
+        interpolation=cv2.INTER_NEAREST,
+    ).astype(bool)
+
+
 def apply_region_mask(
     image: Image.Image,
     region_mask: np.ndarray,
@@ -62,16 +75,46 @@ def apply_region_mask(
 ) -> Image.Image:
     """Zero out canvas content outside the floorplan region (white fill)."""
     rgb = np.asarray(image.convert("RGB"))
-    mask = region_mask > 0.5
-    if mask.shape[:2] != rgb.shape[:2]:
-        mask = cv2.resize(
-            mask.astype(np.uint8),
-            (rgb.shape[1], rgb.shape[0]),
-            interpolation=cv2.INTER_NEAREST,
-        ).astype(bool)
+    mask = region_mask_for_image(region_mask, image.size)
     out = rgb.copy()
     out[~mask] = background
     return Image.fromarray(out, mode="RGB")
+
+
+def region_crop_box(
+    region_mask: np.ndarray,
+    image_size: tuple[int, int],
+    *,
+    padding_px: int = 0,
+) -> tuple[int, int, int, int] | None:
+    """Axis-aligned crop box ``(x0, y0, x1, y1)`` for a region mask on an image."""
+    mask = region_mask_for_image(region_mask, image_size)
+    ys, xs = np.where(mask)
+    if len(ys) == 0:
+        return None
+
+    height, width = mask.shape
+    y0, y1 = int(ys.min()), int(ys.max()) + 1
+    x0, x1 = int(xs.min()), int(xs.max()) + 1
+    if padding_px > 0:
+        y0 = max(0, y0 - padding_px)
+        x0 = max(0, x0 - padding_px)
+        y1 = min(height, y1 + padding_px)
+        x1 = min(width, x1 + padding_px)
+    return x0, y0, x1, y1
+
+
+def crop_region_bbox(
+    image: Image.Image,
+    region_mask: np.ndarray,
+    *,
+    padding_px: int = 0,
+) -> Image.Image:
+    """Crop image to the axis-aligned bounding box of region_mask."""
+    box = region_crop_box(region_mask, image.size, padding_px=padding_px)
+    if box is None:
+        return image.copy()
+    return image.crop(box)
 
 
 def save_masked_canvas(image: Image.Image, out_dir: Path) -> Path:

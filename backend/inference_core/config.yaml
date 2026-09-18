@@ -1,8 +1,6 @@
 canvas_size: 1024
 hf_cache: ../hf_cache
 
-sam_config: ../sam_trainer/config.yaml
-
 replicate_token: r8_Hnnnf9EqN0DUijMj7IOKAyfAPsQdJ6I15HdxX
 
 image_edit:
@@ -38,25 +36,12 @@ room_masks:
   min_area_px: 1000
   exclude_largest: true
 
-grid:
-  size: 100
-  tries_per_cell: 5
-  seed: null
-
-point_filter:
-  dilate_px: 16
-
-mask_smooth:
-  close_px: 2
-  smooth_sigma: 1.0
-  approx_epsilon: 2.0
-
 output: output
 
 fpn:
   sizes: [512, 768, 1024]
-  checkpoint_latest: fpn_five_trainer/training_session_3/last.pt
-  checkpoint_old: fpn_five_trainer/training_session_bkp/last.pt
+  checkpoint_latest: fpn_five_trainer/training_session_3_real/last.pt
+  checkpoint_old: fpn_five_trainer/training_session_2/last.pt
   output_dir: output/fpn
   mask_clean:
     open_px: 2
@@ -69,8 +54,3 @@ fpn:
   room_components:
     component_size: 1024
     min_area_px: 64
-
-fit:
-  min_sides: 4
-  max_sides: 20
-  output_dir: output/fit

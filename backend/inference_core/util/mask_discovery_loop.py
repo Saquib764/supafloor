@@ -9,8 +9,8 @@ import numpy as np
 from PIL import Image
 
 from config import Config
+from util.canvas import load_canvas_image
 from util.render import draw_mask, draw_masks
-from util.sam_runtime import load_viewer_image
 
 
 def _white_connected_masks(
@@ -54,7 +54,7 @@ def run_mask_discovery_loop(
     if source_image is not None:
         image = source_image.convert("RGB")
     else:
-        image = load_viewer_image(image_path, canvas_size=cfg.canvas_size)
+        image = load_canvas_image(image_path, canvas_size=cfg.canvas_size)
 
     gray = np.array(image.convert("L"), dtype=np.uint8)
     gray_path = masks_dir / "gray.png"

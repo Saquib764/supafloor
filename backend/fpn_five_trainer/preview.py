@@ -104,9 +104,10 @@ def _print_architecture_summary(cfg: Config) -> None:
     print(f"│  ├─ lateral stem  → P1 {p1} ch @ {sizes['stem']}×{sizes['stem']}", flush=True)
     l5 = cfg.net.l5_transformer
     if l5 is not None:
+        registers = f", registers={l5.num_registers}" if l5.num_registers else ""
         print(
-            f"│  ├─ L5Transformer  shared L4+L5, {width}→{l5.dim} ch, depth={l5.depth}, "
-            f"heads={l5.heads}, 2D RoPE (y/(H-1), x/(W-1))",
+            f"│  ├─ L5Transformer  {width}→{l5.dim} ch, depth={l5.depth}, "
+            f"heads={l5.heads}, 2D RoPE (y/(H-1), x/(W-1){registers}",
             flush=True,
         )
     print(f"│  ├─ context DW7×7 on P4, P3", flush=True)

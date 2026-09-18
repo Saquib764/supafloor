@@ -272,11 +272,11 @@ def run(cfg: Config) -> None:
     checkpoint_path = cfg.train.session_dir / CHECKPOINT_NAME
     if cfg.train.resume and checkpoint_path.is_file():
         state = torch.load(checkpoint_path, map_location=device, weights_only=False)
-        model.load_state_dict(state["model"])
-        optimizer.load_state_dict(state["optimizer"])
-        scheduler.load_state_dict(state["scheduler"])
+        model.load_state_dict(state["model"], strict=True)
         step = int(state["step"])
         start_epoch = int(state["epoch"])
+        scheduler.load_state_dict(state["scheduler"])
+        optimizer.load_state_dict(state["optimizer"])
         tqdm.write(f"Resumed step {step} epoch {start_epoch} ← {checkpoint_path}")
     elif cfg.train.init_checkpoint is not None:
         init_path = cfg.train.init_checkpoint
@@ -285,7 +285,7 @@ def run(cfg: Config) -> None:
         if not init_path.is_file():
             raise FileNotFoundError(f"init checkpoint not found: {init_path}")
         state = torch.load(init_path, map_location=device, weights_only=False)
-        model.load_state_dict(state["model"])
+        model.load_state_dict(state["model"], strict=True)
         tqdm.write(f"Initialized weights from {init_path} (new session, step 0)")
 
     _print_setup(cfg, len(dataset), steps_per_epoch, total_steps, warmup_steps, device)

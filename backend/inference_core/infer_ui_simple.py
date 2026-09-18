@@ -3,8 +3,9 @@
 
 Left panel lists test_image/ files; click to preview the source floor plan.
 Right panel has Run old / Run latest and Clear buttons for the selected image.
-The viewer compares old vs latest checkpoints side by side for wall-subtract,
-wall centerline, and skimage skeleton.
+The viewer compares old vs latest checkpoints side by side for wall-subtract
+(per-room colored components on the raw input), wall centerline, and skimage
+skeleton. The background image is never region-masked in the viewer.
 
 Usage (from backend/inference_core):
 
@@ -28,6 +29,7 @@ import pygame
 from PIL import Image
 
 from config import CONFIG_PATH, load_config
+from util.canvas import fit_to_canvas_rgb
 
 DOOR_COLOR = (220, 50, 50)
 WINDOW_COLOR = (64, 255, 64)
@@ -99,10 +101,10 @@ def saved_output_paths(
     *,
     variant: CheckpointVariant,
 ) -> dict[str, Path]:
-    stem_dir = output_dir / variant / image_path.stem
-    structure_dir = stem_dir / "structure-polygons"
+    step_dir = output_dir / variant / image_path.stem / "step-002"
+    structure_dir = step_dir / "structure-polygons"
     return {
-        "overlays": stem_dir / "room-mask-overlays.jpg",
+        "overlays": step_dir / "room-mask-overlays.jpg",
         "wall_centerline": structure_dir / "wall-centerline.jpg",
         "skimage_skeleton": structure_dir / "wall-centerline-skimage-skeleton.jpg",
     }
@@ -327,8 +329,11 @@ class InferUISimple:
     ) -> dict[str, Path]:
         return saved_output_paths(self.cfg.fpn.output_dir, image_path, variant=variant)
 
+    def _source_canvas(self, image_path: Path) -> Image.Image:
+        return fit_to_canvas_rgb(Image.open(image_path), size=self.cfg.canvas_size)
+
     def _panels_for_path(self, image_path: Path) -> dict[CheckpointVariant, list[ViewerPanel]]:
-        source = Image.open(image_path).convert("RGB")
+        source = self._source_canvas(image_path)
         return {
             variant: panels_from_source(
                 source,
@@ -347,7 +352,7 @@ class InferUISimple:
         self.selected_index = index
         if not initial:
             self._ensure_list_visible(index)
-        self.source_image = Image.open(path).convert("RGB")
+        self.source_image = self._source_canvas(path)
         self.panels_by_variant = self._panels_for_path(path)
         has_old = self._variant_has_outputs(path, "old")
         has_latest = self._variant_has_outputs(path, "latest")
@@ -423,7 +428,7 @@ class InferUISimple:
             self.status = f"Cleared old + latest outputs — {path.name}"
         else:
             self.status = f"No outputs to clear — {path.name}"
-        self.source_image = Image.open(path).convert("RGB")
+        self.source_image = self._source_canvas(path)
         self.panels_by_variant = self._panels_for_path(path)
         self._rebuild_surfaces()
 

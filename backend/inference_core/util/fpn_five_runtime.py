@@ -84,7 +84,7 @@ class FpnFiveRuntime:
                 raise FileNotFoundError(f"FPN Five checkpoint not found: {checkpoint}")
             model = model_mod.build_model(cfg)
             state = torch.load(checkpoint, map_location=device, weights_only=False)
-            model.load_state_dict(state["model"])
+            model.load_state_dict(state["model"], strict=True)
             model.to(device)
             model.eval()
             ch = cfg.mask_channels

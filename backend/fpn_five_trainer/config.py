@@ -62,6 +62,7 @@ class L5TransformerSettings:
     heads: int
     mlp_ratio: float
     max_l5_grid_side: int
+    num_registers: int = 0
 
 
 @dataclass(frozen=True)
@@ -157,12 +158,16 @@ def _load_l5_transformer(raw: dict[str, Any] | None) -> L5TransformerSettings | 
     max_l5_grid_side = int(raw["max_l5_grid_side"])
     if max_l5_grid_side < 1:
         raise ValueError(f"net.l5_transformer.max_l5_grid_side ({max_l5_grid_side}) must be ≥ 1")
+    num_registers = int(raw.get("num_registers", 0))
+    if num_registers < 0:
+        raise ValueError(f"net.l5_transformer.num_registers ({num_registers}) must be ≥ 0")
     return L5TransformerSettings(
         depth=int(raw["depth"]),
         dim=dim,
         heads=heads,
         mlp_ratio=float(raw["mlp_ratio"]),
         max_l5_grid_side=max_l5_grid_side,
+        num_registers=num_registers,
     )
 
 

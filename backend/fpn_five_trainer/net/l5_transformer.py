@@ -78,15 +78,25 @@ class TransformerBlock(nn.Module):
         hidden = int(dim * mlp_ratio)
         self.mlp = nn.Sequential(nn.Linear(dim, hidden), nn.GELU(), nn.Linear(hidden, dim))
 
-    def forward(self, x: Tensor, cis: Tensor) -> Tensor:
+    def forward(self, x: Tensor, cis: Tensor, *, num_registers: int = 0) -> Tensor:
         b, tokens, _ = x.shape
         h = self.norm1(x)
         q, k, v = self.qkv(h).chunk(3, dim=-1)
         q = q.view(b, tokens, self.heads, self.head_dim).transpose(1, 2)
         k = k.view(b, tokens, self.heads, self.head_dim).transpose(1, 2)
         v = v.view(b, tokens, self.heads, self.head_dim).transpose(1, 2)
-        q = apply_rope(q, cis)
-        k = apply_rope(k, cis)
+        if num_registers > 0:
+            q = torch.cat(
+                [q[:, :, :num_registers, :], apply_rope(q[:, :, num_registers:, :], cis)],
+                dim=2,
+            )
+            k = torch.cat(
+                [k[:, :, :num_registers, :], apply_rope(k[:, :, num_registers:, :], cis)],
+                dim=2,
+            )
+        else:
+            q = apply_rope(q, cis)
+            k = apply_rope(k, cis)
         h = F.scaled_dot_product_attention(q, k, v)
         h = h.transpose(1, 2).reshape(b, tokens, -1)
         x = x + self.out_proj(h)
@@ -105,16 +115,26 @@ class L5Transformer(nn.Module):
         heads: int,
         mlp_ratio: float,
         max_l5_grid_side: int,
+        num_registers: int = 0,
     ) -> None:
         super().__init__()
         if dim % heads != 0:
             raise ValueError(f"dim ({dim}) must be divisible by heads ({heads})")
+        if num_registers < 0:
+            raise ValueError(f"num_registers ({num_registers}) must be ≥ 0")
         head_dim = dim // heads
         if head_dim % 4 != 0:
             raise ValueError(
                 f"head_dim ({head_dim}) must be divisible by 4 for 2D RoPE; "
                 f"adjust dim or heads"
             )
+        self.num_registers = num_registers
+        if num_registers > 0:
+            registers = torch.empty(1, num_registers, dim)
+            nn.init.normal_(registers, std=0.02)
+            self.registers = nn.Parameter(registers)
+        else:
+            self.registers = None
         self.in_proj = (
             nn.Conv2d(in_channels, dim, kernel_size=1)
             if in_channels != dim
@@ -134,10 +154,16 @@ class L5Transformer(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         b, _, height, width = x.shape
         h = self.in_proj(x)
-        tokens = h.flatten(2).transpose(1, 2)
+        spatial = h.flatten(2).transpose(1, 2)
+        if self.num_registers > 0:
+            registers = self.registers.expand(b, -1, -1)
+            tokens = torch.cat([registers, spatial], dim=1)
+        else:
+            tokens = spatial
         cis = self.rope.slice(height, width)
         for block in self.blocks:
-            tokens = block(tokens, cis)
+            tokens = block(tokens, cis, num_registers=self.num_registers)
         tokens = self.norm(tokens)
-        h = tokens.transpose(1, 2).view(b, -1, height, width)
+        spatial = tokens[:, self.num_registers :, :]
+        h = spatial.transpose(1, 2).view(b, -1, height, width)
         return x + self.out_proj(h)

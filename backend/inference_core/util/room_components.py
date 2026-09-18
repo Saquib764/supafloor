@@ -41,6 +41,22 @@ def room_components_from_mask(room_mask: np.ndarray, *, min_area_px: int) -> lis
     return [component for component in components if int(component.sum()) >= min_area_px]
 
 
+def compose_room_components_overlay(
+    floorplan: Image.Image,
+    components: list[np.ndarray],
+    *,
+    size: int,
+    door_mask: np.ndarray | None = None,
+    window_mask: np.ndarray | None = None,
+) -> Image.Image:
+    """Per-room colored masks on the raw floor plan (background is not region-masked)."""
+    view = floorplan_view(floorplan, size)
+    overlay = draw_masks(view, components, alpha=120) if components else view.copy()
+    if door_mask is not None and window_mask is not None:
+        overlay = _overlay_openings(overlay, door_mask, window_mask)
+    return overlay
+
+
 def _overlay_openings(
     base: Image.Image,
     door_mask: np.ndarray,
@@ -76,13 +92,13 @@ def save_all_room_mask_overlays(
             [
                 view,
                 with_label(
-                    _overlay_openings(
-                        draw_masks(view, components, alpha=120) if components else view.copy(),
-                        door_mask,
-                        window_mask,
-                    )
-                    if door_mask is not None and window_mask is not None
-                    else (draw_masks(view, components, alpha=120) if components else view.copy()),
+                    compose_room_components_overlay(
+                        floorplan,
+                        components,
+                        size=size,
+                        door_mask=door_mask,
+                        window_mask=window_mask,
+                    ),
                     label,
                 ),
                 with_label(

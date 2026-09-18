@@ -29,6 +29,7 @@ def _build_l5_transformer(
         heads=settings.heads,
         mlp_ratio=settings.mlp_ratio,
         max_l5_grid_side=settings.max_l5_grid_side,
+        num_registers=settings.num_registers,
     )
 
 

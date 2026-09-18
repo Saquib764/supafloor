@@ -39,7 +39,6 @@ class YoloLikeFPN(nn.Module):
         l2, l3, l4, l5 = (lat(feat) for lat, feat in zip(self.lateral, features, strict=True))
 
         if self.l5_transformer is not None:
-            l4 = self.l5_transformer(l4)
             l5 = self.l5_transformer(l5)
 
         p5 = l5

@@ -1,1 +1,1 @@
-"""SAM mask-fit inference utilities."""
+"""Floor plan inference utilities."""
