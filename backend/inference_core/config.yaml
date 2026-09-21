@@ -1,4 +1,4 @@
-canvas_size: 1024
+canvas_size: 768
 hf_cache: ../hf_cache
 
 replicate_token: r8_Hnnnf9EqN0DUijMj7IOKAyfAPsQdJ6I15HdxX
@@ -39,7 +39,7 @@ room_masks:
 output: output
 
 fpn:
-  sizes: [512, 768, 1024]
+  size: 768
   checkpoint_latest: fpn_five_trainer/training_session_3_real/last.pt
   checkpoint_old: fpn_five_trainer/training_session_2/last.pt
   output_dir: output/fpn
@@ -48,9 +48,15 @@ fpn:
     close_px: 2
     min_area_px: 64
   floorplan_region:
-    size: 1024
     close_px: 4
     approx_epsilon: 2.0
   room_components:
-    component_size: 1024
     min_area_px: 64
+  room_polygon_llm:
+    size: 1024
+    model: gpt-6-astra
+    detail: high
+    input_cost_per_million_usd: 10.0
+    cached_input_cost_per_million_usd: 1.0
+    cache_write_cost_per_million_usd: 12.5
+    output_cost_per_million_usd: 50.0

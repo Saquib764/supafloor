@@ -11,6 +11,14 @@ cd backend/inference_core
 uv sync
 ```
 
+For the manual labeling UI (`label_data.py`), install dev dependencies (pygame):
+
+```bash
+uv sync --group dev
+```
+
+Set `OPENAI_API_KEY` in `.env` when running step-003 LLM polygon refinement.
+
 ## Image edit + room mask discovery
 
 Fits the input to a 1024×1024 white canvas, runs three chained Replicate image-edit steps (structure clean → close openings → remove furniture), saves each step, then finds room masks as connected white regions in the grayscaled final image.
@@ -27,47 +35,81 @@ Set `REPLICATE_API_TOKEN` or `replicate_token` in `config.yaml`.
 
 ## FPN Five mask inference
 
-Fits the input to a 1024×1024 white canvas (`canvas_size`), runs `fpn_five_trainer` at 1024 px on the full canvas to derive the floorplan region (invert background channel), masks out everything outside that region (white fill), then runs the model again at 512, 768, and 1024 px on the masked canvas.
+Three-step pipeline: region detection + FPN inference on the full canvas (step-001), optional crop re-infer (step-002), then LLM room/door/window polygon refinement (step-003).
 
 ```bash
-uv run infer-fpn --image ../fpn_trainer/test_image/002.jpeg
+uv run infer-fpn --image real_floorplan/BE_01_001.jpg
 ```
 
-Outputs land in `output/fpn/<stem>/`:
-- `step-000/masks.jpg` — raw masks at 512 / 768 / 1024 px (input | background | rooms | walls | doors | windows | overlay per row)
-- `step-001/masks.jpg` — same layout after morphological open/close and small-component removal
+Skip step-002 (run step-003 directly on the step-001 canvas):
 
-Right after canvas fit, a floorplan region of interest is computed at 1024 px on the full canvas, then saved at `output/fpn/<stem>/`:
-- `floorplan-region-mask.jpg` — 1024×1024 region mask
-- `floorplan-region.json` — polygon vertices at 1024 px
-- `input-masked.jpg` — canvas with content outside the region removed (used as main input below)
-- `rooms.md` — room counts by source (wall-subtract and FPN Five resolutions)
-- `room-mask-overlays.jpg` — per-source component overlays on floorplan and white background
-- `step-000/wall-input-1024.jpg` — inverted wall+openings mask used for wall-subtract (walls from 512∪768∪1024, doors/windows from 512)
-- `step-000/wall-subtract-prefilter-1024.jpg` — wall-subtract room components before FPN-512 overlap / min-area filters
+```bash
+uv run infer-fpn --image real_floorplan/BE_01_001.jpg --skip-step-2
+```
+
+Override output directory or canvas size via `run_fpn_pipeline` in code (`canvas_size`, `output_dir`). Default canvas uses `fpn.size` from config (768 px).
+
+Outputs land in `output/fpn/<stem>/`:
+
+| Step | Contents |
+|---|---|
+| **step-001** | Floorplan region mask/json, masked input, FPN masks, wall centerlines, fitted polygon JSON |
+| **step-002** | Cropped re-infer (skipped with `--skip-step-2`) |
+| **step-003** | LLM-refined room/door/window polygons, `final-masks/` PNG + JSON, `input.jpg`, `polygon-overlay.jpg` |
+
+Step-003 `final-masks/` includes mask PNGs, polygon JSON, source `input.jpg`, and a translucent `polygon-overlay.jpg` preview.
+
+## Manual labeling
+
+Interactive pygame UI to refine structure masks. Source images live in `real_floorplan/`.
+
+```bash
+uv run label-data
+# or
+uv run python label_data.py
+```
+
+### What gets saved
+
+| Location | Contents |
+|---|---|
+| `floorplan-manual-mask/input/<id>.jpg` | Source fit to 1024×1024 (unmasked) |
+| `floorplan-manual-mask/output/<id>/` | Mask PNGs (white = active) + `polygon-overlay.jpg` |
+| `output/label_data/<id>/step-003/final-masks/` | Polygon JSON edited in place + preview images |
+
+Wall is mask-only (brush or **Compute wall**). Room, door, window, and background use polygon edit. Masks are derived from polygons on save.
+
+Label-data inference runs the FPN pipeline at **1024 px** with **step-002 skipped**, so viewer coordinates match step-003 output.
+
+### Batch auto-labeling
+
+Run processed inference for every image in `real_floorplan/` (no UI):
+
+```bash
+uv run python label_data.py --auto
+```
+
+Skips images that already have complete outputs (all mask PNGs in `floorplan-manual-mask/output/<id>/` plus `output/label_data/<id>/step-003/final-masks/room.json`). Re-run everything with:
+
+```bash
+uv run python label_data.py --auto --force
+```
 
 ## Config
 
 | Key | Meaning |
 |---|---|
+| `canvas_size` | Default fit canvas for image-edit path |
 | `replicate_token` | Replicate API token (overridden by `REPLICATE_API_TOKEN`) |
-| `image_edit.model` | Replicate image-edit model id (default `openai/gpt-image-2.5-flare`) |
-| `image_edit.quality` | GPT Image quality (`medium`, `high`, etc.) |
-| `image_edit.aspect_ratio` | Output aspect ratio (`1:1` for 1024 canvas) |
-| `image_edit.output_format` | Output format (`png`, `webp`, `jpeg`) |
+| `image_edit.model` | Replicate image-edit model id |
 | `image_edit.output_dir` | Base directory for per-image cleaning outputs |
 | `image_edit.prompts.*` | Prompts for the cleaning steps |
-| `room_masks.white_threshold` | Grayscale value treated as white (default 250) |
+| `room_masks.white_threshold` | Grayscale value treated as white |
 | `room_masks.min_area_px` | Minimum connected white region area to keep |
-| `room_masks.exclude_largest` | Drop largest white component (canvas background) |
-| `fpn.sizes` | Square side lengths for B/W resize and inference (default 512, 768, 1024) |
-| `fpn.checkpoint` | Path to fpn_five_trainer weights (background / rooms / walls / doors / windows) |
-| `fpn.output_dir` | Base directory for FPN mask panels |
-| `fpn.mask_clean.open_px` | Morphological open radius (px at 768) to drop tiny speckles |
-| `fpn.mask_clean.close_px` | Morphological close radius (px at 768) to fill gaps inside masks |
-| `fpn.mask_clean.min_area_px` | Minimum component area (px² at 768); scaled per resolution |
-| `fpn.floorplan_region.size` | Resolution for background-based region detection (default 1024) |
-| `fpn.floorplan_region.close_px` | Close radius to fill holes inside ROI mask |
-| `fpn.floorplan_region.approx_epsilon` | Douglas–Peucker epsilon for boundary polygon |
-| `fpn.room_components.component_size` | Upscaled size for connected components (default 1024) |
-| `fpn.room_components.min_area_px` | Minimum room component area at 768 reference |
+| `fpn.size` | Default FPN inference canvas side length (px) |
+| `fpn.checkpoint_latest` | Path to fpn_five_trainer weights |
+| `fpn.output_dir` | Base directory for FPN pipeline outputs |
+| `fpn.mask_clean.*` | Morphological open/close and min area for mask cleanup |
+| `fpn.floorplan_region.*` | Background-based region detection settings |
+| `fpn.room_components.min_area_px` | Minimum room component area |
+| `fpn.room_polygon_llm.*` | Step-003 LLM model, size, and cost settings |

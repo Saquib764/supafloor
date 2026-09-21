@@ -101,7 +101,7 @@ def saved_output_paths(
     *,
     variant: CheckpointVariant,
 ) -> dict[str, Path]:
-    step_dir = output_dir / variant / image_path.stem / "step-002"
+    step_dir = output_dir / variant / image_path.stem / "step-003"
     structure_dir = step_dir / "structure-polygons"
     return {
         "overlays": step_dir / "room-mask-overlays.jpg",
@@ -189,7 +189,7 @@ class InferUISimple:
         self.output_dir_by_variant: dict[CheckpointVariant, Path] = {
             variant: cfg.fpn.output_dir / variant for variant in ("old", "latest")
         }
-        self.component_size = cfg.fpn.room_components.component_size
+        self.component_size = cfg.fpn.size
         self.col_width = max(1, int(self.component_size * DISPLAY_SCALE))
         self.viewer_area_width = self.col_width
         self.list_w = LIST_WIDTH

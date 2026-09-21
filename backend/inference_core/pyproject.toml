@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "inference-core"
-version = "0.1.35"
+version = "0.1.46"
 description = "FPN floor plan structure mask inference and labeling tools"
 requires-python = ">=3.11"
 dependencies = [
@@ -12,6 +12,8 @@ dependencies = [
   "dataset-manager",
   "huggingface_hub>=0.26.0",
   "numpy>=1.26.0",
+  "openai>=1.60.0",
+  "python-dotenv>=1.0.0",
   "opencv-contrib-python-headless>=4.10.0",
   "scikit-image>=0.24.0",
   "peft>=0.13.0",
@@ -36,6 +38,7 @@ dev = [
 infer-image-edit = "infer_image_edit:main"
 infer-fpn = "infer_fpn:main"
 infer-ui-simple = "infer_ui_simple:main"
+infer-ui-similar = "infer_ui_similar:main"
 label-data = "label_data:main"
 
 [tool.hatch.build.targets.wheel]
@@ -48,6 +51,7 @@ dev-mode-dirs = ["."]
 "infer_image_edit.py" = "infer_image_edit.py"
 "infer_fpn.py" = "infer_fpn.py"
 "infer_ui_simple.py" = "infer_ui_simple.py"
+"infer_ui_similar.py" = "infer_ui_similar.py"
 "label_data.py" = "label_data.py"
 "config.py" = "config.py"
 "config.yaml" = "config.yaml"

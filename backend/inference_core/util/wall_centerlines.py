@@ -24,13 +24,6 @@ OPENING_COLORS = {
 OpeningCenterlines = dict[str, dict[str, np.ndarray | list[list[list[int]]]]]
 
 
-def wall_binary_from_masks(wall_masks: list[np.ndarray], size: int) -> np.ndarray:
-    wall = np.zeros((size, size), dtype=bool)
-    for wall_mask in wall_masks:
-        wall |= scale_room_mask(wall_mask, size) > 0.5
-    return wall
-
-
 def opencv_thinning(binary: np.ndarray) -> np.ndarray:
     img = binary.astype(np.uint8) * 255
     thinned = cv2.ximgproc.thinning(img, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
@@ -41,12 +34,12 @@ def skimage_skeleton(binary: np.ndarray) -> np.ndarray:
     return skeletonize(binary)
 
 
-def wall_skeletons_from_masks(
-    wall_masks: list[np.ndarray],
+def wall_skeletons_from_mask(
+    wall_mask: np.ndarray,
     *,
     size: int,
 ) -> dict[str, np.ndarray]:
-    binary = wall_binary_from_masks(wall_masks, size)
+    binary = scale_room_mask(wall_mask, size) > 0.5
     return {
         "wall_mask": binary,
         "opencv_thinning": opencv_thinning(binary),
@@ -554,6 +547,51 @@ def skeleton_polyline_overlay_row(
             ),
         ]
     )
+
+
+def hough_lines_from_wall_mask(
+    wall_mask: np.ndarray,
+    *,
+    min_length: float = 10.0,
+) -> list[tuple[int, int, int, int]]:
+    binary = (wall_mask > 0.5).astype(np.uint8) * 255
+    lines = cv2.HoughLinesP(
+        binary,
+        rho=1,
+        theta=np.pi / 180,
+        threshold=15,
+        minLineLength=1,
+        maxLineGap=8,
+    )
+    if lines is None:
+        return []
+
+    kept: list[tuple[int, int, int, int]] = []
+    min_length_sq = min_length * min_length
+    for x1, y1, x2, y2 in lines.reshape(-1, 4):
+        dx = int(x2) - int(x1)
+        dy = int(y2) - int(y1)
+        if dx * dx + dy * dy > min_length_sq:
+            kept.append((int(x1), int(y1), int(x2), int(y2)))
+    return kept
+
+
+def save_hough_lines_image(
+    floorplan: Image.Image,
+    wall_mask: np.ndarray,
+    out_dir: Path,
+    *,
+    size: int,
+    min_length: float = 10.0,
+) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "hough-lines.jpg"
+    lines = hough_lines_from_wall_mask(wall_mask, min_length=min_length)
+    canvas = np.asarray(floorplan_view(floorplan, size)).copy()
+    for x1, y1, x2, y2 in lines:
+        cv2.line(canvas, (x1, y1), (x2, y2), (220, 50, 50), 1, cv2.LINE_AA)
+    Image.fromarray(canvas, mode="RGB").save(path, format="JPEG", quality=95)
+    return path
 
 
 def save_wall_centerline_outputs(

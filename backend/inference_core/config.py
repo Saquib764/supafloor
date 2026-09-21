@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = _PACKAGE_DIR / "config.yaml"
@@ -22,26 +23,37 @@ class FpnMaskCleanSettings:
 
 @dataclass(frozen=True)
 class FpnFloorplanRegionSettings:
-    size: int
     close_px: int
     approx_epsilon: float
 
 
 @dataclass(frozen=True)
 class FpnRoomComponentsSettings:
-    component_size: int
     min_area_px: int
 
 
 @dataclass(frozen=True)
+class FpnRoomPolygonLlmSettings:
+    size: int
+    model: str
+    detail: str
+    openai_api_key: str
+    input_cost_per_million_usd: float
+    cached_input_cost_per_million_usd: float
+    cache_write_cost_per_million_usd: float
+    output_cost_per_million_usd: float
+
+
+@dataclass(frozen=True)
 class FpnSettings:
-    sizes: tuple[int, ...]
+    size: int
     checkpoint_latest: Path
     checkpoint_old: Path
     output_dir: Path
     mask_clean: FpnMaskCleanSettings
     floorplan_region: FpnFloorplanRegionSettings
     room_components: FpnRoomComponentsSettings
+    room_polygon_llm: FpnRoomPolygonLlmSettings
 
 
 @dataclass(frozen=True)
@@ -102,7 +114,13 @@ def _resolve(path: Path, base: Path) -> Path:
     return path if path.is_absolute() else (base / path).resolve()
 
 
+def _load_dotenv() -> None:
+    load_dotenv(_PACKAGE_DIR / ".env")
+    load_dotenv(Path.cwd() / ".env")
+
+
 def load_config(path: Path | None = None) -> Config:
+    _load_dotenv()
     config_path = path or CONFIG_PATH
     if not config_path.is_file():
         config_path = _PACKAGE_DIR / "config.yaml"
@@ -170,7 +188,7 @@ def load_config(path: Path | None = None) -> Config:
             exclude_largest=bool(room_masks.get("exclude_largest", True)),
         ),
         fpn=FpnSettings(
-            sizes=tuple(int(s) for s in fpn.get("sizes", [512, 768, 1024])),
+            size=int(fpn.get("size", 768)),
             checkpoint_latest=_resolve(
                 Path(
                     fpn.get(
@@ -202,15 +220,25 @@ def load_config(path: Path | None = None) -> Config:
                 min_area_px=int((fpn.get("mask_clean") or fpn.get("wall_mask") or {}).get("min_area_px", 64)),
             ),
             floorplan_region=FpnFloorplanRegionSettings(
-                size=int((fpn.get("floorplan_region") or {}).get("size", 1024)),
                 close_px=int((fpn.get("floorplan_region") or {}).get("close_px", 4)),
                 approx_epsilon=float((fpn.get("floorplan_region") or {}).get("approx_epsilon", 2.0)),
             ),
             room_components=FpnRoomComponentsSettings(
-                component_size=int(
-                    (rc := fpn.get("room_components") or {}).get("component_size", 1024)
+                min_area_px=int((fpn.get("room_components") or {}).get("min_area_px", 64)),
+            ),
+            room_polygon_llm=FpnRoomPolygonLlmSettings(
+                size=int((rpl := fpn.get("room_polygon_llm") or {}).get("size", 1024)),
+                model=str(rpl.get("model", "gpt-4.1")),
+                detail=str(rpl.get("detail", "high")),
+                openai_api_key=str(os.environ.get("OPENAI_API_KEY") or ""),
+                input_cost_per_million_usd=float(rpl.get("input_cost_per_million_usd", 10.0)),
+                cached_input_cost_per_million_usd=float(
+                    rpl.get("cached_input_cost_per_million_usd", 1.0)
                 ),
-                min_area_px=int(rc.get("min_area_px", 64)),
+                cache_write_cost_per_million_usd=float(
+                    rpl.get("cache_write_cost_per_million_usd", 12.5)
+                ),
+                output_cost_per_million_usd=float(rpl.get("output_cost_per_million_usd", 50.0)),
             ),
         ),
         output=_resolve(

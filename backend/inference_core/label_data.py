@@ -1,32 +1,43 @@
 #!/usr/bin/env python3
 """Interactive pygame UI to refine FPN structure masks by hand.
 
-Source images live in ``test_image/``. Saves into ``floorplan-manual-mask/``:
+Source images live in ``real_floorplan/``. Saves into ``floorplan-manual-mask/``:
 
   input/<id>.jpg           — source image fit to 1024×1024 canvas (unmasked)
   output/<id>/wall.png     — white = active
   output/<id>/door.png
   output/<id>/window.png
   output/<id>/room.png
-  output/<id>/background.png — painted or computed on demand
-  output/<id>/{room,wall,door,window}.json — polygon components (processed mode)
+  output/<id>/background.png — floorplan boundary mask
+  output/<id>/polygon-overlay.jpg — translucent polygon preview on input
 
-Toggle **Mode: unprocessed/processed** (or **M**) to switch raster masks vs editable
-polygons. **Infer masks** in processed mode runs the full FPN pipeline and loads
-``step-002/final-masks/*.json`` polygons (same as infer_ui_simple). **T** toggles
-brush vs polygon tool in both modes. In processed mode, brush strokes refit layer
-polygons from the painted mask. **Polygon edit dropdown** (select point / add point /
-new polygon). Closing a new polygon switches back to select point. **Del** removes a vertex.
+Polygons are stored under ``output/label_data/<id>/step-003/final-masks/`` (not in the manual dataset).
+
+Wall is mask-only (brush or **Compute wall**); it has no polygon edit. Masks are always
+derived from polygons (background = black fill on white; wall = background − rooms).
+Polygons live in ``output/label_data/<id>/step-003/final-masks/`` and are edited in place.
+**Infer masks** runs the FPN pipeline into ``output/label_data/``. Final mask PNGs are saved
+to ``floorplan-manual-mask/output/``.
+**T** toggles brush vs polygon tool. Brush strokes refit layer polygons from the painted
+mask. **Polygon edit dropdown** (select point / add point / new polygon). **Del** removes
+a vertex.
 
 Usage (from backend/inference_core):
 
     uv sync --group dev
     uv run python label_data.py
+
+Batch processed inference for every source image (no UI):
+
+    uv run python label_data.py --auto
+
+Skip images that already have saved masks/polygons (default). Re-run all with ``--force``.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -37,7 +48,7 @@ import pygame
 from PIL import Image, ImageDraw
 
 from config import CONFIG_PATH, load_config
-from util.canvas import fit_to_canvas_rgb
+from util.canvas import fit_to_canvas_rgb, fit_to_canvas_placement
 from util.final_mask_polygons import (
     PolygonRing,
     StructureLayer,
@@ -47,17 +58,19 @@ from util.final_mask_polygons import (
     save_layer_polygons,
     transform_mask_to_full_canvas,
     transform_polygons_to_full_canvas,
+    transform_polygons_from_full_canvas,
 )
-from util.floorplan_region import apply_region_mask, compute_floorplan_region, region_crop_box
-from util.fpn_five_runtime import FpnFiveRuntime, prepare_bw
+from util.floorplan_region import region_crop_box
 from util.fpn_pipeline import run_fpn_pipeline
-from util.mask_clean import clean_binary_mask
+from util.room_polygon_llm import save_final_mask_polygon_preview
 
 _PIPELINE_CROP_PADDING_PX = 100
 
 _ROOT = Path(__file__).resolve().parent
 _REPO_ROOT = _ROOT.parents[1]
-TEST_DIR = _ROOT / "test_image"
+LABEL_INFERENCE_OUTPUT_DIR = _ROOT / "output" / "label_data"
+LABEL_CANVAS_SIZE = 1024
+TEST_DIR = _ROOT / "real_floorplan"
 DATASET_ROOT = _REPO_ROOT / "floorplan-manual-mask"
 INPUT_DIR = DATASET_ROOT / "input"
 OUTPUT_DIR = DATASET_ROOT / "output"
@@ -66,7 +79,6 @@ _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 MaskLayer = Literal["wall", "door", "window", "room", "background"]
 BrushMode = Literal["add", "remove"]
 EditTool = Literal["brush", "polygon"]
-DataMode = Literal["unprocessed", "processed"]
 PolygonEditMode = Literal["select_point", "add_point", "new_polygon"]
 POLYGON_EDIT_OPTIONS: tuple[tuple[PolygonEditMode, str], ...] = (
     ("select_point", "Select point"),
@@ -75,6 +87,7 @@ POLYGON_EDIT_OPTIONS: tuple[tuple[PolygonEditMode, str], ...] = (
 )
 POLYGON_EDIT_DROPDOWN_ROW_HEIGHT = 26
 STRUCTURE_LAYERS: tuple[MaskLayer, ...] = ("wall", "door", "window", "room")
+POLYGON_EDIT_LAYERS: tuple[MaskLayer, ...] = ("room", "door", "window", "background")
 MASK_LAYERS: tuple[MaskLayer, ...] = (*STRUCTURE_LAYERS, "background")
 
 LIST_WIDTH = 200
@@ -83,7 +96,7 @@ LIST_ITEM_HEIGHT = 22
 LIST_HEADER_HEIGHT = 24
 POLY_LIST_ROW_HEIGHT = 20
 POLY_LIST_HEADER_HEIGHT = 18
-DISPLAY_SCALE = 0.9
+VIEWER_DISPLAY_SIZE = 800  # UI viewer px; canvas/masks stay at LABEL_CANVAS_SIZE
 DEFAULT_BRUSH_RADIUS = 10
 MIN_BRUSH_RADIUS = 2
 MAX_BRUSH_RADIUS = 64
@@ -128,33 +141,33 @@ def list_test_images(test_dir: Path = TEST_DIR) -> list[Path]:
     )
 
 
-def _scaled_mask_clean(size: int, cfg) -> tuple[int, int, int]:
-    scale = size / 768
-    clean = cfg.fpn.mask_clean
-    open_px = max(0, round(clean.open_px * scale))
-    close_px = max(0, round(clean.close_px * scale))
-    min_area_px = max(0, round(clean.min_area_px * scale * scale))
-    return open_px, close_px, min_area_px
+def background_polygons_to_mask(components: list[PolygonRing], size: int) -> np.ndarray:
+    """Black polygon interior on a white canvas (active = white outside polygon)."""
+    mask = np.ones((size, size), dtype=bool)
+    for polygon in components:
+        if len(polygon) < 3:
+            continue
+        fill = np.zeros((size, size), dtype=np.uint8)
+        cv2.fillPoly(fill, [np.array(polygon, dtype=np.int32)], 1)
+        mask[fill.astype(bool)] = False
+    return mask
 
 
-def _clean_channel(mask: np.ndarray, *, size: int, cfg) -> np.ndarray:
-    open_px, close_px, min_area_px = _scaled_mask_clean(size, cfg)
-    return clean_binary_mask(
-        mask > 0.5,
-        open_px=open_px,
-        close_px=close_px,
-        min_area_px=min_area_px,
-    )
-
-
-def compute_background_mask(wall: np.ndarray, room: np.ndarray) -> np.ndarray:
-    """Exterior / non-structure pixels from wall + room footprint."""
-    occupied = np.clip(wall.astype(np.float32) + room.astype(np.float32), 0.0, 1.0)
-    binary = ((occupied > 0.5).astype(np.uint8)) * 255
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-    eroded = cv2.erode(closed, kernel, iterations=1)
-    return eroded == 0
+def compute_wall_mask_from_boundary_and_rooms(
+    boundary_polygons: list[PolygonRing],
+    room_polygons: list[PolygonRing],
+    *,
+    size: int,
+) -> np.ndarray:
+    """Wall = white floorplan interior with black room cutouts on a black canvas."""
+    mask = np.zeros((size, size), dtype=bool)
+    if boundary_polygons:
+        boundary_fill = polygons_to_mask(boundary_polygons, size)
+        mask[boundary_fill] = True
+    if room_polygons:
+        room_fill = polygons_to_mask(room_polygons, size)
+        mask[room_fill] = False
+    return mask
 
 
 def empty_masks(size: int) -> dict[MaskLayer, np.ndarray]:
@@ -162,121 +175,221 @@ def empty_masks(size: int) -> dict[MaskLayer, np.ndarray]:
     return {layer: blank.copy() for layer in MASK_LAYERS}
 
 
-def infer_structure_masks(cfg, image_path: Path) -> tuple[Image.Image, dict[MaskLayer, np.ndarray]]:
-    """Run FPN Five and return canvas-fitted source image plus cleaned editable masks."""
-    canvas_size = cfg.canvas_size
-    full_canvas = fit_to_canvas_rgb(Image.open(image_path), size=canvas_size)
-    runtime = FpnFiveRuntime.load(checkpoint=cfg.fpn.checkpoint_latest)
-    channels = runtime.channels
-
-    region_size = cfg.fpn.floorplan_region.size
-    region_prepared = prepare_bw(full_canvas, region_size)
-    region_masks = runtime.infer(region_prepared)
-    close_px = max(0, round(cfg.fpn.floorplan_region.close_px * (region_size / 768)))
-    approx_epsilon = max(0.5, cfg.fpn.floorplan_region.approx_epsilon * (region_size / 768))
-    floorplan_region = compute_floorplan_region(
-        region_masks[channels.background],
-        close_px=close_px,
-        approx_epsilon=approx_epsilon,
-    )
-    masked_canvas = apply_region_mask(full_canvas, floorplan_region.mask)
-
-    infer_size = cfg.fpn.room_components.component_size
-    prepared = prepare_bw(masked_canvas, infer_size)
-    raw = runtime.infer(prepared)
-
-    masks: dict[MaskLayer, np.ndarray] = {}
-    for layer, channel in (
-        ("room", channels.rooms),
-        ("wall", channels.walls),
-        ("door", channels.doors),
-        ("window", channels.windows),
-    ):
-        cleaned = _clean_channel(raw[channel], size=infer_size, cfg=cfg)
-        masks[layer] = cleaned
-
-    if infer_size != canvas_size:
-        resized: dict[MaskLayer, np.ndarray] = {}
-        for layer, mask in masks.items():
-            resized[layer] = cv2.resize(
-                mask.astype(np.uint8),
-                (canvas_size, canvas_size),
-                interpolation=cv2.INTER_NEAREST,
-            ).astype(bool)
-        masks = resized
-
-    return full_canvas, masks
+def _label_image_dir(stem: str) -> Path:
+    return LABEL_INFERENCE_OUTPUT_DIR / stem
 
 
-def _pipeline_crop_box(cfg, image_path: Path, full_canvas: Image.Image) -> tuple[int, int, int, int]:
-    region_mask_path = cfg.fpn.output_dir / image_path.stem / "step-001" / "floorplan-region-mask.jpg"
+def _pipeline_crop_box(image_path: Path, *, canvas_size: int) -> tuple[int, int, int, int]:
+    region_mask_path = _label_image_dir(image_path.stem) / "step-001" / "floorplan-region-mask.jpg"
     if not region_mask_path.is_file():
         raise FileNotFoundError(f"Missing pipeline region mask: {region_mask_path}")
     gray = np.asarray(Image.open(region_mask_path).convert("L"))
-    width, height = full_canvas.size
-    if gray.shape != (height, width):
-        gray = cv2.resize(gray, (width, height), interpolation=cv2.INTER_NEAREST)
-    crop_box = region_crop_box(gray > 10, (width, height), padding_px=_PIPELINE_CROP_PADDING_PX)
+    if gray.shape != (canvas_size, canvas_size):
+        gray = cv2.resize(gray, (canvas_size, canvas_size), interpolation=cv2.INTER_NEAREST)
+    crop_box = region_crop_box(
+        gray > 10,
+        (canvas_size, canvas_size),
+        padding_px=_PIPELINE_CROP_PADDING_PX,
+    )
     if crop_box is None:
         raise RuntimeError("Could not derive crop box for pipeline polygons")
     return crop_box
 
 
-def infer_processed_from_pipeline(
+def _step003_final_dir(stem: str) -> Path:
+    return _label_image_dir(stem) / "step-003" / "final-masks"
+
+
+def _step003_source_canvas(stem: str, image_path: Path, *, canvas_size: int) -> Image.Image:
+    saved_input = _step003_final_dir(stem) / "input.jpg"
+    if saved_input.is_file():
+        with Image.open(saved_input) as image:
+            canvas = image.convert("RGB")
+        if canvas.size != (canvas_size, canvas_size):
+            canvas = canvas.resize((canvas_size, canvas_size), Image.Resampling.LANCZOS)
+        return canvas
+    return fit_to_canvas_rgb(Image.open(image_path), size=canvas_size)
+
+
+def _pipeline_step_content_size(stem: str, crop_box: tuple[int, int, int, int]) -> tuple[int, int]:
+    cropped_path = _label_image_dir(stem) / "step-002" / "input-cropped.jpg"
+    if cropped_path.is_file():
+        with Image.open(cropped_path) as cropped:
+            return cropped.size
+    x0, y0, x1, y1 = crop_box
+    return max(1, x1 - x0), max(1, y1 - y0)
+
+
+def _final_mask_step_size(final_dir: Path, default: int = LABEL_CANVAS_SIZE) -> int:
+    for name in ("room.json", "background.json", "door.json", "window.json"):
+        json_path = final_dir / name
+        if not json_path.is_file():
+            continue
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        size = data.get("size")
+        if isinstance(size, int) and size > 0:
+            return size
+    return default
+
+
+def _remap_rings_to_label_canvas(
+    rings: list[PolygonRing],
+    image_path: Path,
+    *,
+    from_size: int,
+) -> list[PolygonRing]:
+    if from_size == LABEL_CANVAS_SIZE:
+        return rings
+    with Image.open(image_path) as image:
+        orig_w, orig_h = image.size
+    px0, py0, cw0, ch0 = fit_to_canvas_placement(orig_w, orig_h, size=from_size)
+    px1, py1, cw1, ch1 = fit_to_canvas_placement(orig_w, orig_h, size=LABEL_CANVAS_SIZE)
+    remapped: list[PolygonRing] = []
+    for ring in rings:
+        remapped.append([
+            (
+                int(round(px1 + ((x - px0) / cw0 if cw0 else 0.0) * cw1)),
+                int(round(py1 + ((y - py0) / ch0 if ch0 else 0.0) * ch1)),
+            )
+            for x, y in ring
+        ])
+    return remapped
+
+
+def load_step003_polygons(
     cfg,
     image_path: Path,
-) -> tuple[Image.Image, dict[MaskLayer, np.ndarray], dict[StructureLayer, list[PolygonRing]]]:
-    """Run the infer_ui_simple FPN pipeline and load step-002 final polygons."""
-    full_canvas = fit_to_canvas_rgb(Image.open(image_path), size=cfg.canvas_size)
-    run_fpn_pipeline(cfg, image_path, checkpoint=cfg.fpn.checkpoint_latest)
-    step_dir = cfg.fpn.output_dir / image_path.stem / "step-002"
-    final_dir = step_dir / "final-masks"
+    *,
+    full_canvas: Image.Image,
+) -> tuple[
+    dict[MaskLayer, np.ndarray],
+    dict[StructureLayer, list[PolygonRing]],
+    list[PolygonRing],
+] | None:
+    """Load step-003 LLM polygons and masks scaled to the full canvas."""
+    final_dir = _step003_final_dir(image_path.stem)
     if not final_dir.is_dir():
-        raise FileNotFoundError(f"Missing pipeline output: {final_dir}")
+        return None
 
-    crop_box = _pipeline_crop_box(cfg, image_path, full_canvas)
-    if crop_box is None:
-        raise RuntimeError("Could not derive crop box for pipeline polygons")
+    step_size = _final_mask_step_size(final_dir)
+    transform_kwargs = None
+    if step_size != LABEL_CANVAS_SIZE:
+        try:
+            crop_box = _pipeline_crop_box(image_path, canvas_size=step_size)
+            content_size = _pipeline_step_content_size(image_path.stem, crop_box)
+            transform_kwargs = {
+                "crop_box": crop_box,
+                "step_size": step_size,
+                "content_size": content_size,
+            }
+        except (FileNotFoundError, RuntimeError):
+            pass
 
-    step_size = cfg.fpn.room_components.component_size
     layer_polygons: dict[StructureLayer, list[PolygonRing]] = {
         layer: [] for layer in STRUCTURE_LAYERS
     }
-    masks = empty_masks(cfg.canvas_size)
+    masks = empty_masks(LABEL_CANVAS_SIZE)
+
+    def _polygons_from_json(json_path: Path) -> list[PolygonRing]:
+        if not json_path.is_file():
+            return []
+        rings = load_layer_polygons(json_path)
+        if transform_kwargs is None:
+            return rings
+        rings = transform_polygons_to_full_canvas(rings, **transform_kwargs)
+        return _remap_rings_to_label_canvas(rings, image_path, from_size=step_size)
+
     for layer in STRUCTURE_LAYERS:
         json_path = final_dir / f"{layer}.json"
         if json_path.is_file():
-            step_polygons = load_layer_polygons(json_path)
-            layer_polygons[layer] = transform_polygons_to_full_canvas(
-                step_polygons,
-                crop_box=crop_box,
-                step_size=step_size,
-            )
-        png_path = final_dir / f"{layer}.png"
-        if png_path.is_file():
-            step_mask = np.asarray(Image.open(png_path).convert("L")) > 127
-            masks[layer] = transform_mask_to_full_canvas(
-                step_mask,
-                full_size=cfg.canvas_size,
-                crop_box=crop_box,
-                step_size=step_size,
-            )
-        elif layer_polygons[layer]:
-            masks[layer] = polygons_to_mask(layer_polygons[layer], cfg.canvas_size)
+            layer_polygons[layer] = _polygons_from_json(json_path)
+        if layer == "wall":
+            continue
+        if layer_polygons[layer]:
+            masks[layer] = polygons_to_mask(layer_polygons[layer], LABEL_CANVAS_SIZE)
+        else:
+            png_path = final_dir / f"{layer}.png"
+            if png_path.is_file():
+                step_mask = np.asarray(Image.open(png_path).convert("L")) > 127
+                if transform_kwargs is not None:
+                    masks[layer] = transform_mask_to_full_canvas(
+                        step_mask,
+                        full_size=LABEL_CANVAS_SIZE,
+                        **transform_kwargs,
+                    )
+                elif step_mask.shape != (LABEL_CANVAS_SIZE, LABEL_CANVAS_SIZE):
+                    masks[layer] = cv2.resize(
+                        step_mask.astype(np.uint8),
+                        (LABEL_CANVAS_SIZE, LABEL_CANVAS_SIZE),
+                        interpolation=cv2.INTER_NEAREST,
+                    ).astype(bool)
+                else:
+                    masks[layer] = step_mask
 
-    background_path = final_dir / "background.png"
-    if background_path.is_file():
-        step_mask = np.asarray(Image.open(background_path).convert("L")) > 127
-        masks["background"] = transform_mask_to_full_canvas(
-            step_mask,
-            full_size=cfg.canvas_size,
-            crop_box=crop_box,
-            step_size=step_size,
+    background_polygons: list[PolygonRing] = []
+    background_json = final_dir / "background.json"
+    if background_json.is_file():
+        background_polygons = _polygons_from_json(background_json)
+    if background_polygons:
+        masks["background"] = background_polygons_to_mask(
+            background_polygons,
+            LABEL_CANVAS_SIZE,
         )
     else:
-        masks["background"] = np.zeros((cfg.canvas_size, cfg.canvas_size), dtype=bool)
+        background_path = final_dir / "background.png"
+        if background_path.is_file():
+            step_mask = np.asarray(Image.open(background_path).convert("L")) > 127
+            if transform_kwargs is not None:
+                masks["background"] = transform_mask_to_full_canvas(
+                    step_mask,
+                    full_size=LABEL_CANVAS_SIZE,
+                    **transform_kwargs,
+                )
+            elif step_mask.shape != (LABEL_CANVAS_SIZE, LABEL_CANVAS_SIZE):
+                masks["background"] = cv2.resize(
+                    step_mask.astype(np.uint8),
+                    (LABEL_CANVAS_SIZE, LABEL_CANVAS_SIZE),
+                    interpolation=cv2.INTER_NEAREST,
+                ).astype(bool)
+            else:
+                masks["background"] = step_mask
+        else:
+            masks["background"] = np.ones((LABEL_CANVAS_SIZE, LABEL_CANVAS_SIZE), dtype=bool)
 
-    return full_canvas, masks, layer_polygons
+    layer_polygons["wall"] = []
+    masks["wall"] = compute_wall_mask_from_boundary_and_rooms(
+        background_polygons,
+        layer_polygons["room"],
+        size=LABEL_CANVAS_SIZE,
+    )
+
+    return masks, layer_polygons, background_polygons
+
+
+def infer_processed_from_pipeline(
+    cfg,
+    image_path: Path,
+) -> tuple[
+    Image.Image,
+    dict[MaskLayer, np.ndarray],
+    dict[StructureLayer, list[PolygonRing]],
+    list[PolygonRing],
+]:
+    """Run the FPN pipeline and load step-003 LLM polygons."""
+    full_canvas = _step003_source_canvas(image_path.stem, image_path, canvas_size=LABEL_CANVAS_SIZE)
+    run_fpn_pipeline(
+        cfg,
+        image_path,
+        checkpoint=cfg.fpn.checkpoint_latest,
+        output_dir=LABEL_INFERENCE_OUTPUT_DIR,
+        canvas_size=LABEL_CANVAS_SIZE,
+        skip_step_2=True,
+    )
+    loaded = load_step003_polygons(cfg, image_path, full_canvas=full_canvas)
+    if loaded is None:
+        raise FileNotFoundError(f"Missing pipeline output: {_step003_final_dir(image_path.stem)}")
+    masks, layer_polygons, background_polygons = loaded
+    return full_canvas, masks, layer_polygons, background_polygons
 
 
 def mask_to_gray_image(mask: np.ndarray) -> Image.Image:
@@ -291,23 +404,66 @@ def _load_mask_png(path: Path, size: int) -> np.ndarray:
     return gray > 127
 
 
-def _min_area_px(cfg, size: int) -> int:
-    room = cfg.fpn.room_components
-    return max(1, round(room.min_area_px * (size / 768) ** 2))
+def _min_area_px(cfg) -> int:
+    return max(1, cfg.fpn.room_components.min_area_px)
 
 
-def load_saved_polygons(stem: str, layers: tuple[StructureLayer, ...] = STRUCTURE_LAYERS) -> dict[StructureLayer, list[PolygonRing]] | None:
-    out_dir = OUTPUT_DIR / stem
-    polygons: dict[StructureLayer, list[PolygonRing]] = {}
-    found = False
-    for layer in layers:
-        path = out_dir / f"{layer}.json"
-        if path.is_file():
-            found = True
-            polygons[layer] = load_layer_polygons(path)
-        else:
-            polygons[layer] = []
-    return polygons if found else None
+def save_source_polygon_labels(
+    cfg,
+    image_path: Path,
+    *,
+    full_canvas: Image.Image,
+    layer_polygons: dict[StructureLayer, list[PolygonRing]],
+    background_polygons: list[PolygonRing],
+    canvas_size: int,
+    min_area_px: int,
+) -> Path:
+    final_dir = _step003_final_dir(image_path.stem)
+    final_dir.mkdir(parents=True, exist_ok=True)
+    save_size = LABEL_CANVAS_SIZE
+    transform_kwargs: dict[str, object] | None = None
+    if _final_mask_step_size(final_dir) != LABEL_CANVAS_SIZE:
+        try:
+            crop_box = _pipeline_crop_box(image_path, canvas_size=LABEL_CANVAS_SIZE)
+            content_size = _pipeline_step_content_size(image_path.stem, crop_box)
+            transform_kwargs = {
+                "crop_box": crop_box,
+                "step_size": LABEL_CANVAS_SIZE,
+                "content_size": content_size,
+            }
+        except (FileNotFoundError, RuntimeError):
+            pass
+
+    def to_source(rings: list[PolygonRing]) -> list[PolygonRing]:
+        if transform_kwargs is None:
+            return rings
+        return transform_polygons_from_full_canvas(rings, **transform_kwargs)
+
+    for layer in ("room", "door", "window"):
+        save_layer_polygons(
+            final_dir / f"{layer}.json",
+            layer,
+            to_source(layer_polygons.get(layer, [])),
+            size=save_size,
+            min_area_px=min_area_px,
+        )
+    if background_polygons:
+        save_layer_polygons(
+            final_dir / "background.json",
+            "room",
+            to_source(background_polygons),
+            size=save_size,
+            min_area_px=min_area_px,
+        )
+    save_final_mask_polygon_preview(
+        full_canvas,
+        room_polygons=layer_polygons.get("room", []),
+        door_polygons=layer_polygons.get("door", []),
+        window_polygons=layer_polygons.get("window", []),
+        floorplan_boundary=background_polygons[0] if background_polygons else None,
+        out_dir=final_dir,
+    )
+    return final_dir
 
 
 def load_saved_masks(stem: str, size: int) -> dict[MaskLayer, np.ndarray] | None:
@@ -329,9 +485,8 @@ def save_manual_masks(
     canvas: Image.Image,
     masks: dict[MaskLayer, np.ndarray],
     *,
-    polygons: dict[StructureLayer, list[PolygonRing]] | None = None,
-    size: int,
-    min_area_px: int = 0,
+    layer_polygons: dict[StructureLayer, list[PolygonRing]] | None = None,
+    background_polygons: list[PolygonRing] | None = None,
 ) -> Path:
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
     out_dir = OUTPUT_DIR / stem
@@ -342,33 +497,90 @@ def save_manual_masks(
 
     for layer in MASK_LAYERS:
         mask_to_gray_image(masks[layer]).save(out_dir / f"{layer}.png")
-    if polygons is not None:
-        for layer, components in polygons.items():
-            save_layer_polygons(
-                out_dir / f"{layer}.json",
-                layer,
-                components,
-                size=size,
-                min_area_px=min_area_px,
-            )
+
+    if layer_polygons is not None:
+        save_final_mask_polygon_preview(
+            canvas,
+            room_polygons=layer_polygons.get("room", []),
+            door_polygons=layer_polygons.get("door", []),
+            window_polygons=layer_polygons.get("window", []),
+            floorplan_boundary=background_polygons[0] if background_polygons else None,
+            out_dir=out_dir,
+            save_input=False,
+        )
     return out_dir
 
 
-def _apply_polygon_to_mask(
-    mask: np.ndarray,
-    points: list[tuple[int, int]],
+def _auto_outputs_exist(stem: str) -> bool:
+    """True when batch auto-save artifacts are already on disk."""
+    out_dir = OUTPUT_DIR / stem
+    if not all((out_dir / f"{layer}.png").is_file() for layer in MASK_LAYERS):
+        return False
+    return (_step003_final_dir(stem) / "room.json").is_file()
+
+
+def auto_process_all_images(
+    cfg,
+    image_paths: list[Path],
     *,
-    add: bool,
-) -> None:
-    if len(points) < 3:
-        return
-    fill = np.zeros(mask.shape, dtype=np.uint8)
-    cv2.fillPoly(fill, [np.array(points, dtype=np.int32)], 1)
-    region = fill.astype(bool)
-    if add:
-        mask[region] = True
-    else:
-        mask[region] = False
+    skip_existing: bool = True,
+) -> int:
+    """Run processed pipeline inference and save masks/polygons for every image."""
+    min_area = _min_area_px(cfg)
+    size = LABEL_CANVAS_SIZE
+    failed: list[tuple[str, str]] = []
+    skipped = 0
+    total = len(image_paths)
+
+    for index, image_path in enumerate(image_paths, start=1):
+        stem = image_path.stem
+        print(f"[{index}/{total}] {image_path.name}", flush=True)
+        if skip_existing and _auto_outputs_exist(stem):
+            skipped += 1
+            print("  skipped (outputs already exist)", flush=True)
+            continue
+        try:
+            canvas, masks, layer_polygons, background_polygons = infer_processed_from_pipeline(
+                cfg,
+                image_path,
+            )
+            save_source_polygon_labels(
+                cfg,
+                image_path,
+                full_canvas=canvas,
+                layer_polygons=layer_polygons,
+                background_polygons=background_polygons,
+                canvas_size=size,
+                min_area_px=min_area,
+            )
+            out_dir = save_manual_masks(
+                stem,
+                canvas,
+                masks,
+                layer_polygons=layer_polygons,
+                background_polygons=background_polygons,
+            )
+            print(
+                f"  masks -> {out_dir.relative_to(_REPO_ROOT)}  "
+                f"polygons -> {_step003_final_dir(stem).relative_to(_ROOT)}",
+                flush=True,
+            )
+        except Exception as exc:
+            failed.append((image_path.name, str(exc)))
+            print(f"  failed: {exc}", flush=True)
+
+    saved = total - len(failed) - skipped
+    print(
+        f"Done — saved {saved}/{total} to {DATASET_ROOT.relative_to(_REPO_ROOT)}"
+        + (f" ({skipped} skipped)" if skipped else ""),
+        flush=True,
+    )
+    if failed:
+        print("Failures:", flush=True)
+        for name, message in failed:
+            print(f"  {name}: {message}", flush=True)
+        return 1
+    return 0
 
 
 def _draw_vertex_handle(
@@ -465,9 +677,9 @@ def compose_overlay(
     masks: dict[MaskLayer, np.ndarray],
     *,
     active_layer: MaskLayer,
-    data_mode: DataMode,
     edit_tool: EditTool = "brush",
     layer_polygons: dict[StructureLayer, list[PolygonRing]] | None = None,
+    background_polygons: list[PolygonRing] | None = None,
     polygon_draft: list[tuple[int, int]] | None = None,
     polygon_cursor: tuple[int, int] | None = None,
     selected_poly_index: int | None = None,
@@ -476,17 +688,21 @@ def compose_overlay(
     rgb = np.asarray(canvas.convert("RGB"))
     rgba = np.dstack([rgb, np.full(rgb.shape[:2], 255, dtype=np.uint8)])
     layer_rgb = LAYER_COLORS[active_layer]
+    polygon_components: list[PolygonRing] = []
+    if layer_polygons is not None and active_layer in ("room", "door", "window"):
+        polygon_components = layer_polygons[active_layer]
+    elif background_polygons is not None and active_layer == "background":
+        polygon_components = background_polygons
     show_polygons = (
-        data_mode == "processed"
-        and edit_tool == "polygon"
-        and active_layer in STRUCTURE_LAYERS
-        and layer_polygons is not None
+        edit_tool == "polygon"
+        and active_layer in POLYGON_EDIT_LAYERS
+        and bool(polygon_components or polygon_draft)
     )
-    if show_polygons:
+    if show_polygons and polygon_components:
         rgb = Image.fromarray(rgba[:, :, :3], mode="RGB")
         rgb = _draw_polygon_components_overlay(
             rgb,
-            layer_polygons[active_layer],
+            polygon_components,
             color=layer_rgb,
             selected_index=selected_poly_index,
             selected_vertex=selected_vertex_index,
@@ -503,7 +719,7 @@ def compose_overlay(
             rgb,
             polygon_draft,
             cursor=polygon_cursor,
-            color=layer_rgb if data_mode == "processed" else POLYGON_DRAFT_COLOR,
+            color=layer_rgb,
             selected_vertex=selected_vertex_index,
         )
     return rgb
@@ -664,11 +880,10 @@ class LabelDataUI:
             raise ValueError(f"No images found in {TEST_DIR}")
         self.cfg = cfg
         self.test_images = test_images
-        self.canvas_size = cfg.canvas_size
+        self.canvas_size = LABEL_CANVAS_SIZE
         self.selected_index = 0
         self.list_scroll = 0
         self.active_layer: MaskLayer = "wall"
-        self.data_mode: DataMode = "unprocessed"
         self.edit_tool: EditTool = "brush"
         self.brush_mode: BrushMode = "add"
         self.brush_radius = DEFAULT_BRUSH_RADIUS
@@ -678,12 +893,16 @@ class LabelDataUI:
         self.selected_vertex_index: int | None = None
         self.dragging_vertex_index: int | None = None
         self.poly_list_scroll = 0
+        self.point_list_scroll = 0
+        self._poly_list_hit_rect: pygame.Rect | None = None
+        self._point_list_hit_rect: pygame.Rect | None = None
         self.painting = False
         self.running_inference = False
         self.masks = empty_masks(self.canvas_size)
         self.layer_polygons: dict[StructureLayer, list[PolygonRing]] = {
             layer: [] for layer in STRUCTURE_LAYERS
         }
+        self.background_polygons: list[PolygonRing] = []
         self.source_canvas = Image.new("RGB", (self.canvas_size, self.canvas_size), (255, 255, 255))
         self.display_surface: pygame.Surface | None = None
         self.display_rect = pygame.Rect(0, 0, 0, 0)
@@ -696,11 +915,11 @@ class LabelDataUI:
         except ValueError:
             self.model_address = str(cfg.fpn.checkpoint_latest)
         self._load_test_image(0, initial=True)
-        self.display_w = max(1, int(self.canvas_size * DISPLAY_SCALE))
-        self.display_h = max(1, int(self.canvas_size * DISPLAY_SCALE))
+        self.display_w = VIEWER_DISPLAY_SIZE
+        self.display_h = VIEWER_DISPLAY_SIZE
         self.panel_x = self.viewer_x + self.display_w
         self.window_w = self.panel_x + self.panel_w
-        self.window_h = max(self.display_h, 760)
+        self.window_h = VIEWER_DISPLAY_SIZE
         self.window = pygame.display.set_mode((self.window_w, self.window_h))
         pygame.display.set_caption("Label masks — floorplan-manual-mask")
         self.font = pygame.font.SysFont("monospace", 14)
@@ -720,8 +939,6 @@ class LabelDataUI:
         y += gap
         self.save_btn = Button(pygame.Rect(x, y, btn_w, 28), "Save masks")
         y += gap
-        self.mode_btn = Button(pygame.Rect(x, y, btn_w, 28), "Mode: unprocessed")
-        y += gap + 8
         self.layer_buttons: dict[MaskLayer, Button] = {}
         for layer in STRUCTURE_LAYERS:
             self.layer_buttons[layer] = Button(
@@ -730,7 +947,7 @@ class LabelDataUI:
             )
             y += 30
         y += 4
-        self.compute_background_btn = Button(pygame.Rect(x, y, btn_w, 28), "Compute background")
+        self.compute_wall_btn = Button(pygame.Rect(x, y, btn_w, 28), "Compute wall")
         y += 34
         self.layer_buttons["background"] = Button(
             pygame.Rect(x, y, btn_w, 26),
@@ -764,10 +981,17 @@ class LabelDataUI:
         layer = self.active_layer
         return layer if layer in STRUCTURE_LAYERS else None
 
+    def _editable_polygon_layer(self) -> MaskLayer | None:
+        if self.active_layer in POLYGON_EDIT_LAYERS:
+            return self.active_layer
+        return None
+
     def _active_polygon_list(self) -> list[PolygonRing]:
-        layer = self._active_structure_layer()
+        layer = self._editable_polygon_layer()
         if layer is None:
             return []
+        if layer == "background":
+            return self.background_polygons
         return self.layer_polygons[layer]
 
     def _select_polygon(self, index: int | None) -> None:
@@ -777,6 +1001,7 @@ class LabelDataUI:
         self.selected_poly_index = index
         self.selected_vertex_index = None
         self.dragging_vertex_index = None
+        self.point_list_scroll = 0
         if index is not None:
             count = len(polygons[index])
             self.status = f"Selected polygon {index + 1} ({count} points)."
@@ -792,6 +1017,7 @@ class LabelDataUI:
             return
         self.selected_poly_index = poly_index
         self.selected_vertex_index = vertex_index
+        self._ensure_point_visible(vertex_index)
         x, y = ring[vertex_index]
         self.status = f"Selected P{vertex_index} ({x}, {y})."
 
@@ -803,8 +1029,6 @@ class LabelDataUI:
         return "New polygon — place points, click start point or Enter to finish."
 
     def _set_polygon_edit_mode(self, mode: PolygonEditMode) -> None:
-        if self.data_mode != "processed":
-            return
         self.polygon_edit_mode = mode
         self.poly_edit_dropdown.selected = mode
         self.poly_edit_dropdown.open = False
@@ -816,8 +1040,6 @@ class LabelDataUI:
         self._rebuild_display()
 
     def _cycle_polygon_edit_mode(self) -> None:
-        if self.data_mode != "processed":
-            return
         modes = [mode for mode, _label in POLYGON_EDIT_OPTIONS]
         index = modes.index(self.polygon_edit_mode)
         self._set_polygon_edit_mode(modes[(index + 1) % len(modes)])
@@ -843,35 +1065,60 @@ class LabelDataUI:
         return {layer: [] for layer in STRUCTURE_LAYERS}
 
     def _sync_masks_from_polygons(self) -> None:
-        for layer in STRUCTURE_LAYERS:
-            self.masks[layer] = polygons_to_mask(
-                self.layer_polygons[layer],
-                self.canvas_size,
+        size = self.canvas_size
+        for layer in ("room", "door", "window"):
+            self.masks[layer] = polygons_to_mask(self.layer_polygons[layer], size)
+        if self.background_polygons:
+            self.masks["background"] = background_polygons_to_mask(
+                self.background_polygons,
+                size,
             )
+        self.masks["wall"] = compute_wall_mask_from_boundary_and_rooms(
+            self.background_polygons,
+            self.layer_polygons["room"],
+            size=size,
+        )
+
+    def _save_polygon_labels(self) -> None:
+        image_path = self.test_images[self.selected_index]
+        save_source_polygon_labels(
+            self.cfg,
+            image_path,
+            full_canvas=self.source_canvas,
+            layer_polygons=self.layer_polygons,
+            background_polygons=self.background_polygons,
+            canvas_size=self.canvas_size,
+            min_area_px=_min_area_px(self.cfg),
+        )
 
     def _persist_labels(self, *, show_status: bool = True) -> None:
         if self.running_inference:
             return
         stem = self._current_stem()
-        if self.data_mode == "processed":
-            self._sync_masks_from_polygons()
+        self._sync_masks_from_polygons()
+        self._save_polygon_labels()
         out_dir = save_manual_masks(
             stem,
             self.source_canvas,
             self.masks,
-            polygons=self.layer_polygons if self.data_mode == "processed" else None,
-            size=self.canvas_size,
-            min_area_px=_min_area_px(self.cfg, self.canvas_size),
+            layer_polygons=self.layer_polygons,
+            background_polygons=self.background_polygons,
         )
         if show_status:
-            self.status = f"Saved to {out_dir.relative_to(_REPO_ROOT)}"
+            polygon_dir = _step003_final_dir(stem)
+            self.status = (
+                f"Saved masks + overlay -> {out_dir.relative_to(_REPO_ROOT)}; "
+                f"polygons -> {polygon_dir.relative_to(_ROOT)}"
+            )
 
     def _autosave(self) -> None:
         self._persist_labels(show_status=False)
 
     def _fit_polygons_from_masks(self) -> None:
-        min_area = _min_area_px(self.cfg, self.canvas_size)
+        min_area = _min_area_px(self.cfg)
         for layer in STRUCTURE_LAYERS:
+            if layer == "wall":
+                continue
             self.layer_polygons[layer] = fit_polygons_from_mask(
                 layer,
                 self.masks[layer],
@@ -880,39 +1127,53 @@ class LabelDataUI:
             )
 
     def _refit_active_layer_from_mask(self) -> None:
-        layer = self._active_structure_layer()
+        min_area = _min_area_px(self.cfg)
+        layer = self._editable_polygon_layer()
         if layer is None:
             return
-        min_area = _min_area_px(self.cfg, self.canvas_size)
-        self.layer_polygons[layer] = fit_polygons_from_mask(
-            layer,
-            self.masks[layer],
-            size=self.canvas_size,
-            min_area_px=min_area,
-        )
+        if layer == "background":
+            self.background_polygons = fit_polygons_from_mask(
+                "room",
+                self.masks["background"],
+                size=self.canvas_size,
+                min_area_px=min_area,
+            )
+        else:
+            self.layer_polygons[layer] = fit_polygons_from_mask(
+                layer,
+                self.masks[layer],
+                size=self.canvas_size,
+                min_area_px=min_area,
+            )
         self._clear_polygon_selection()
 
     def _update_tool_ui(self) -> None:
         polygon_tool = self.edit_tool == "polygon"
         self.tool_btn.label = f"Tool: {self.edit_tool}"
         self.brush_mode_btn.visible = not polygon_tool
-        self.poly_edit_dropdown.visible = self.data_mode == "processed" and polygon_tool
+        polygon_edit_layer = self._editable_polygon_layer()
+        self.poly_edit_dropdown.visible = polygon_edit_layer is not None and polygon_tool
         if not polygon_tool:
             self.poly_edit_dropdown.open = False
 
     def _finish_brush_stroke(self) -> None:
-        if self.data_mode == "processed":
-            self._refit_active_layer_from_mask()
+        self._refit_active_layer_from_mask()
         self._autosave()
         self._rebuild_display()
 
     def _load_polygons_for_stem(self, stem: str) -> None:
-        saved = load_saved_polygons(stem)
-        if saved is not None:
-            self.layer_polygons = saved
-            self._sync_masks_from_polygons()
+        image_path = self.test_images[self.selected_index]
+        loaded = load_step003_polygons(
+            self.cfg,
+            image_path,
+            full_canvas=self.source_canvas,
+        )
+        if loaded is not None:
+            self.masks, self.layer_polygons, self.background_polygons = loaded
             return
         self._fit_polygons_from_masks()
+        self.layer_polygons["wall"] = []
+        self._sync_masks_from_polygons()
 
     def _load_test_image(self, index: int, *, initial: bool = False) -> None:
         path = self.test_images[index]
@@ -920,22 +1181,27 @@ class LabelDataUI:
         if not initial:
             self._ensure_list_visible(index)
         stem = path.stem
-        self.source_canvas = fit_to_canvas_rgb(Image.open(path), size=self.canvas_size)
+        self.source_canvas = _step003_source_canvas(stem, path, canvas_size=self.canvas_size)
         saved_masks = load_saved_masks(stem, self.canvas_size)
         if saved_masks is not None:
             self.masks = saved_masks
-            self.status = f"Loaded saved masks — {path.name}"
         else:
             self.masks = empty_masks(self.canvas_size)
-            self.status = f"Loaded {path.name} — infer or paint masks."
         self.layer_polygons = self._empty_layer_polygons()
-        if self.data_mode == "processed":
-            self._load_polygons_for_stem(stem)
-            self.status = f"Loaded processed polygons — {path.name}"
+        self.background_polygons = []
+        self._load_polygons_for_stem(stem)
+        step_dir = _step003_final_dir(stem)
+        if step_dir.is_dir():
+            self.status = f"Loaded step-003 LLM polygons — {path.name}"
+        elif saved_masks is not None:
+            self.status = f"Loaded saved labels — {path.name}"
+        else:
+            self.status = f"Loaded {path.name} — infer or edit polygons."
         self.painting = False
         self.polygon_draft = None
         self._clear_polygon_selection()
         self.poly_list_scroll = 0
+        self.point_list_scroll = 0
         if not initial:
             self._rebuild_display()
 
@@ -944,9 +1210,9 @@ class LabelDataUI:
             self.source_canvas,
             self.masks,
             active_layer=self.active_layer,
-            data_mode=self.data_mode,
             edit_tool=self.edit_tool,
             layer_polygons=self.layer_polygons,
+            background_polygons=self.background_polygons,
             polygon_draft=self.polygon_draft,
             polygon_cursor=polygon_cursor,
             selected_poly_index=self.selected_poly_index,
@@ -1007,30 +1273,16 @@ class LabelDataUI:
         self.polygon_draft = None
         self._clear_polygon_selection()
         self.poly_list_scroll = 0
-        if self.data_mode == "processed" and self.edit_tool == "polygon":
-            editing = "polygons"
-        else:
-            editing = "mask"
+        self.point_list_scroll = 0
+        if layer == "wall" and self.edit_tool == "polygon":
+            self.edit_tool = "brush"
+            self._update_tool_ui()
+        editing = (
+            "polygons"
+            if self.edit_tool == "polygon" and layer in POLYGON_EDIT_LAYERS
+            else "mask"
+        )
         self.status = f"Editing {layer} {editing}."
-        self._rebuild_display()
-
-    def _toggle_data_mode(self) -> None:
-        if self.running_inference:
-            return
-        if self.data_mode == "unprocessed":
-            self.data_mode = "processed"
-            self._load_polygons_for_stem(self._current_stem())
-            if self.edit_tool == "polygon":
-                self._set_polygon_edit_mode("select_point")
-            self.painting = False
-            self.status = "Processed mode — brush or polygon tool on the active layer."
-        else:
-            self.data_mode = "unprocessed"
-            self.status = "Unprocessed mode — raster masks."
-        self.polygon_draft = None
-        self._clear_polygon_selection()
-        self.mode_btn.label = f"Mode: {self.data_mode}"
-        self._update_tool_ui()
         self._rebuild_display()
 
     def _toggle_brush_mode(self) -> None:
@@ -1040,10 +1292,12 @@ class LabelDataUI:
 
     def _toggle_edit_tool(self) -> None:
         if self.edit_tool == "brush":
+            if self.active_layer == "wall":
+                self.status = "Wall layer — brush only (no polygon edit)."
+                return
             self.edit_tool = "polygon"
             self.painting = False
-            if self.data_mode == "processed":
-                self._set_polygon_edit_mode("select_point")
+            self._set_polygon_edit_mode("select_point")
             self.status = "Polygon tool — click to place vertices, Enter or first point to close."
         else:
             self.edit_tool = "brush"
@@ -1067,22 +1321,20 @@ class LabelDataUI:
         layer = self.active_layer
         ring = list(self.polygon_draft)
         vertex_count = len(ring)
-        if self.data_mode == "processed" and layer in STRUCTURE_LAYERS:
-            self.layer_polygons[layer].append(ring)
-            self._sync_masks_from_polygons()
-            self._select_polygon(len(self.layer_polygons[layer]) - 1)
-            self.status = f"Added {layer} polygon ({vertex_count} vertices)."
+        if layer not in POLYGON_EDIT_LAYERS:
+            self.status = f"Cannot add polygon on {layer} layer."
+            return False
+        if layer == "background":
+            self.background_polygons.append(ring)
+            self._select_polygon(len(self.background_polygons) - 1)
         else:
-            _apply_polygon_to_mask(
-                self.masks[layer],
-                ring,
-                add=self.brush_mode == "add",
-            )
-            action = "Added to" if self.brush_mode == "add" else "Removed from"
-            self.status = f"{action} {layer} mask — closed polygon ({vertex_count} vertices)."
+            self.layer_polygons[layer].append(ring)
+            self._select_polygon(len(self.layer_polygons[layer]) - 1)
+        self._sync_masks_from_polygons()
+        self.status = f"Added {layer} polygon ({vertex_count} vertices)."
         self.polygon_draft = None
         self.dragging_vertex_index = None
-        if self.data_mode == "processed" and self.polygon_edit_mode == "new_polygon":
+        if self.polygon_edit_mode == "new_polygon":
             self.polygon_edit_mode = "select_point"
             self.poly_edit_dropdown.selected = "select_point"
             self.poly_edit_dropdown.open = False
@@ -1108,22 +1360,23 @@ class LabelDataUI:
         )
 
     def _pick_polygon_at(self, point: tuple[int, int]) -> int | None:
-        layer = self._active_structure_layer()
-        if layer is None:
+        if self._editable_polygon_layer() is None:
             return None
         px, py = point
-        for index in range(len(self.layer_polygons[layer]) - 1, -1, -1):
-            if _point_in_polygon(px, py, self.layer_polygons[layer][index]):
+        polygons = self._active_polygon_list()
+        for index in range(len(polygons) - 1, -1, -1):
+            if _point_in_polygon(px, py, polygons[index]):
                 return index
         return None
 
     def _delete_selected_vertex(self) -> None:
-        layer = self._active_structure_layer()
+        layer = self._editable_polygon_layer()
         if layer is None or self.selected_poly_index is None:
             return
-        ring = self.layer_polygons[layer][self.selected_poly_index]
+        polygons = self._active_polygon_list()
+        ring = polygons[self.selected_poly_index]
         if self.selected_vertex_index is None:
-            del self.layer_polygons[layer][self.selected_poly_index]
+            del polygons[self.selected_poly_index]
             self._sync_masks_from_polygons()
             self._clear_polygon_selection()
             self.status = f"Deleted polygon from {layer}."
@@ -1131,7 +1384,7 @@ class LabelDataUI:
             self._rebuild_display()
             return
         if len(ring) <= 3:
-            del self.layer_polygons[layer][self.selected_poly_index]
+            del polygons[self.selected_poly_index]
             self._sync_masks_from_polygons()
             self._clear_polygon_selection()
             self.status = f"Deleted polygon from {layer} (too few points)."
@@ -1144,10 +1397,9 @@ class LabelDataUI:
         self._rebuild_display()
 
     def _insert_vertex_on_selected_polygon(self, point: tuple[int, int]) -> bool:
-        layer = self._active_structure_layer()
-        if layer is None or self.selected_poly_index is None:
+        if self._editable_polygon_layer() is None or self.selected_poly_index is None:
             return False
-        ring = self.layer_polygons[layer][self.selected_poly_index]
+        ring = self._active_polygon_list()[self.selected_poly_index]
         insert_at = _nearest_edge_insert_index(point, ring)
         if insert_at is None:
             return False
@@ -1159,12 +1411,11 @@ class LabelDataUI:
         self._rebuild_display()
         return True
 
-    def _handle_processed_select_point_click(self, point: tuple[int, int]) -> None:
-        layer = self._active_structure_layer()
-        if layer is None:
+    def _handle_select_point_click(self, point: tuple[int, int]) -> None:
+        if self._editable_polygon_layer() is None:
             return
         if self.selected_poly_index is not None:
-            ring = self.layer_polygons[layer][self.selected_poly_index]
+            ring = self._active_polygon_list()[self.selected_poly_index]
             vertex_index = _find_vertex_near(point, ring, radius=POLYGON_HIT_RADIUS)
             if vertex_index is not None:
                 self._select_vertex(self.selected_poly_index, vertex_index)
@@ -1174,7 +1425,7 @@ class LabelDataUI:
         poly_index = self._pick_polygon_at(point)
         if poly_index is not None:
             self._select_polygon(poly_index)
-            ring = self.layer_polygons[layer][poly_index]
+            ring = self._active_polygon_list()[poly_index]
             vertex_index = _find_vertex_near(point, ring, radius=POLYGON_HIT_RADIUS)
             if vertex_index is not None:
                 self.selected_vertex_index = vertex_index
@@ -1184,12 +1435,11 @@ class LabelDataUI:
         self._select_polygon(None)
         self._rebuild_display()
 
-    def _handle_processed_add_point_click(self, point: tuple[int, int]) -> None:
-        layer = self._active_structure_layer()
-        if layer is None:
+    def _handle_add_point_click(self, point: tuple[int, int]) -> None:
+        if self._editable_polygon_layer() is None:
             return
         if self.selected_poly_index is not None:
-            ring = self.layer_polygons[layer][self.selected_poly_index]
+            ring = self._active_polygon_list()[self.selected_poly_index]
             if self._insert_vertex_on_selected_polygon(point):
                 return
             vertex_index = _find_vertex_near(point, ring, radius=POLYGON_HIT_RADIUS)
@@ -1201,7 +1451,7 @@ class LabelDataUI:
         poly_index = self._pick_polygon_at(point)
         if poly_index is not None:
             self._select_polygon(poly_index)
-            ring = self.layer_polygons[layer][poly_index]
+            ring = self._active_polygon_list()[poly_index]
             if self._insert_vertex_on_selected_polygon(point):
                 return
             vertex_index = _find_vertex_near(point, ring, radius=POLYGON_HIT_RADIUS)
@@ -1214,7 +1464,7 @@ class LabelDataUI:
             return
         self.status = "Add point — select a polygon first."
 
-    def _handle_processed_new_polygon_click(self, point: tuple[int, int]) -> None:
+    def _handle_new_polygon_click(self, point: tuple[int, int]) -> None:
         if self.polygon_draft:
             vertex_index = _find_vertex_near(point, self.polygon_draft, radius=POLYGON_HIT_RADIUS)
             if vertex_index is not None:
@@ -1233,21 +1483,12 @@ class LabelDataUI:
         point = self._canvas_point(pos)
         if point is None:
             return
-        if self.data_mode == "processed":
-            if self.polygon_edit_mode == "select_point":
-                self._handle_processed_select_point_click(point)
-            elif self.polygon_edit_mode == "add_point":
-                self._handle_processed_add_point_click(point)
-            else:
-                self._handle_processed_new_polygon_click(point)
-            return
-        if self.polygon_draft:
-            vertex_index = _find_vertex_near(point, self.polygon_draft, radius=POLYGON_HIT_RADIUS)
-            if vertex_index is not None:
-                self.dragging_vertex_index = vertex_index
-                return
-        self._add_polygon_vertex(*point)
-        self._rebuild_display()
+        if self.polygon_edit_mode == "select_point":
+            self._handle_select_point_click(point)
+        elif self.polygon_edit_mode == "add_point":
+            self._handle_add_point_click(point)
+        else:
+            self._handle_new_polygon_click(point)
 
     def _nudge_selected_vertex(self, dx: int, dy: int) -> bool:
         if self.selected_vertex_index is None:
@@ -1266,10 +1507,9 @@ class LabelDataUI:
             self._rebuild_display()
             return True
 
-        layer = self._active_structure_layer()
-        if layer is None or self.selected_poly_index is None:
+        if self._editable_polygon_layer() is None or self.selected_poly_index is None:
             return False
-        ring = self.layer_polygons[layer][self.selected_poly_index]
+        ring = self._active_polygon_list()[self.selected_poly_index]
         if index < 0 or index >= len(ring):
             return False
         x, y = ring[index]
@@ -1294,20 +1534,27 @@ class LabelDataUI:
             self.polygon_draft[self.dragging_vertex_index] = point
             self._rebuild_display()
             return
-        layer = self._active_structure_layer()
-        if layer is None or self.selected_poly_index is None:
+        if self._editable_polygon_layer() is None or self.selected_poly_index is None:
             return
-        ring = self.layer_polygons[layer][self.selected_poly_index]
+        ring = self._active_polygon_list()[self.selected_poly_index]
         ring[self.dragging_vertex_index] = point
         self.selected_vertex_index = self.dragging_vertex_index
         self._sync_masks_from_polygons()
         self._rebuild_display()
 
-    def _on_compute_background(self) -> None:
+    def _on_compute_wall(self) -> None:
         if self.running_inference:
             return
-        self.masks["background"] = compute_background_mask(self.masks["wall"], self.masks["room"])
-        self.status = "Background computed from wall + room."
+        if not self.background_polygons:
+            self.status = "Need a floorplan boundary on the background layer."
+            return
+        self.layer_polygons["wall"] = []
+        self.masks["wall"] = compute_wall_mask_from_boundary_and_rooms(
+            self.background_polygons,
+            self.layer_polygons["room"],
+            size=self.canvas_size,
+        )
+        self.status = "Computed wall mask from background − rooms."
         self._autosave()
         self._rebuild_display()
 
@@ -1320,21 +1567,19 @@ class LabelDataUI:
         self._draw()
         pygame.display.flip()
         try:
-            if self.data_mode == "processed":
-                _canvas, masks, polygons = infer_processed_from_pipeline(self.cfg, path)
-                self.source_canvas = _canvas
-                self.masks = masks
-                self.layer_polygons = polygons
-                self._clear_polygon_selection()
-                self.polygon_draft = None
-                self.status = (
-                    f"Loaded pipeline polygons (step-002) — edit {self.active_layer}, then save."
-                )
-            else:
-                _, masks = infer_structure_masks(self.cfg, path)
-                self.masks = masks
-                self.masks["background"] = np.zeros((self.canvas_size, self.canvas_size), dtype=bool)
-                self.status = f"Inference loaded — refine {self.active_layer}."
+            _canvas, masks, polygons, background_polygons = infer_processed_from_pipeline(
+                self.cfg,
+                path,
+            )
+            self.source_canvas = _canvas
+            self.masks = masks
+            self.layer_polygons = polygons
+            self.background_polygons = background_polygons
+            self._clear_polygon_selection()
+            self.polygon_draft = None
+            self.status = (
+                f"Loaded step-003 LLM polygons — edit {self.active_layer}, then save."
+            )
             self._autosave()
             self._rebuild_display()
         except Exception as exc:
@@ -1345,7 +1590,7 @@ class LabelDataUI:
     def _on_save(self) -> None:
         if self.running_inference:
             return
-        if self.data_mode == "processed" and self.polygon_draft and len(self.polygon_draft) >= 3:
+        if self.polygon_draft and len(self.polygon_draft) >= 3:
             self._commit_polygon_draft()
             return
         self._persist_labels(show_status=True)
@@ -1385,11 +1630,8 @@ class LabelDataUI:
         if self.save_btn.hit(pos):
             self._on_save()
             return
-        if self.mode_btn.hit(pos):
-            self._toggle_data_mode()
-            return
-        if self.compute_background_btn.hit(pos):
-            self._on_compute_background()
+        if self.compute_wall_btn.hit(pos):
+            self._on_compute_wall()
             return
         if self.tool_btn.hit(pos):
             self._toggle_edit_tool()
@@ -1415,7 +1657,7 @@ class LabelDataUI:
 
     def _draw_file_list(self) -> None:
         pygame.draw.rect(self.window, LIST_BG, (0, 0, self.list_w, self.window_h))
-        header = self.label_font.render("test_image/", True, LABEL_COLOR)
+        header = self.label_font.render("real_floorplan/", True, LABEL_COLOR)
         self.window.blit(header, (8, 4))
         pygame.draw.line(
             self.window,
@@ -1444,21 +1686,17 @@ class LabelDataUI:
             self.window.blit(text, (8, y + 3))
 
     def _draw_viewer(self) -> None:
-        if self.data_mode == "processed" and self.edit_tool == "polygon":
-            component_count = (
-                len(self.layer_polygons[self.active_layer])
-                if self.active_layer in STRUCTURE_LAYERS
-                else 0
-            )
+        if self.edit_tool == "polygon" and self._editable_polygon_layer() is not None:
+            if self.active_layer == "background":
+                component_count = len(self.background_polygons)
+            else:
+                component_count = len(self.layer_polygons[self.active_layer])
             draft_count = len(self.polygon_draft or [])
             mode_label = self.poly_edit_dropdown.label_for(self.polygon_edit_mode)
             layer_label = (
                 f"{self.active_layer} ({mode_label}, "
                 f"{component_count} polys, draft {draft_count} pts)"
             )
-        elif self.edit_tool == "polygon":
-            draft_count = len(self.polygon_draft or [])
-            layer_label = f"{self.active_layer} (polygon {self.brush_mode}, {draft_count} pts)"
         else:
             layer_label = f"{self.active_layer} (brush {self.brush_mode}, r={self.brush_radius})"
         self.window.blit(
@@ -1492,16 +1730,10 @@ class LabelDataUI:
             self.btn_font,
             hover=self.save_btn.hit(mouse) and not disabled,
         )
-        self.mode_btn.draw(
+        self.compute_wall_btn.draw(
             self.window,
             self.btn_font,
-            hover=self.mode_btn.hit(mouse) and not disabled,
-            active=self.data_mode == "processed",
-        )
-        self.compute_background_btn.draw(
-            self.window,
-            self.btn_font,
-            hover=self.compute_background_btn.hit(mouse) and not disabled,
+            hover=self.compute_wall_btn.hit(mouse) and not disabled,
         )
         for layer, button in self.layer_buttons.items():
             button.draw(
@@ -1528,7 +1760,7 @@ class LabelDataUI:
             self.btn_font,
             hover=self.poly_edit_dropdown.hit_button(mouse) and not disabled,
         )
-        if self.data_mode == "processed" and self.edit_tool == "polygon":
+        if self.edit_tool == "polygon" and self._editable_polygon_layer() is not None:
             self._draw_polygon_panel_lists()
         brush_text = self.small_font.render(
             f"Brush size: {self.brush_radius}px  ([ ] to resize)",
@@ -1537,7 +1769,7 @@ class LabelDataUI:
         )
         self.window.blit(brush_text, (self.panel_x + 10, self.brush_size_label_y))
         hint = self.small_font.render(
-            "M data · P cycle edit · Arrows nudge point · Del · Enter · Esc",
+            "P cycle edit · Arrows nudge point · Del · Enter · Esc",
             True,
             LABEL_COLOR,
         )
@@ -1557,7 +1789,7 @@ class LabelDataUI:
     def _polygon_panel_rows(self) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
         poly_rows: list[tuple[str, str]] = []
         point_rows: list[tuple[str, str]] = []
-        layer = self._active_structure_layer()
+        layer = self._editable_polygon_layer()
         if layer is None:
             return poly_rows, point_rows
         for index, ring in enumerate(self._active_polygon_list()):
@@ -1573,8 +1805,34 @@ class LabelDataUI:
         available = self.window_h - self.polygon_list_y - 120 - model_block
         return max(3, available // POLY_LIST_ROW_HEIGHT)
 
+    def _polygon_panel_capacities(
+        self,
+        poly_count: int,
+        point_count: int,
+    ) -> tuple[int, int]:
+        budget = self._polygon_list_visible_rows()
+        if point_count <= 0:
+            return budget, 0
+        poly_cap = max(2, min(poly_count, budget // 3))
+        point_cap = max(3, budget - poly_cap)
+        return poly_cap, point_cap
+
+    def _ensure_point_visible(self, point_index: int) -> None:
+        poly_rows, point_rows = self._polygon_panel_rows()
+        _, point_cap = self._polygon_panel_capacities(len(poly_rows), len(point_rows))
+        if point_cap <= 0:
+            return
+        max_scroll = max(0, len(point_rows) - point_cap)
+        if point_index < self.point_list_scroll:
+            self.point_list_scroll = point_index
+        elif point_index >= self.point_list_scroll + point_cap:
+            self.point_list_scroll = point_index - point_cap + 1
+        self.point_list_scroll = max(0, min(max_scroll, self.point_list_scroll))
+
     def _draw_polygon_panel_lists(self) -> None:
-        layer = self._active_structure_layer()
+        layer = self._editable_polygon_layer()
+        self._poly_list_hit_rect = None
+        self._point_list_hit_rect = None
         if layer is None:
             return
         x = self.panel_x + 10
@@ -1584,11 +1842,12 @@ class LabelDataUI:
         self.window.blit(header, (x, y))
         y += POLY_LIST_HEADER_HEIGHT
         poly_rows, point_rows = self._polygon_panel_rows()
-        visible = self._polygon_list_visible_rows()
+        poly_cap, point_cap = self._polygon_panel_capacities(len(poly_rows), len(point_rows))
         mouse = pygame.mouse.get_pos()
-        max_scroll = max(0, len(poly_rows) - visible)
-        self.poly_list_scroll = max(0, min(max_scroll, self.poly_list_scroll))
-        for row in range(visible):
+        max_poly_scroll = max(0, len(poly_rows) - poly_cap)
+        self.poly_list_scroll = max(0, min(max_poly_scroll, self.poly_list_scroll))
+        poly_list_top = y
+        for row in range(poly_cap):
             index = self.poly_list_scroll + row
             if index >= len(poly_rows):
                 break
@@ -1602,28 +1861,41 @@ class LabelDataUI:
             text = self.small_font.render(label, True, LIST_TEXT)
             self.window.blit(text, (x + 4, y + 2))
             y += POLY_LIST_ROW_HEIGHT
+        if poly_cap > 0:
+            self._poly_list_hit_rect = pygame.Rect(x, poly_list_top, width, y - poly_list_top)
         if point_rows:
             y += 4
+            points_header_y = y
             sub_header = self.label_font.render("Points", True, LABEL_COLOR)
             self.window.blit(sub_header, (x, y))
             y += POLY_LIST_HEADER_HEIGHT
-            for row_id, label in point_rows[:visible]:
+            max_point_scroll = max(0, len(point_rows) - point_cap)
+            self.point_list_scroll = max(0, min(max_point_scroll, self.point_list_scroll))
+            point_list_top = y
+            for row in range(point_cap):
+                index = self.point_list_scroll + row
+                if index >= len(point_rows):
+                    break
+                row_id, label = point_rows[index]
                 rect = pygame.Rect(x, y, width, POLY_LIST_ROW_HEIGHT - 2)
                 point_index = int(row_id.split("-")[1])
-                if (
-                    self.selected_poly_index is not None
-                    and point_index == self.selected_vertex_index
-                ):
+                if point_index == self.selected_vertex_index:
                     pygame.draw.rect(self.window, LIST_SELECTED, rect)
                 elif rect.collidepoint(mouse):
                     pygame.draw.rect(self.window, LIST_HOVER, rect)
                 text = self.small_font.render(label, True, LIST_TEXT)
                 self.window.blit(text, (x + 4, y + 2))
                 y += POLY_LIST_ROW_HEIGHT
+            self._point_list_hit_rect = pygame.Rect(
+                x,
+                points_header_y,
+                width,
+                y - points_header_y,
+            )
         self.status_y = min(y + 8, self.window_h - 120)
 
     def _handle_polygon_panel_click(self, pos: tuple[int, int]) -> bool:
-        if self.data_mode != "processed" or self._active_structure_layer() is None:
+        if self._editable_polygon_layer() is None:
             return False
         x = self.panel_x + 10
         width = self.panel_w - 20
@@ -1631,8 +1903,8 @@ class LabelDataUI:
         if pos[0] < x or pos[0] > x + width or pos[1] < self.polygon_list_y:
             return False
         poly_rows, point_rows = self._polygon_panel_rows()
-        visible = self._polygon_list_visible_rows()
-        for row in range(visible):
+        poly_cap, point_cap = self._polygon_panel_capacities(len(poly_rows), len(point_rows))
+        for row in range(poly_cap):
             index = self.poly_list_scroll + row
             if index >= len(poly_rows):
                 break
@@ -1644,7 +1916,11 @@ class LabelDataUI:
             y += POLY_LIST_ROW_HEIGHT
         if point_rows:
             y += 4 + POLY_LIST_HEADER_HEIGHT
-            for row_id, _label in point_rows[:visible]:
+            for row in range(point_cap):
+                index = self.point_list_scroll + row
+                if index >= len(point_rows):
+                    break
+                row_id, _label = point_rows[index]
                 rect = pygame.Rect(x, y, width, POLY_LIST_ROW_HEIGHT - 2)
                 if rect.collidepoint(pos):
                     point_index = int(row_id.split("-")[1])
@@ -1727,8 +2003,7 @@ class LabelDataUI:
                         self._close_polygon_draft()
                     elif event.key in (pygame.K_DELETE, pygame.K_BACKSPACE):
                         if (
-                            self.data_mode == "processed"
-                            and self.polygon_edit_mode == "select_point"
+                            self.polygon_edit_mode == "select_point"
                             and self.selected_poly_index is not None
                         ):
                             self._delete_selected_vertex()
@@ -1750,10 +2025,8 @@ class LabelDataUI:
                                 )
                             self._rebuild_display()
                     elif event.key == pygame.K_p:
-                        if self.data_mode == "processed" and self.edit_tool == "polygon":
+                        if self.edit_tool == "polygon":
                             self._cycle_polygon_edit_mode()
-                    elif event.key == pygame.K_m:
-                        self._toggle_data_mode()
                     elif event.key == pygame.K_t:
                         self._toggle_edit_tool()
                         self._rebuild_display()
@@ -1793,16 +2066,29 @@ class LabelDataUI:
                             min(self._max_list_scroll(), self.list_scroll - event.y),
                         )
                     elif (
-                        self.data_mode == "processed"
-                        and self.panel_x <= mx < self.panel_x + self.panel_w
+                        self.panel_x <= mx < self.panel_x + self.panel_w
                         and my >= self.polygon_list_y
                     ):
-                        poly_rows, _ = self._polygon_panel_rows()
-                        max_scroll = max(0, len(poly_rows) - self._polygon_list_visible_rows())
-                        self.poly_list_scroll = max(
-                            0,
-                            min(max_scroll, self.poly_list_scroll - event.y),
+                        poly_rows, point_rows = self._polygon_panel_rows()
+                        poly_cap, point_cap = self._polygon_panel_capacities(
+                            len(poly_rows),
+                            len(point_rows),
                         )
+                        if (
+                            self._point_list_hit_rect is not None
+                            and self._point_list_hit_rect.collidepoint(mx, my)
+                        ):
+                            max_scroll = max(0, len(point_rows) - point_cap)
+                            self.point_list_scroll = max(
+                                0,
+                                min(max_scroll, self.point_list_scroll - event.y),
+                            )
+                        else:
+                            max_scroll = max(0, len(poly_rows) - poly_cap)
+                            self.poly_list_scroll = max(
+                                0,
+                                min(max_scroll, self.poly_list_scroll - event.y),
+                            )
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     self._handle_click(event.pos)
                 elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
@@ -1829,14 +2115,27 @@ class LabelDataUI:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manual FPN structure mask labeling UI")
     parser.add_argument("--config", type=Path, default=CONFIG_PATH, help="Config path")
+    parser.add_argument(
+        "--auto",
+        action="store_true",
+        help="Run processed inference and save masks/polygons for all source images (no UI)",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="With --auto, re-run inference even when outputs already exist",
+    )
     args = parser.parse_args()
 
-    pygame.init()
     cfg = load_config(args.config)
     test_images = list_test_images()
     if not test_images:
         raise SystemExit(f"No images found in {TEST_DIR}")
 
+    if args.auto:
+        raise SystemExit(auto_process_all_images(cfg, test_images, skip_existing=not args.force))
+
+    pygame.init()
     print(f"Ready — {len(test_images)} test image(s), dataset root: {DATASET_ROOT}")
     ui = LabelDataUI(cfg, test_images)
     ui.run()

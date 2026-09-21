@@ -9,6 +9,7 @@ from typing import Any, Literal
 import cv2
 import numpy as np
 
+from util.canvas import fit_to_canvas_placement
 from util.mask_clean import morph_erode_dilate
 from util.mask_fit import fit_mask_variants, pick_best_variant
 from util.room_components import component_masks_from_binary
@@ -134,13 +135,18 @@ def _step_canvas_point_to_full(
     *,
     crop_box: tuple[int, int, int, int],
     step_size: int,
+    content_size: tuple[int, int],
 ) -> tuple[int, int]:
-    x0, y0, x1, y1 = crop_box
-    crop_w = max(1, x1 - x0)
-    crop_h = max(1, y1 - y0)
-    full_x = int(round(x0 + x * crop_w / step_size))
-    full_y = int(round(y0 + y * crop_h / step_size))
-    return full_x, full_y
+    x0, y0, _, _ = crop_box
+    content_w, content_h = content_size
+    paste_x, paste_y, fitted_w, fitted_h = fit_to_canvas_placement(
+        content_w,
+        content_h,
+        size=step_size,
+    )
+    rel_x = (x - paste_x) * content_w / fitted_w
+    rel_y = (y - paste_y) * content_h / fitted_h
+    return int(round(x0 + rel_x)), int(round(y0 + rel_y))
 
 
 def transform_polygons_to_full_canvas(
@@ -148,9 +154,19 @@ def transform_polygons_to_full_canvas(
     *,
     crop_box: tuple[int, int, int, int],
     step_size: int,
+    content_size: tuple[int, int],
 ) -> list[PolygonRing]:
     return [
-        [_step_canvas_point_to_full(x, y, crop_box=crop_box, step_size=step_size) for x, y in ring]
+        [
+            _step_canvas_point_to_full(
+                x,
+                y,
+                crop_box=crop_box,
+                step_size=step_size,
+                content_size=content_size,
+            )
+            for x, y in ring
+        ]
         for ring in components
         if len(ring) >= 3
     ]
@@ -162,8 +178,10 @@ def transform_mask_to_full_canvas(
     full_size: int,
     crop_box: tuple[int, int, int, int],
     step_size: int,
+    content_size: tuple[int, int],
 ) -> np.ndarray:
     x0, y0, x1, y1 = crop_box
+    content_w, content_h = content_size
     crop_w = max(1, x1 - x0)
     crop_h = max(1, y1 - y0)
     plane = mask > 0.5
@@ -173,14 +191,65 @@ def transform_mask_to_full_canvas(
             (step_size, step_size),
             interpolation=cv2.INTER_NEAREST,
         ).astype(bool)
+    paste_x, paste_y, fitted_w, fitted_h = fit_to_canvas_placement(
+        content_w,
+        content_h,
+        size=step_size,
+    )
+    content = plane[paste_y : paste_y + fitted_h, paste_x : paste_x + fitted_w]
     resized = cv2.resize(
-        plane.astype(np.uint8),
+        content.astype(np.uint8),
         (crop_w, crop_h),
         interpolation=cv2.INTER_NEAREST,
     ).astype(bool)
     full = np.zeros((full_size, full_size), dtype=bool)
     full[y0 : y0 + crop_h, x0 : x0 + crop_w] = resized
     return full
+
+
+def _full_canvas_point_to_step(
+    x: int,
+    y: int,
+    *,
+    crop_box: tuple[int, int, int, int],
+    step_size: int,
+    content_size: tuple[int, int],
+) -> tuple[int, int]:
+    x0, y0, _, _ = crop_box
+    content_w, content_h = content_size
+    paste_x, paste_y, fitted_w, fitted_h = fit_to_canvas_placement(
+        content_w,
+        content_h,
+        size=step_size,
+    )
+    rel_x = x - x0
+    rel_y = y - y0
+    step_x = paste_x + rel_x * fitted_w / content_w
+    step_y = paste_y + rel_y * fitted_h / content_h
+    return int(round(step_x)), int(round(step_y))
+
+
+def transform_polygons_from_full_canvas(
+    components: list[PolygonRing],
+    *,
+    crop_box: tuple[int, int, int, int],
+    step_size: int,
+    content_size: tuple[int, int],
+) -> list[PolygonRing]:
+    return [
+        [
+            _full_canvas_point_to_step(
+                x,
+                y,
+                crop_box=crop_box,
+                step_size=step_size,
+                content_size=content_size,
+            )
+            for x, y in ring
+        ]
+        for ring in components
+        if len(ring) >= 3
+    ]
 
 
 def load_layer_polygons(path: Path) -> list[PolygonRing]:

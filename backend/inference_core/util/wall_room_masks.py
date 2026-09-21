@@ -11,26 +11,15 @@ from PIL import Image, ImageOps
 from util.room_components import component_masks_from_binary, scale_room_mask
 from util.render import draw_masks
 
-def _mask_at_size(mask: np.ndarray, target_size: int) -> np.ndarray:
-    plane = mask[0].astype(np.float32) if mask.ndim == 3 else mask.astype(np.float32)
-    if plane.shape != (target_size, target_size):
-        plane = cv2.resize(plane, (target_size, target_size), interpolation=cv2.INTER_LINEAR)
-    return plane
-
-
 def _structure_barrier(
-    wall_masks: list[np.ndarray],
+    wall_mask: np.ndarray,
     door_mask: np.ndarray,
     window_mask: np.ndarray,
-    *,
-    size: int,
 ) -> np.ndarray:
-    """Walls (OR'd), door, and window scaled to size, then overlaid."""
-    wall = np.zeros((size, size), dtype=bool)
-    for wall_mask in wall_masks:
-        wall |= _mask_at_size(wall_mask, size) > 0.5
-    door = _mask_at_size(door_mask, size) > 0.5
-    window = _mask_at_size(window_mask, size) > 0.5
+    """Wall, door, and window combined into one barrier mask."""
+    wall = wall_mask > 0.5
+    door = door_mask > 0.5
+    window = window_mask > 0.5
     return (wall | door | window).astype(np.float32)
 
 
@@ -49,14 +38,14 @@ def _region_at_size(region_mask: np.ndarray, target_size: int) -> np.ndarray:
     ).astype(bool)
 
 
-def _filter_components_by_fpn512(
+def _filter_components_by_room_mask(
     wall_components: list[np.ndarray],
-    fpn512_room_mask: np.ndarray,
+    room_mask: np.ndarray,
     *,
     size: int,
     overlap_threshold: float = 0.4,
 ) -> list[np.ndarray]:
-    fpn_binary = scale_room_mask(fpn512_room_mask, size) > 0.5
+    fpn_binary = scale_room_mask(room_mask, size) > 0.5
     fpn_components = component_masks_from_binary(fpn_binary.astype(np.uint8))
     if not fpn_components:
         return []
@@ -85,7 +74,7 @@ def _filter_components_by_fpn512(
 def _room_mask_from_walls(
     structure: np.ndarray,
     region_mask: np.ndarray,
-    fpn512_room_mask: np.ndarray,
+    room_mask: np.ndarray,
     *,
     size: int,
     overlap_threshold: float = 0.4,
@@ -96,9 +85,9 @@ def _room_mask_from_walls(
     rooms = (region & ~barrier).astype(np.uint8)
 
     wall_components = component_masks_from_binary(rooms)
-    kept_components = _filter_components_by_fpn512(
+    kept_components = _filter_components_by_room_mask(
         wall_components,
-        fpn512_room_mask,
+        room_mask,
         size=size,
         overlap_threshold=overlap_threshold,
     )
@@ -106,10 +95,10 @@ def _room_mask_from_walls(
 
 
 def render_wall_room_masks(
-    wall_masks: list[np.ndarray],
+    wall_mask: np.ndarray,
     door_mask: np.ndarray,
     window_mask: np.ndarray,
-    fpn512_room_mask: np.ndarray,
+    room_mask: np.ndarray,
     *,
     region_mask: np.ndarray,
     size: int,
@@ -117,7 +106,7 @@ def render_wall_room_masks(
 ) -> dict[str, Path | list[np.ndarray]]:
     step_dir.mkdir(parents=True, exist_ok=True)
 
-    structure = _structure_barrier(wall_masks, door_mask, window_mask, size=size)
+    structure = _structure_barrier(wall_mask, door_mask, window_mask)
     wall_input = _wall_mask_image(structure)
     input_path = step_dir / f"wall-input-{size}.jpg"
     wall_input.save(input_path, format="JPEG", quality=95)
@@ -125,7 +114,7 @@ def render_wall_room_masks(
     raw_components, kept_components = _room_mask_from_walls(
         structure,
         region_mask,
-        fpn512_room_mask,
+        room_mask,
         size=size,
     )
 
