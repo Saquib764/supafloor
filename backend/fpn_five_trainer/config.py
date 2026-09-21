@@ -40,6 +40,9 @@ class AugmentSettings:
     scale_max: float
     opacity_min: float
     opacity_max: float
+    jpeg_prob: float = 0.2
+    jpeg_quality_min: int = 35
+    jpeg_quality_max: int = 88
 
 
 @dataclass(frozen=True)
@@ -184,11 +187,23 @@ def _load_augment_settings(raw: dict[str, Any] | None) -> AugmentSettings:
             raise ValueError(f"data.augment.{name} ({value}) must be between 0 and 1")
     if opacity_min > opacity_max:
         raise ValueError(f"data.augment opacity range invalid: [{opacity_min}, {opacity_max}]")
+    jpeg_prob = float(aug.get("jpeg_prob", 0.2))
+    jpeg_quality_min = int(aug.get("jpeg_quality_min", 35))
+    jpeg_quality_max = int(aug.get("jpeg_quality_max", 88))
+    if not 0.0 <= jpeg_prob <= 1.0:
+        raise ValueError(f"data.augment.jpeg_prob ({jpeg_prob}) must be between 0 and 1")
+    if not 1 <= jpeg_quality_min <= jpeg_quality_max <= 100:
+        raise ValueError(
+            f"data.augment jpeg quality range invalid: [{jpeg_quality_min}, {jpeg_quality_max}]"
+        )
     return AugmentSettings(
         scale_min=scale_min,
         scale_max=scale_max,
         opacity_min=opacity_min,
         opacity_max=opacity_max,
+        jpeg_prob=jpeg_prob,
+        jpeg_quality_min=jpeg_quality_min,
+        jpeg_quality_max=jpeg_quality_max,
     )
 
 

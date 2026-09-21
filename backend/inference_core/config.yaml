@@ -1,4 +1,4 @@
-canvas_size: 768
+canvas_size: 1000
 hf_cache: ../hf_cache
 
 replicate_token: r8_Hnnnf9EqN0DUijMj7IOKAyfAPsQdJ6I15HdxX
@@ -38,6 +38,16 @@ room_masks:
 
 output: output
 
+label_data:
+  mode: normal  # normal: FPN step-001 only | llm: step-001 + step-003 LLM refinement
+  # input_dir: real_floorplan
+  # output_dir: floorplan-manual-mask
+  # pipeline_output_dir: output/label_data
+  
+  input_dir: test_floorplan
+  output_dir: test_floorplan-manual-mask
+  pipeline_output_dir: output/test_data
+
 fpn:
   size: 768
   checkpoint_latest: fpn_five_trainer/training_session_3_real/last.pt
@@ -50,8 +60,16 @@ fpn:
   floorplan_region:
     close_px: 4
     approx_epsilon: 2.0
+    boundary_approx_epsilon: 1.0
+    boundary_dilate_px: 1
+    min_component_area_ratio: 0.03
   room_components:
     min_area_px: 64
+    approx_epsilon: 0.10
+    opening_approx_epsilon: 1.50
+    bright_vertex_box_radius: 2       # 5×5 sample box (radius 2 → side 5)
+    bright_vertex_threshold: 230      # mean gray above this counts as bright
+    bright_vertex_reject_fraction: 0.8  # drop room polygon when this fraction of vertices are bright
   room_polygon_llm:
     size: 1024
     model: gpt-6-astra

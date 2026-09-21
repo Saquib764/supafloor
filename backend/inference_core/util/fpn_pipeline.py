@@ -17,29 +17,31 @@ from util.floorplan_region import (
     compute_floorplan_region,
     crop_region_bbox,
     region_mask_for_image,
-    save_floorplan_region,
-    save_masked_canvas,
 )
 from util.fpn_five_runtime import FpnFiveRuntime, MaskChannels, prepare_bw
-from util.mask_clean import clean_binary_mask
+from util.mask_clean import clean_binary_mask, close_binary_mask
 from util.room_components import (
+    RoomLabel,
+    contour_polygons_from_components,
+    filter_bright_room_components,
     room_components_from_mask,
     save_all_room_mask_overlays,
+    save_mask_polygon_comparison,
     write_room_counts_markdown,
 )
-from util.final_mask_polygons import polygons_to_mask, save_final_mask_polygons
+from util.room_names_llm import detect_room_names
+from util.final_mask_polygons import (
+    load_layer_polygons,
+    polygons_to_mask,
+    save_final_mask_contour_polygons,
+)
 from util.render import merge_panels
 from util.room_polygon_llm import (
     refine_room_polygons,
     render_room_polygons,
+    save_final_mask_polygon_preview,
     save_room_polygon_outputs,
     scale_image,
-)
-from util.structure_polygons import opening_centerlines_from_masks
-from util.wall_centerlines import (
-    save_hough_lines_image,
-    save_wall_centerline_outputs,
-    wall_skeletons_from_mask,
 )
 from util.wall_room_masks import render_wall_room_masks
 
@@ -144,38 +146,46 @@ def _clean_masks(masks: np.ndarray, cfg: Config) -> np.ndarray:
 
 def _save_final_masks(
     step_dir: Path,
-    masks: np.ndarray,
-    channels: MaskChannels,
     *,
+    size: int,
     min_area_px: int,
+    room_polygons: list[list[tuple[int, int]]],
+    door_polygons: list[list[tuple[int, int]]],
+    window_polygons: list[list[tuple[int, int]]],
+    boundary_polygon: list[tuple[int, int]],
+    wall_approx_epsilon: float,
+    input_image: Image.Image | None = None,
 ) -> dict[str, Path | dict[str, Path]]:
     out_dir = step_dir / "final-masks"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    channel_by_layer = {
-        "background": channels.background,
-        "rooms": channels.rooms,
-        "walls": channels.walls,
-        "doors": channels.doors,
-        "windows": channels.windows,
-    }
-    layer_names = ("background", "room", "wall", "door", "window")
-    channel_keys = ("background", "rooms", "walls", "doors", "windows")
-    masks_by_layer: dict[str, np.ndarray] = {}
-    paths: dict[str, Path | dict[str, Path]] = {}
-    for filename, channel_key in zip(layer_names, channel_keys, strict=True):
-        plane = masks[channel_by_layer[channel_key]] > 0.5
-        path = out_dir / f"{filename}.png"
-        Image.fromarray(plane.astype(np.uint8) * 255, mode="L").save(path)
-        paths[filename] = path
-        if filename != "background":
-            masks_by_layer[filename] = plane
-
-    paths["polygons"] = save_final_mask_polygons(
+    polygon_paths = save_final_mask_contour_polygons(
         out_dir,
-        masks_by_layer,
-        size=plane.shape[0],
+        size=size,
         min_area_px=min_area_px,
+        room_polygons=room_polygons,
+        door_polygons=door_polygons,
+        window_polygons=window_polygons,
+        boundary_polygon=boundary_polygon,
+        wall_approx_epsilon=wall_approx_epsilon,
     )
+    paths: dict[str, Path | dict[str, Path]] = {
+        "background": out_dir / "background.png",
+        "room": out_dir / "room.png",
+        "wall": out_dir / "wall.png",
+        "door": out_dir / "door.png",
+        "window": out_dir / "window.png",
+        "polygons": polygon_paths,
+    }
+    if input_image is not None:
+        _, overlay_path = save_final_mask_polygon_preview(
+            input_image,
+            room_polygons=load_layer_polygons(polygon_paths["room"]),
+            wall_polygons=load_layer_polygons(polygon_paths["wall"]),
+            door_polygons=load_layer_polygons(polygon_paths["door"]),
+            window_polygons=load_layer_polygons(polygon_paths["window"]),
+            out_dir=out_dir,
+            save_input=False,
+        )
+        paths["polygon_overlay"] = overlay_path
     return paths
 
 
@@ -202,13 +212,19 @@ def _write_step_artifacts(
     channels: MaskChannels,
     cfg: Config,
     size: int,
+    room_labels: list[RoomLabel] | None = None,
 ) -> dict[str, object]:
-    min_area_px = max(1, cfg.fpn.room_components.min_area_px)
+    room_cfg = cfg.fpn.room_components
+    min_area_px = max(1, room_cfg.min_area_px)
+    approx_epsilon = room_cfg.approx_epsilon
+    opening_approx_epsilon = room_cfg.opening_approx_epsilon
 
     room_mask = cleaned[channels.rooms]
     wall_mask = cleaned[channels.walls]
     door_mask = cleaned[channels.doors]
     window_mask = cleaned[channels.windows]
+    background_mask = cleaned[channels.background]
+    region = cfg.fpn.floorplan_region
 
     wall_output = render_wall_room_masks(
         wall_mask,
@@ -223,6 +239,32 @@ def _write_step_artifacts(
         component
         for component in wall_output["wall_subtracted_components"]
         if int(component.sum()) >= min_area_px
+    ]
+    wall_components, rejected_background = filter_bright_room_components(
+        wall_components,
+        overlay,
+        approx_epsilon=approx_epsilon,
+        box_radius=room_cfg.bright_vertex_box_radius,
+        bright_threshold=room_cfg.bright_vertex_threshold,
+        reject_fraction=room_cfg.bright_vertex_reject_fraction,
+    )
+    background_plane = background_mask > 0.5
+    if rejected_background.any():
+        background_plane = close_binary_mask(
+            background_plane | rejected_background,
+            close_px=region.close_px,
+        )
+    floorplan_footprint = compute_floorplan_region(
+        background_plane.astype(np.float32),
+        close_px=region.close_px,
+        approx_epsilon=region.boundary_approx_epsilon,
+        dilate_px=region.boundary_dilate_px,
+        min_component_area_ratio=region.min_component_area_ratio,
+    )
+    boundary_polygon = [
+        (int(point[0]), int(point[1]))
+        for point in floorplan_footprint.polygon
+        if len(point) >= 2
     ]
     room_sources: list[tuple[str, list[np.ndarray]]] = [
         (f"Wall-subtract ({size}px)", wall_components),
@@ -245,38 +287,46 @@ def _write_step_artifacts(
         size=size,
         door_mask=door_mask,
         window_mask=window_mask,
+        room_labels=room_labels,
+    )
+    room_contour_polygons = contour_polygons_from_components(
+        wall_components,
+        approx_epsilon=approx_epsilon,
+    )
+    door_components = room_components_from_mask(door_mask, min_area_px=min_area_px)
+    door_contour_polygons = contour_polygons_from_components(
+        door_components,
+        approx_epsilon=opening_approx_epsilon,
+    )
+    window_components = room_components_from_mask(window_mask, min_area_px=min_area_px)
+    window_contour_polygons = contour_polygons_from_components(
+        window_components,
+        approx_epsilon=opening_approx_epsilon,
+    )
+    mask_polygon_comparison_path = save_mask_polygon_comparison(
+        overlay,
+        wall_components,
+        room_polygons=room_contour_polygons,
+        door_polygons=door_contour_polygons,
+        window_polygons=window_contour_polygons,
+        boundary_polygon=boundary_polygon or None,
+        out_path=step_dir / "mask-polygon-comparison.jpg",
+        size=size,
+        door_mask=door_mask,
+        window_mask=window_mask,
+        room_labels=room_labels,
     )
 
-    structure_dir = step_dir / "structure-polygons"
-    opening_centerlines = opening_centerlines_from_masks(
-        door_mask,
-        window_mask,
-        size=size,
-        min_area_px=min_area_px,
-        polyline_epsilon=3.0,
-        polyline_min_length=6.0,
-        polyline_max_spur_len=4,
-    )
-    wall_skeletons = wall_skeletons_from_mask(wall_mask, size=size)
-    wall_centerline_outputs = save_wall_centerline_outputs(
-        overlay,
-        wall_skeletons,
-        structure_dir,
-        size=size,
-        opening_centerlines=opening_centerlines,
-    )
-    hough_lines_path = save_hough_lines_image(
-        overlay,
-        wall_mask,
-        structure_dir,
-        size=size,
-        min_length=5.0,
-    )
     final_masks = _save_final_masks(
         step_dir,
-        cleaned,
-        channels,
+        size=size,
         min_area_px=min_area_px,
+        room_polygons=room_contour_polygons,
+        door_polygons=door_contour_polygons,
+        window_polygons=window_contour_polygons,
+        boundary_polygon=boundary_polygon,
+        wall_approx_epsilon=opening_approx_epsilon,
+        input_image=overlay,
     )
 
     step_dir.mkdir(parents=True, exist_ok=True)
@@ -295,48 +345,80 @@ def _write_step_artifacts(
         "masks_clean": step_dir / "masks-clean.jpg",
         "wall_mask": wall_mask_path,
         "final_masks": final_masks,
+        "mask_polygon_comparison": mask_polygon_comparison_path,
         "rooms": {
             "markdown": rooms_md_path,
             "overlays": room_overlays_path,
             "input": wall_output["input"],
-        },
-        "structure_polygons": {
-            "dir": structure_dir,
-            "hough_lines": hough_lines_path,
-            **wall_centerline_outputs,
         },
         "room_mask": room_mask,
     }
 
 
 def _run_step_001(
-    masked_canvas: Image.Image,
+    overlay: Image.Image,
     *,
+    prepared: Image.Image,
+    masks: np.ndarray,
+    cleaned: np.ndarray,
     floorplan_region_mask: np.ndarray,
     step_dir: Path,
-    runtime: FpnFiveRuntime,
     channels: MaskChannels,
     cfg: Config,
     size: int,
+    log: StepLogFn | None = None,
 ) -> dict[str, object]:
-    prepared, masks, cleaned = _infer_on_canvas(
-        masked_canvas,
-        size=size,
-        runtime=runtime,
-        cfg=cfg,
-    )
+    llm = cfg.fpn.room_polygon_llm
+    room_labels: list[RoomLabel] | None = None
+    room_names_meta: dict[str, object] | None = None
+    if llm.model and llm.openai_api_key:
+        if log is not None:
+            log(f"room names llm → {llm.model} at {llm.size}px")
+        room_names_meta = detect_room_names(
+            overlay,
+            step_dir,
+            llm_size=llm.size,
+            pipeline_size=size,
+            model=llm.model,
+            detail=llm.detail,
+            api_key=llm.openai_api_key,
+            input_cost_per_million_usd=llm.input_cost_per_million_usd,
+            cached_input_cost_per_million_usd=llm.cached_input_cost_per_million_usd,
+            cache_write_cost_per_million_usd=llm.cache_write_cost_per_million_usd,
+            output_cost_per_million_usd=llm.output_cost_per_million_usd,
+            log=log,
+        )
+        room_labels = room_names_meta["rooms"]  # type: ignore[assignment]
+        usage = room_names_meta["usage"]
+        if log is not None and isinstance(usage, dict):
+            log(
+                "room names llm usage → "
+                f"input: {usage.get('input_tokens', 0):,}  "
+                f"output: {usage.get('output_tokens', 0):,}  "
+                f"cost: ${usage.get('cost_usd', 0.0):.4f}"
+            )
+    elif log is not None:
+        log("room names llm → skipped (missing model or OPENAI_API_KEY)")
+
     outputs = _write_step_artifacts(
         step_dir,
         prepared=prepared,
         masks=masks,
         cleaned=cleaned,
-        overlay=masked_canvas,
+        overlay=overlay,
         region_mask=floorplan_region_mask.astype(np.float32),
         channels=channels,
         cfg=cfg,
         size=size,
+        room_labels=room_labels,
     )
     outputs.pop("room_mask")
+    if room_names_meta is not None:
+        outputs["room_names"] = {
+            "json": room_names_meta["json"],
+            "input": room_names_meta["input"],
+            "usage": room_names_meta["usage"],
+        }
     return outputs
 
 
@@ -374,7 +456,6 @@ def _run_step_003(
     input_image: Image.Image,
     room_mask: np.ndarray,
     *,
-    step_two_final_dir: Path,
     step_dir: Path,
     cfg: Config,
     log: StepLogFn,
@@ -391,9 +472,6 @@ def _run_step_003(
         )
 
     step_dir.mkdir(parents=True, exist_ok=True)
-    input_path = step_dir / "input-masked.jpg"
-    input_image.save(input_path, format="JPEG", quality=95)
-    log(f"input → {input_path}")
     log(f"llm model → {llm.model}")
     log(f"llm size → {llm.size}px")
 
@@ -456,7 +534,7 @@ def _run_step_003(
         door_polygons=door_polygons,
         window_polygons=window_polygons,
         floorplan_boundary=floorplan_boundary,
-        step_two_final_dir=step_two_final_dir,
+        wall_approx_epsilon=cfg.fpn.room_components.opening_approx_epsilon,
         input_image=input_image,
     )
 
@@ -483,7 +561,6 @@ def _run_step_003(
 
     return {
         "dir": step_dir,
-        "input_masked": input_path,
         "input_1024": llm_meta["input_1024"],
         "room_mask_1024": llm_meta["room_mask_1024"],
         "floorplan_1024_json": llm_meta["floorplan_1024_json"],
@@ -507,6 +584,7 @@ def run_fpn_pipeline(
     output_dir: Path | None = None,
     canvas_size: int | None = None,
     skip_step_2: bool = False,
+    skip_step_3: bool = False,
 ) -> dict[str, object]:
     size = canvas_size or cfg.fpn.size
     min_area_px = max(1, cfg.fpn.room_components.min_area_px)
@@ -527,39 +605,41 @@ def run_fpn_pipeline(
         log(f"output → {step_one_dir}")
         log(f"canvas → {size}×{size}")
         log(f"skip step-002 → {skip_step_2}")
+        log(f"skip step-003 → {skip_step_3}")
         log(f"checkpoint → {checkpoint_path}")
         log(f"device → {runtime.device}")
 
-        region_masks = runtime.infer(prepare_bw(full_canvas, size))
+        prepared, masks, cleaned = _infer_on_canvas(
+            full_canvas,
+            size=size,
+            runtime=runtime,
+            cfg=cfg,
+        )
         floorplan_region = compute_floorplan_region(
-            region_masks[channels.background],
+            masks[channels.background],
             close_px=region.close_px,
             approx_epsilon=region.approx_epsilon,
+            min_component_area_ratio=region.min_component_area_ratio,
         )
         region_pixels = int(floorplan_region.mask.sum())
         log(
             f"floorplan region → {region_pixels:,} px, "
             f"{len(floorplan_region.polygon)} polygon vertices"
         )
-        region_output = save_floorplan_region(
-            floorplan_region,
-            step_one_dir,
-            size=size,
-        )
-
         region_mask_canvas = region_mask_for_image(floorplan_region.mask, full_canvas.size)
         masked_canvas = apply_region_mask(full_canvas, region_mask_canvas)
-        masked_canvas_path = save_masked_canvas(masked_canvas, step_one_dir)
-        log("fpn inference → region-masked canvas")
 
         step_one_outputs = _run_step_001(
             masked_canvas,
+            prepared=prepared,
+            masks=masks,
+            cleaned=cleaned,
             floorplan_region_mask=floorplan_region.mask,
             step_dir=step_one_dir,
-            runtime=runtime,
             channels=channels,
             cfg=cfg,
             size=size,
+            log=log,
         )
         step_one_room_mask = np.asarray(
             Image.open(step_one_outputs["final_masks"]["room"]).convert("L")
@@ -580,7 +660,6 @@ def run_fpn_pipeline(
             cropped.save(cropped_path, format="JPEG", quality=95)
 
             cropped_canvas = fit_to_canvas_rgb(cropped, size=size)
-            cropped_canvas_path = save_masked_canvas(cropped_canvas, step_two_dir)
             log("fpn inference → cropped canvas")
 
             step_two_outputs = _run_step_002(
@@ -602,30 +681,27 @@ def run_fpn_pipeline(
         room_mask = step_one_room_mask
         step_three_input = full_canvas
 
-    with _step_run("step-003") as log:
-        log(f"output → {step_three_dir}")
-        step_three_outputs = _run_step_003(
-            step_three_input,
-            room_mask,
-            step_two_final_dir=step_one_final_dir,
-            step_dir=step_three_dir,
-            cfg=cfg,
-            log=log,
-            pipeline_size=size,
-        )
+    step_three_outputs: dict[str, object] | None = None
+    if not skip_step_3:
+        with _step_run("step-003") as log:
+            log(f"output → {step_three_dir}")
+            step_three_outputs = _run_step_003(
+                step_three_input,
+                room_mask,
+                step_dir=step_three_dir,
+                cfg=cfg,
+                log=log,
+                pipeline_size=size,
+            )
 
     result: dict[str, object] = {
-        "step-001": {
-            **region_output,
-            **step_one_outputs,
-            "input_masked": masked_canvas_path,
-        },
-        "step-003": step_three_outputs,
+        "step-001": step_one_outputs,
     }
     if step_two_outputs is not None:
         result["step-002"] = {
             **step_two_outputs,
             "input_cropped": step_two_dir / "input-cropped.jpg",
-            "input_masked": step_two_dir / "input-masked.jpg",
         }
+    if step_three_outputs is not None:
+        result["step-003"] = step_three_outputs
     return result

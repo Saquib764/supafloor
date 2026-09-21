@@ -1,0 +1,144 @@
+{
+  "width": 768,
+  "height": 768,
+  "llm_size": 1024,
+  "model": "gpt-6-astra",
+  "rooms": [
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 134,
+        "y": 182
+      }
+    },
+    {
+      "room": "en-suite",
+      "position": {
+        "x": 274,
+        "y": 170
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 435,
+        "y": 173
+      }
+    },
+    {
+      "room": "bedroom 3",
+      "position": {
+        "x": 643,
+        "y": 173
+      }
+    },
+    {
+      "room": "hallway",
+      "position": {
+        "x": 424,
+        "y": 294
+      }
+    },
+    {
+      "room": "bedroom 4",
+      "position": {
+        "x": 122,
+        "y": 409
+      }
+    },
+    {
+      "room": "living room",
+      "position": {
+        "x": 324,
+        "y": 458
+      }
+    },
+    {
+      "room": "bathroom",
+      "position": {
+        "x": 478,
+        "y": 385
+      }
+    },
+    {
+      "room": "kitchen / dining",
+      "position": {
+        "x": 642,
+        "y": 428
+      }
+    }
+  ],
+  "rooms_llm": [
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 178,
+        "y": 242
+      }
+    },
+    {
+      "room": "en-suite",
+      "position": {
+        "x": 365,
+        "y": 226
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 580,
+        "y": 231
+      }
+    },
+    {
+      "room": "bedroom 3",
+      "position": {
+        "x": 857,
+        "y": 231
+      }
+    },
+    {
+      "room": "hallway",
+      "position": {
+        "x": 565,
+        "y": 392
+      }
+    },
+    {
+      "room": "bedroom 4",
+      "position": {
+        "x": 163,
+        "y": 545
+      }
+    },
+    {
+      "room": "living room",
+      "position": {
+        "x": 432,
+        "y": 610
+      }
+    },
+    {
+      "room": "bathroom",
+      "position": {
+        "x": 638,
+        "y": 513
+      }
+    },
+    {
+      "room": "kitchen / dining",
+      "position": {
+        "x": 856,
+        "y": 570
+      }
+    }
+  ],
+  "usage": {
+    "input_tokens": 1509,
+    "cached_tokens": 0,
+    "cache_write_tokens": 1506,
+    "output_tokens": 167,
+    "total_tokens": 1676,
+    "cost_usd": 0.027205
+  }
+}

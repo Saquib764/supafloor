@@ -33,7 +33,7 @@ DEFAULT_PROMPT = (
 
 _ROOT = Path(__file__).resolve().parent
 TEST_DIR = _ROOT / "test_image"
-OUTPUT_DIR = _ROOT / "real_floorplan"
+OUTPUT_DIR = _ROOT / "test_floorplan"
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 LIST_WIDTH = 200

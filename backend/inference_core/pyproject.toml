@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "inference-core"
-version = "0.1.46"
+version = "0.1.55"
 description = "FPN floor plan structure mask inference and labeling tools"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,7 +15,6 @@ dependencies = [
   "openai>=1.60.0",
   "python-dotenv>=1.0.0",
   "opencv-contrib-python-headless>=4.10.0",
-  "scikit-image>=0.24.0",
   "peft>=0.13.0",
   "pillow>=10.4.0",
   "pyyaml>=6.0.2",

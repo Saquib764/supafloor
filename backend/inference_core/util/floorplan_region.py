@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,11 +17,24 @@ class FloorplanRegion:
     polygon: list[list[int]]
 
 
+def _drop_small_components(binary: np.ndarray, *, min_area_px: int) -> np.ndarray:
+    if min_area_px <= 0 or not binary.any():
+        return binary
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    kept = np.zeros_like(binary)
+    for label in range(1, count):
+        if int(stats[label, cv2.CC_STAT_AREA]) >= min_area_px:
+            kept[labels == label] = 1
+    return kept
+
+
 def compute_floorplan_region(
     background: np.ndarray,
     *,
     close_px: int,
     approx_epsilon: float,
+    dilate_px: int = 0,
+    min_component_area_ratio: float = 0.02,
 ) -> FloorplanRegion:
     """ROI = invert background; close holes, keep largest patch, fit polygon."""
     plane = background[0] if background.ndim == 3 else background
@@ -33,10 +45,20 @@ def compute_floorplan_region(
             polygon=[],
         )
 
+    if dilate_px > 0:
+        k = 2 * dilate_px + 1
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+        binary = cv2.dilate(binary, kernel)
+
     if close_px > 0:
         k = 2 * close_px + 1
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+
+    min_area_px = int(min_component_area_ratio * binary.shape[0] * binary.shape[1])
+    binary = _drop_small_components(binary, min_area_px=min_area_px)
+    if not binary.any():
+        return FloorplanRegion(mask=np.zeros_like(binary, dtype=bool), polygon=[])
 
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
@@ -117,37 +139,3 @@ def crop_region_bbox(
     return image.crop(box)
 
 
-def save_masked_canvas(image: Image.Image, out_dir: Path) -> Path:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / "input-masked.jpg"
-    image.save(path, format="JPEG", quality=95)
-    return path
-
-
-def save_floorplan_region(
-    region: FloorplanRegion,
-    out_dir: Path,
-    *,
-    size: int,
-) -> dict[str, Path]:
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    mask = region.mask
-    if mask.shape != (size, size):
-        mask = cv2.resize(mask.astype(np.uint8), (size, size), interpolation=cv2.INTER_NEAREST).astype(bool)
-
-    mask_rgb = np.zeros((size, size, 3), dtype=np.uint8)
-    mask_rgb[mask] = (0, 180, 60)
-    mask_view = Image.fromarray(mask_rgb, mode="RGB")
-
-    mask_path = out_dir / "floorplan-region-mask.jpg"
-    json_path = out_dir / "floorplan-region.json"
-    mask_view.save(mask_path, format="JPEG", quality=95)
-    json_path.write_text(
-        json.dumps({"size": size, "polygon": region.polygon}, indent=2),
-        encoding="utf-8",
-    )
-    return {
-        "mask": mask_path,
-        "json": json_path,
-    }

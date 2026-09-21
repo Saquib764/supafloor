@@ -1,0 +1,102 @@
+{
+  "width": 1000,
+  "height": 1000,
+  "llm_size": 1024,
+  "model": "gpt-6-astra",
+  "rooms": [
+    {
+      "room": "living / dining room",
+      "position": {
+        "x": 392,
+        "y": 315
+      }
+    },
+    {
+      "room": "kitchen",
+      "position": {
+        "x": 646,
+        "y": 308
+      }
+    },
+    {
+      "room": "bathroom",
+      "position": {
+        "x": 344,
+        "y": 479
+      }
+    },
+    {
+      "room": "hall",
+      "position": {
+        "x": 508,
+        "y": 491
+      }
+    },
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 339,
+        "y": 662
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 635,
+        "y": 664
+      }
+    }
+  ],
+  "rooms_llm": [
+    {
+      "room": "living / dining room",
+      "position": {
+        "x": 401,
+        "y": 323
+      }
+    },
+    {
+      "room": "kitchen",
+      "position": {
+        "x": 661,
+        "y": 315
+      }
+    },
+    {
+      "room": "bathroom",
+      "position": {
+        "x": 352,
+        "y": 490
+      }
+    },
+    {
+      "room": "hall",
+      "position": {
+        "x": 520,
+        "y": 503
+      }
+    },
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 347,
+        "y": 678
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 650,
+        "y": 680
+      }
+    }
+  ],
+  "usage": {
+    "input_tokens": 1509,
+    "cached_tokens": 0,
+    "cache_write_tokens": 1506,
+    "output_tokens": 150,
+    "total_tokens": 1659,
+    "cost_usd": 0.026355
+  }
+}

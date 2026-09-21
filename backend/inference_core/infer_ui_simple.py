@@ -4,8 +4,8 @@
 Left panel lists test_image/ files; click to preview the source floor plan.
 Right panel has Run old / Run latest and Clear buttons for the selected image.
 The viewer compares old vs latest checkpoints side by side for wall-subtract
-(per-room colored components on the raw input), wall centerline, and skimage
-skeleton. The background image is never region-masked in the viewer.
+(per-room colored components on the raw input) and fitted mask polygons on the
+step-002 input canvas.
 
 Usage (from backend/inference_core):
 
@@ -30,12 +30,16 @@ from PIL import Image
 
 from config import CONFIG_PATH, load_config
 from util.canvas import fit_to_canvas_rgb
+from util.final_mask_polygons import load_layer_polygons
+from util.room_polygon_llm import render_final_mask_polygon_overlay
 
 DOOR_COLOR = (220, 50, 50)
 WINDOW_COLOR = (64, 255, 64)
 WALL_OVERLAY_COLOR = (0, 100, 0)
+ROOM_POLYGON_COLOR = (255, 200, 80)
 
 LEGEND_ENTRIES: list[tuple[str, tuple[int, int, int]]] = [
+    ("Room polygon", ROOM_POLYGON_COLOR),
     ("Door", DOOR_COLOR),
     ("Window", WINDOW_COLOR),
     ("Wall overlay", WALL_OVERLAY_COLOR),
@@ -50,7 +54,9 @@ PANEL_WIDTH = 220
 LIST_ITEM_HEIGHT = 22
 LIST_HEADER_HEIGHT = 24
 VIEWER_GAP = 8
-DISPLAY_SCALE = 0.28
+VIEWER_ROW_LABEL_HEIGHT = 18
+VIEWER_ROW_COUNT = 2
+VIEWER_HEIGHT_FRACTION = 0.88
 
 SIDE_BG = (28, 28, 28)
 LIST_BG = (22, 22, 22)
@@ -83,6 +89,25 @@ def wall_subtract_overlay_from_jpg(overlays_path: Path, panel_size: int) -> Imag
     return image.crop((panel_size, 0, 2 * panel_size, panel_size))
 
 
+def mask_polygon_overlay_from_step(step_dir: Path, *, component_size: int) -> Image.Image | None:
+    """Load or render step-002 fitted mask polygon overlay on the input canvas."""
+    final_dir = step_dir / "final-masks"
+    overlay_path = final_dir / "polygon-overlay.jpg"
+    if overlay_path.is_file():
+        return Image.open(overlay_path).convert("RGB")
+    input_path = step_dir / "input-cropped.jpg"
+    room_json = final_dir / "room.json"
+    if not input_path.is_file() or not room_json.is_file():
+        return None
+    return render_final_mask_polygon_overlay(
+        fit_to_canvas_rgb(Image.open(input_path), size=component_size),
+        room_polygons=load_layer_polygons(room_json),
+        wall_polygons=load_layer_polygons(final_dir / "wall.json"),
+        door_polygons=load_layer_polygons(final_dir / "door.json"),
+        window_polygons=load_layer_polygons(final_dir / "window.json"),
+    )
+
+
 @dataclass
 class ViewerPanel:
     label: str
@@ -101,35 +126,30 @@ def saved_output_paths(
     *,
     variant: CheckpointVariant,
 ) -> dict[str, Path]:
-    step_dir = output_dir / variant / image_path.stem / "step-003"
-    structure_dir = step_dir / "structure-polygons"
+    step_dir = output_dir / variant / image_path.stem / "step-002"
     return {
         "overlays": step_dir / "room-mask-overlays.jpg",
-        "wall_centerline": structure_dir / "wall-centerline.jpg",
-        "skimage_skeleton": structure_dir / "wall-centerline-skimage-skeleton.jpg",
+        "step_dir": step_dir,
     }
 
 
-def panels_from_source(
-    source: Image.Image,
+def panels_from_paths(
     paths: dict[str, Path],
     *,
     component_size: int,
 ) -> list[ViewerPanel]:
     panels = [
         ViewerPanel("Wall-subtract", None),
-        ViewerPanel("Wall centerline", None),
-        ViewerPanel("Skimage skeleton", None),
+        ViewerPanel("Mask polygons", None),
     ]
     if paths["overlays"].is_file():
         panels[0].image = wall_subtract_overlay_from_jpg(paths["overlays"], component_size)
-    if paths["wall_centerline"].is_file():
-        panels[1].image = Image.open(paths["wall_centerline"]).convert("RGB")
-    else:
-        panels[1].label = "Source"
-        panels[1].image = source
-    if paths["skimage_skeleton"].is_file():
-        panels[2].image = Image.open(paths["skimage_skeleton"]).convert("RGB")
+    polygon_overlay = mask_polygon_overlay_from_step(
+        paths["step_dir"],
+        component_size=component_size,
+    )
+    if polygon_overlay is not None:
+        panels[1].image = polygon_overlay
     return panels
 
 
@@ -138,8 +158,7 @@ def load_result_panels(
     *,
     component_size: int,
 ) -> list[ViewerPanel]:
-    blank = Image.new("RGB", (component_size, component_size), EMPTY_SLOT_BG)
-    return panels_from_source(blank, paths, component_size=component_size)
+    return panels_from_paths(paths, component_size=component_size)
 
 
 def _pil_to_surface(image: Image.Image) -> pygame.Surface:
@@ -147,12 +166,30 @@ def _pil_to_surface(image: Image.Image) -> pygame.Surface:
     return pygame.image.frombuffer(rgb.tobytes(), rgb.size, "RGB").copy()
 
 
-def _scaled_size(image: Image.Image, target_width: int) -> tuple[int, int]:
+def _viewer_max_height() -> int:
+    info = pygame.display.Info()
+    return max(480, int(info.current_h * VIEWER_HEIGHT_FRACTION))
+
+
+def _col_width_for_viewer(component_size: int) -> int:
+    """Pick a column width so all viewer rows fit on screen."""
+    overhead = VIEWER_ROW_COUNT * VIEWER_ROW_LABEL_HEIGHT + (VIEWER_ROW_COUNT - 1) * VIEWER_GAP
+    content_h = max(1, _viewer_max_height() - overhead)
+    col = content_h / VIEWER_ROW_COUNT
+    return max(1, min(int(col), component_size))
+
+
+def _fit_image_to_slot(image: Image.Image, slot_w: int, slot_h: int) -> Image.Image:
     width, height = image.size
-    if width <= 0:
-        return target_width, target_width
-    scale = target_width / width
-    return target_width, max(1, int(height * scale))
+    if width <= 0 or height <= 0:
+        return Image.new("RGB", (slot_w, slot_h), EMPTY_SLOT_BG)
+    scale = min(slot_w / width, slot_h / height)
+    fitted_w = max(1, int(width * scale))
+    fitted_h = max(1, int(height * scale))
+    resized = image.convert("RGB").resize((fitted_w, fitted_h), Image.Resampling.LANCZOS)
+    slot = Image.new("RGB", (slot_w, slot_h), EMPTY_SLOT_BG)
+    slot.paste(resized, ((slot_w - fitted_w) // 2, (slot_h - fitted_h) // 2))
+    return slot
 
 
 @dataclass
@@ -190,7 +227,7 @@ class InferUISimple:
             variant: cfg.fpn.output_dir / variant for variant in ("old", "latest")
         }
         self.component_size = cfg.fpn.size
-        self.col_width = max(1, int(self.component_size * DISPLAY_SCALE))
+        self.col_width = _col_width_for_viewer(self.component_size)
         self.viewer_area_width = self.col_width
         self.list_w = LIST_WIDTH
         self.panel_w = PANEL_WIDTH
@@ -219,10 +256,8 @@ class InferUISimple:
         if hasattr(self, "infer_old_btn"):
             self._layout_buttons()
 
-    def _scale_panel(self, image: Image.Image, width: int) -> tuple[pygame.Surface, int]:
-        surface = _pil_to_surface(image)
-        target_w, target_h = _scaled_size(image, width)
-        return pygame.transform.smoothscale(surface, (target_w, target_h)), target_h
+    def _scale_panel(self, image: Image.Image, slot_w: int, slot_h: int) -> tuple[pygame.Surface, int]:
+        return _pil_to_surface(_fit_image_to_slot(image, slot_w, slot_h)), slot_h
 
     def _empty_slot_surface(self, width: int, height: int) -> pygame.Surface:
         surface = pygame.Surface((width, height))
@@ -233,17 +268,12 @@ class InferUISimple:
     def _slot_surface(
         self,
         image: Image.Image | None,
-        width: int,
-        *,
-        fallback_height: int,
+        slot_w: int,
+        slot_h: int,
     ) -> tuple[pygame.Surface, int]:
         if image is not None:
-            return self._scale_panel(image, width)
-        height = max(1, fallback_height)
-        return self._empty_slot_surface(width, height), height
-
-    def _skimage_row_height(self, full_width: int) -> int:
-        return max(1, int(full_width * self.component_size / (self.component_size * 5)))
+            return self._scale_panel(image, slot_w, slot_h)
+        return self._empty_slot_surface(slot_w, slot_h), slot_h
 
     def _content_height(self) -> int:
         height = 0
@@ -253,7 +283,7 @@ class InferUISimple:
             else:
                 _label, surface, _h = row.panels[0]
                 row_h = surface.get_height()
-            height += 18 + row_h
+            height += VIEWER_ROW_LABEL_HEIGHT + row_h
             if index + 1 < len(self.display_rows):
                 height += VIEWER_GAP
         return max(height, 480)
@@ -267,24 +297,12 @@ class InferUISimple:
         full_width = self.col_width * 2 + VIEWER_GAP
         self.viewer_area_width = full_width
         self.display_rows = []
-        for panel_index, panel_name in enumerate(("Wall-subtract", "Wall centerline", "Skimage skeleton")):
+        for panel_index, panel_name in enumerate(("Wall-subtract", "Mask polygons")):
             old_panel = self.panels_by_variant["old"][panel_index]
             latest_panel = self.panels_by_variant["latest"][panel_index]
-            fallback_height = (
-                self._skimage_row_height(full_width)
-                if panel_name == "Skimage skeleton"
-                else self.col_width
-            )
-            old_surface, old_h = self._slot_surface(
-                old_panel.image,
-                self.col_width,
-                fallback_height=fallback_height,
-            )
-            latest_surface, latest_h = self._slot_surface(
-                latest_panel.image,
-                self.col_width,
-                fallback_height=fallback_height,
-            )
+            slot_w = slot_h = self.col_width
+            old_surface, old_h = self._slot_surface(old_panel.image, slot_w, slot_h)
+            latest_surface, latest_h = self._slot_surface(latest_panel.image, slot_w, slot_h)
             self.display_rows.append(
                 DisplayRow(
                     "pair",
@@ -333,10 +351,8 @@ class InferUISimple:
         return fit_to_canvas_rgb(Image.open(image_path), size=self.cfg.canvas_size)
 
     def _panels_for_path(self, image_path: Path) -> dict[CheckpointVariant, list[ViewerPanel]]:
-        source = self._source_canvas(image_path)
         return {
-            variant: panels_from_source(
-                source,
+            variant: panels_from_paths(
                 self._saved_output_paths(image_path, variant),
                 component_size=self.component_size,
             )
@@ -345,7 +361,11 @@ class InferUISimple:
 
     def _variant_has_outputs(self, image_path: Path, variant: CheckpointVariant) -> bool:
         paths = self._saved_output_paths(image_path, variant)
-        return all(path_entry.is_file() for path_entry in paths.values())
+        return all(
+            path_entry.is_file()
+            for name, path_entry in paths.items()
+            if name != "step_dir"
+        )
 
     def _load_test_image(self, index: int, *, initial: bool = False) -> None:
         path = self.test_images[index]
@@ -402,6 +422,7 @@ class InferUISimple:
                     str(self.checkpoint_by_variant[variant]),
                     "--output-dir",
                     str(self.output_dir_by_variant[variant]),
+                    "--skip-step-3",
                 ],
                 check=True,
                 cwd=str(_ROOT),
@@ -490,7 +511,7 @@ class InferUISimple:
                     self.label_font.render(right_label, True, PANEL_LABEL_COLOR),
                     (self.viewer_x + self.col_width + VIEWER_GAP, y),
                 )
-                y += 18
+                y += VIEWER_ROW_LABEL_HEIGHT
                 self.window.blit(left_surface, (self.viewer_x, y))
                 self.window.blit(
                     right_surface,
@@ -504,7 +525,7 @@ class InferUISimple:
                 self.label_font.render(label, True, PANEL_LABEL_COLOR),
                 (self.viewer_x, y),
             )
-            y += 18
+            y += VIEWER_ROW_LABEL_HEIGHT
             self.window.blit(surface, (self.viewer_x, y))
             y += surface.get_height() + VIEWER_GAP
 

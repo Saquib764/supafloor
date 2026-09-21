@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import colorsys
 import json
 import mimetypes
 from collections.abc import Callable
@@ -15,7 +16,11 @@ from openai import OpenAI
 from PIL import Image, ImageDraw
 from pydantic import BaseModel, ConfigDict, Field
 
-from util.final_mask_polygons import PolygonRing, polygons_to_mask, save_layer_polygons
+from util.final_mask_polygons import (
+    PolygonRing,
+    load_layer_polygons,
+    save_final_mask_contour_polygons,
+)
 from util.render import floorplan_view, merge_panels, with_label
 from util.room_components import room_components_from_mask
 
@@ -473,26 +478,51 @@ def render_room_polygons(
     svg_path.write_text(svg, encoding="utf-8")
 
 
-_PREVIEW_ROOM_COLORS: tuple[tuple[int, int, int], ...] = (
-    (255, 200, 80),
-    (80, 220, 140),
-    (255, 120, 180),
-    (120, 180, 255),
-    (200, 160, 255),
-    (255, 160, 120),
-    (140, 255, 200),
-    (255, 220, 100),
-)
 _PREVIEW_ALPHA = 120
+
+
+def _room_preview_color(index: int) -> tuple[int, int, int]:
+    hue = (index * 0.61803398875) % 1.0
+    red, green, blue = colorsys.hsv_to_rgb(hue, 0.62, 0.92)
+    return int(red * 255), int(green * 255), int(blue * 255)
+
+
+def render_final_mask_polygon_overlay(
+    input_image: Image.Image,
+    *,
+    room_polygons: list[PolygonRing],
+    wall_polygons: list[PolygonRing] | None = None,
+    door_polygons: list[PolygonRing],
+    window_polygons: list[PolygonRing],
+) -> Image.Image:
+    """Return input with translucent room/wall/door/window polygon overlays."""
+    base = input_image.convert("RGBA")
+    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay, "RGBA")
+    for index, polygon in enumerate(room_polygons):
+        if len(polygon) < 3:
+            continue
+        rgb = _room_preview_color(index)
+        draw.polygon(polygon, fill=(*rgb, _PREVIEW_ALPHA), outline=(*rgb, 220))
+    for polygon in wall_polygons or []:
+        if len(polygon) >= 3:
+            draw.polygon(polygon, fill=(0, 100, 0, _PREVIEW_ALPHA), outline=(0, 80, 0, 220))
+    for polygon in door_polygons:
+        if len(polygon) >= 3:
+            draw.polygon(polygon, fill=(80, 220, 80, _PREVIEW_ALPHA), outline=(40, 180, 40, 220))
+    for polygon in window_polygons:
+        if len(polygon) >= 3:
+            draw.polygon(polygon, fill=(80, 160, 255, _PREVIEW_ALPHA), outline=(40, 120, 220, 220))
+    return Image.alpha_composite(base, overlay).convert("RGB")
 
 
 def save_final_mask_polygon_preview(
     input_image: Image.Image,
     *,
     room_polygons: list[PolygonRing],
+    wall_polygons: list[PolygonRing] | None = None,
     door_polygons: list[PolygonRing],
     window_polygons: list[PolygonRing],
-    floorplan_boundary: PolygonRing | None,
     out_dir: Path,
     save_input: bool = True,
 ) -> tuple[Path | None, Path]:
@@ -503,33 +533,14 @@ def save_final_mask_polygon_preview(
         input_path = out_dir / "input.jpg"
         input_image.convert("RGB").save(input_path, format="JPEG", quality=95)
 
-    base = input_image.convert("RGBA")
-    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay, "RGBA")
-    if floorplan_boundary and len(floorplan_boundary) >= 3:
-        draw.polygon(
-            floorplan_boundary,
-            fill=(180, 180, 255, 50),
-            outline=(140, 140, 220, 180),
-        )
-    for index, polygon in enumerate(room_polygons):
-        if len(polygon) < 3:
-            continue
-        rgb = _PREVIEW_ROOM_COLORS[index % len(_PREVIEW_ROOM_COLORS)]
-        draw.polygon(polygon, fill=(*rgb, _PREVIEW_ALPHA), outline=(*rgb, 220))
-    for polygon in door_polygons:
-        if len(polygon) >= 3:
-            draw.polygon(polygon, fill=(80, 220, 80, _PREVIEW_ALPHA), outline=(40, 180, 40, 220))
-    for polygon in window_polygons:
-        if len(polygon) >= 3:
-            draw.polygon(polygon, fill=(80, 160, 255, _PREVIEW_ALPHA), outline=(40, 120, 220, 220))
-
     overlay_path = out_dir / "polygon-overlay.jpg"
-    Image.alpha_composite(base, overlay).convert("RGB").save(
-        overlay_path,
-        format="JPEG",
-        quality=95,
-    )
+    render_final_mask_polygon_overlay(
+        input_image,
+        room_polygons=room_polygons,
+        wall_polygons=wall_polygons,
+        door_polygons=door_polygons,
+        window_polygons=window_polygons,
+    ).save(overlay_path, format="JPEG", quality=95)
     return input_path, overlay_path
 
 
@@ -542,91 +553,38 @@ def save_room_polygon_outputs(
     door_polygons: list[PolygonRing],
     window_polygons: list[PolygonRing],
     floorplan_boundary: PolygonRing,
-    step_two_final_dir: Path,
+    wall_approx_epsilon: float,
     input_image: Image.Image | None = None,
 ) -> dict[str, Path | dict[str, Path]]:
     final_dir = step_dir / "final-masks"
-    final_dir.mkdir(parents=True, exist_ok=True)
-
-    preview_paths: tuple[Path, Path] | None = None
-    if input_image is not None:
-        preview_paths = save_final_mask_polygon_preview(
-            input_image,
-            room_polygons=room_polygons,
-            door_polygons=door_polygons,
-            window_polygons=window_polygons,
-            floorplan_boundary=floorplan_boundary,
-            out_dir=final_dir,
-        )
-
-    room_plane = polygons_to_mask(room_polygons, pipeline_size)
-    Image.fromarray(room_plane.astype(np.uint8) * 255, mode="L").save(final_dir / "room.png")
-    room_json = save_layer_polygons(
-        final_dir / "room.json",
-        "room",
-        room_polygons,
+    polygon_paths = save_final_mask_contour_polygons(
+        final_dir,
         size=pipeline_size,
         min_area_px=min_area_px,
+        room_polygons=room_polygons,
+        door_polygons=door_polygons,
+        window_polygons=window_polygons,
+        boundary_polygon=floorplan_boundary,
+        wall_approx_epsilon=wall_approx_epsilon,
     )
-
-    door_plane = polygons_to_mask(door_polygons, pipeline_size)
-    Image.fromarray(door_plane.astype(np.uint8) * 255, mode="L").save(final_dir / "door.png")
-    door_json = save_layer_polygons(
-        final_dir / "door.json",
-        "door",
-        door_polygons,
-        size=pipeline_size,
-        min_area_px=min_area_px,
-    )
-
-    window_plane = polygons_to_mask(window_polygons, pipeline_size)
-    Image.fromarray(window_plane.astype(np.uint8) * 255, mode="L").save(final_dir / "window.png")
-    window_json = save_layer_polygons(
-        final_dir / "window.json",
-        "window",
-        window_polygons,
-        size=pipeline_size,
-        min_area_px=min_area_px,
-    )
-
-    background_plane = polygons_to_mask([floorplan_boundary], pipeline_size)
-    Image.fromarray(background_plane.astype(np.uint8) * 255, mode="L").save(
-        final_dir / "background.png"
-    )
-    background_json = save_layer_polygons(
-        final_dir / "background.json",
-        "room",
-        [floorplan_boundary],
-        size=pipeline_size,
-        min_area_px=min_area_px,
-    )
-
     paths: dict[str, Path | dict[str, Path]] = {
+        "background": final_dir / "background.png",
         "room": final_dir / "room.png",
+        "wall": final_dir / "wall.png",
         "door": final_dir / "door.png",
         "window": final_dir / "window.png",
-        "background": final_dir / "background.png",
+        "polygons": polygon_paths,
     }
-    polygon_paths: dict[str, Path] = {
-        "room": room_json,
-        "door": door_json,
-        "window": window_json,
-        "background": background_json,
-    }
-
-    wall_source = step_two_final_dir / "wall.png"
-    if wall_source.is_file():
-        target = final_dir / "wall.png"
-        target.write_bytes(wall_source.read_bytes())
-        paths["wall"] = target
-    wall_json_source = step_two_final_dir / "wall.json"
-    if wall_json_source.is_file():
-        target_json = final_dir / "wall.json"
-        target_json.write_bytes(wall_json_source.read_bytes())
-        polygon_paths["wall"] = target_json
-
-    paths["polygons"] = polygon_paths
-    if preview_paths is not None:
-        paths["input"] = preview_paths[0]
-        paths["polygon_overlay"] = preview_paths[1]
+    if input_image is not None:
+        _, overlay_path = save_final_mask_polygon_preview(
+            input_image,
+            room_polygons=room_polygons,
+            wall_polygons=load_layer_polygons(polygon_paths["wall"]),
+            door_polygons=door_polygons,
+            window_polygons=window_polygons,
+            out_dir=final_dir,
+            save_input=True,
+        )
+        paths["input"] = final_dir / "input.jpg"
+        paths["polygon_overlay"] = overlay_path
     return paths

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import random
 from dataclasses import dataclass
 from queue import Empty, Queue
@@ -125,6 +126,23 @@ def apply_opacity(gray: np.ndarray, opacity: float) -> np.ndarray:
     return np.clip(gray.astype(np.float32) * clipped, 0.0, 255.0).astype(np.uint8)
 
 
+def apply_jpeg_artifacts(
+    gray: np.ndarray,
+    *,
+    rng: random.Random,
+    prob: float,
+    quality_min: int,
+    quality_max: int,
+) -> np.ndarray:
+    if rng.random() >= prob:
+        return gray
+    quality = rng.randint(quality_min, quality_max)
+    buffer = io.BytesIO()
+    Image.fromarray(gray, mode="L").save(buffer, format="JPEG", quality=quality)
+    buffer.seek(0)
+    return np.asarray(Image.open(buffer).convert("L"), dtype=np.uint8)
+
+
 def augment_sample(
     image: Image.Image | np.ndarray,
     masks: np.ndarray,
@@ -151,7 +169,15 @@ def augment_sample(
         scale,
         background_channel=background_channel,
     )
-    return apply_opacity(scaled_gray, opacity), scaled_masks
+    gray = apply_opacity(scaled_gray, opacity)
+    gray = apply_jpeg_artifacts(
+        gray,
+        rng=rng,
+        prob=augment.jpeg_prob,
+        quality_min=augment.jpeg_quality_min,
+        quality_max=augment.jpeg_quality_max,
+    )
+    return gray, scaled_masks
 
 
 def _select_hub_columns(dataset: Any, columns: tuple[str, ...]) -> Any:

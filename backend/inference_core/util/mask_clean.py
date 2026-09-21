@@ -39,6 +39,16 @@ def clean_binary_mask(
     return binary.astype(bool)
 
 
+def close_binary_mask(mask: np.ndarray, *, close_px: int) -> np.ndarray:
+    """Morphological close on a binary mask."""
+    binary = np.asarray(mask, dtype=bool).astype(np.uint8)
+    if close_px <= 0 or not binary.any():
+        return binary.astype(bool)
+    k = 2 * close_px + 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+    return cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel).astype(bool)
+
+
 def morph_erode_dilate(mask: np.ndarray, px: int) -> np.ndarray:
     """Erode then dilate — smooths boundary before polygon fitting."""
     if px <= 0:

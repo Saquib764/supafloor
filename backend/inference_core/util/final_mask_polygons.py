@@ -8,23 +8,18 @@ from typing import Any, Literal
 
 import cv2
 import numpy as np
+from PIL import Image
 
 from util.canvas import fit_to_canvas_placement
 from util.mask_clean import morph_erode_dilate
 from util.mask_fit import fit_mask_variants, pick_best_variant
-from util.room_components import component_masks_from_binary
+from util.room_components import (
+    component_masks_from_binary,
+    contour_polygons_from_components,
+)
 
 PolygonRing = list[tuple[int, int]]
-OpeningLayer = Literal["door", "window"]
 StructureLayer = Literal["room", "wall", "door", "window"]
-
-
-def _component_contour(mask: np.ndarray) -> np.ndarray | None:
-    binary = np.asarray(mask, dtype=bool).astype(np.uint8) * 255
-    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return None
-    return max(contours, key=cv2.contourArea)
 
 
 def _fit_room_polygon(
@@ -88,25 +83,39 @@ def _fit_wall_polygon(
     }
 
 
-def _fit_opening_rectangle(mask: np.ndarray) -> dict[str, Any] | None:
-    contour = _component_contour(mask)
-    if contour is None or len(contour) < 3:
-        return None
-    rect = cv2.minAreaRect(contour)
-    center_x, center_y = rect[0]
-    rect_w, rect_h = rect[1]
-    angle_deg = rect[2]
-    corners = [
-        [int(round(x)), int(round(y))]
-        for x, y in cv2.boxPoints(rect)
-    ]
-    return {
-        "center": [round(center_x, 2), round(center_y, 2)],
-        "width": round(float(rect_w), 2),
-        "height": round(float(rect_h), 2),
-        "angle_deg": round(float(angle_deg), 2),
-        "corners": corners,
-    }
+def compute_wall_mask_from_boundary_and_rooms(
+    boundary_polygons: list[PolygonRing],
+    room_polygons: list[PolygonRing],
+    *,
+    size: int,
+) -> np.ndarray:
+    """Wall = floorplan interior with room interiors cut out."""
+    mask = np.zeros((size, size), dtype=bool)
+    if boundary_polygons:
+        boundary_fill = polygons_to_mask(boundary_polygons, size)
+        mask[boundary_fill] = True
+    if room_polygons:
+        room_fill = polygons_to_mask(room_polygons, size)
+        mask[room_fill] = False
+    return mask
+
+
+def compute_wall_polygons_from_boundary_and_rooms(
+    boundary_polygons: list[PolygonRing],
+    room_polygons: list[PolygonRing],
+    *,
+    size: int,
+    min_area_px: int,
+    approx_epsilon: float,
+) -> list[PolygonRing]:
+    wall_mask = compute_wall_mask_from_boundary_and_rooms(
+        boundary_polygons,
+        room_polygons,
+        size=size,
+    )
+    components = component_masks_from_binary(wall_mask.astype(np.uint8))
+    kept = [component for component in components if int(component.sum()) >= min_area_px]
+    return contour_polygons_from_components(kept, approx_epsilon=approx_epsilon)
 
 
 def _filtered_components(mask: np.ndarray, *, min_area_px: int) -> list[np.ndarray]:
@@ -275,26 +284,6 @@ def polygons_to_mask(components: list[PolygonRing], size: int) -> np.ndarray:
     return mask
 
 
-def _opening_entry(index: int, polygon: PolygonRing) -> dict[str, Any]:
-    contour = np.array(polygon, dtype=np.int32).reshape(-1, 1, 2)
-    rect = cv2.minAreaRect(contour)
-    center_x, center_y = rect[0]
-    rect_w, rect_h = rect[1]
-    corners = [
-        [int(round(x)), int(round(y))]
-        for x, y in cv2.boxPoints(rect)
-    ]
-    return {
-        "index": index,
-        "area_px": int(max(cv2.contourArea(contour), 1.0)),
-        "center": [round(center_x, 2), round(center_y, 2)],
-        "width": round(float(rect_w), 2),
-        "height": round(float(rect_h), 2),
-        "angle_deg": round(float(rect[2]), 2),
-        "corners": corners,
-    }
-
-
 def save_layer_polygons(
     path: Path,
     layer: StructureLayer,
@@ -307,18 +296,14 @@ def save_layer_polygons(
     for index, polygon in enumerate(components):
         if len(polygon) < 3:
             continue
-        if layer in ("door", "window"):
-            entries.append(_opening_entry(index, polygon))
-            continue
         fill = np.zeros((size, size), dtype=np.uint8)
         cv2.fillPoly(fill, [np.array(polygon, dtype=np.int32)], 1)
         entry: dict[str, Any] = {
             "index": index,
             "area_px": int(fill.sum()),
             "polygon": [[x, y] for x, y in polygon],
+            "sides": len(polygon),
         }
-        if layer in ("room", "wall"):
-            entry["sides"] = len(polygon)
         entries.append(entry)
     return _write_layer_json(
         path,
@@ -334,6 +319,7 @@ def fit_polygons_from_mask(
     min_area_px: int,
     min_sides: int = 4,
     max_sides: int = 15,
+    opening_approx_epsilon: float = 2.0,
 ) -> list[PolygonRing]:
     components: list[PolygonRing] = []
     for component in _filtered_components(mask, min_area_px=min_area_px):
@@ -358,93 +344,96 @@ def fit_polygons_from_mask(
             )
             if fit is not None:
                 polygon = [(point[0], point[1]) for point in fit["polygon"]]
-        else:
-            rect = _fit_opening_rectangle(component)
-            if rect is not None:
-                polygon = [(point[0], point[1]) for point in rect["corners"]]
+        elif layer in ("door", "window"):
+            polys = contour_polygons_from_components(
+                [component],
+                approx_epsilon=opening_approx_epsilon,
+            )
+            if polys:
+                polygon = polys[0]
         if polygon is not None and len(polygon) >= 3:
             components.append(polygon)
     return components
 
 
-def save_final_mask_polygons(
+def save_final_mask_contour_polygons(
     out_dir: Path,
-    masks_by_layer: dict[str, np.ndarray],
     *,
     size: int,
     min_area_px: int,
-    min_sides: int = 4,
-    max_sides: int = 15,
+    room_polygons: list[PolygonRing],
+    door_polygons: list[PolygonRing],
+    window_polygons: list[PolygonRing],
+    boundary_polygon: PolygonRing,
+    wall_approx_epsilon: float,
 ) -> dict[str, Path]:
-    """Write room/wall/door/window polygon JSON files into out_dir."""
+    """Write contour room/door/window polygons and boundary-derived wall into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    paths: dict[str, Path] = {}
-
-    room_components = _filtered_components(masks_by_layer["room"], min_area_px=min_area_px)
-    room_entries: list[dict[str, Any]] = []
-    for index, component in enumerate(room_components):
-        fit = _fit_room_polygon(
-            component,
-            width=size,
-            height=size,
-            min_sides=min_sides,
-            max_sides=max_sides,
-        )
-        if fit is None:
-            continue
-        room_entries.append(
-            {
-                "index": index,
-                "area_px": int(component.sum()),
-                **fit,
-            }
-        )
-    paths["room"] = _write_layer_json(
-        out_dir / "room.json",
-        {"size": size, "min_area_px": min_area_px, "components": room_entries},
+    boundary = boundary_polygon if len(boundary_polygon) >= 3 else []
+    wall_polygons = compute_wall_polygons_from_boundary_and_rooms(
+        [boundary] if boundary else [],
+        room_polygons,
+        size=size,
+        min_area_px=min_area_px,
+        approx_epsilon=wall_approx_epsilon,
     )
 
-    wall_components = _filtered_components(masks_by_layer["wall"], min_area_px=min_area_px)
-    wall_entries: list[dict[str, Any]] = []
-    for index, component in enumerate(wall_components):
-        fit = _fit_wall_polygon(
-            component,
-            width=size,
-            height=size,
-            min_sides=min_sides,
-            max_sides=max_sides,
-        )
-        if fit is None:
-            continue
-        wall_entries.append(
-            {
-                "index": index,
-                "area_px": int(component.sum()),
-                **fit,
-            }
-        )
-    paths["wall"] = _write_layer_json(
-        out_dir / "wall.json",
-        {"size": size, "min_area_px": min_area_px, "components": wall_entries},
+    background_plane = polygons_to_mask([boundary], size) if boundary else np.zeros((size, size), dtype=bool)
+    Image.fromarray(background_plane.astype(np.uint8) * 255, mode="L").save(out_dir / "background.png")
+    Image.fromarray(polygons_to_mask(room_polygons, size).astype(np.uint8) * 255, mode="L").save(
+        out_dir / "room.png"
+    )
+    Image.fromarray(
+        compute_wall_mask_from_boundary_and_rooms(
+            [boundary] if boundary else [],
+            room_polygons,
+            size=size,
+        ).astype(np.uint8)
+        * 255,
+        mode="L",
+    ).save(out_dir / "wall.png")
+    Image.fromarray(polygons_to_mask(door_polygons, size).astype(np.uint8) * 255, mode="L").save(
+        out_dir / "door.png"
+    )
+    Image.fromarray(polygons_to_mask(window_polygons, size).astype(np.uint8) * 255, mode="L").save(
+        out_dir / "window.png"
     )
 
-    for layer in ("door", "window"):
-        components = _filtered_components(masks_by_layer[layer], min_area_px=min_area_px)
-        entries: list[dict[str, Any]] = []
-        for index, component in enumerate(components):
-            rect = _fit_opening_rectangle(component)
-            if rect is None:
-                continue
-            entries.append(
-                {
-                    "index": index,
-                    "area_px": int(component.sum()),
-                    **rect,
-                }
-            )
-        paths[layer] = _write_layer_json(
-            out_dir / f"{layer}.json",
-            {"size": size, "min_area_px": min_area_px, "components": entries},
-        )
-
+    paths = {
+        "room": save_layer_polygons(
+            out_dir / "room.json",
+            "room",
+            room_polygons,
+            size=size,
+            min_area_px=min_area_px,
+        ),
+        "wall": save_layer_polygons(
+            out_dir / "wall.json",
+            "wall",
+            wall_polygons,
+            size=size,
+            min_area_px=min_area_px,
+        ),
+        "door": save_layer_polygons(
+            out_dir / "door.json",
+            "door",
+            door_polygons,
+            size=size,
+            min_area_px=min_area_px,
+        ),
+        "window": save_layer_polygons(
+            out_dir / "window.json",
+            "window",
+            window_polygons,
+            size=size,
+            min_area_px=min_area_px,
+        ),
+        "background": save_layer_polygons(
+            out_dir / "background.json",
+            "room",
+            [boundary] if boundary else [],
+            size=size,
+            min_area_px=min_area_px,
+        ),
+    }
     return paths

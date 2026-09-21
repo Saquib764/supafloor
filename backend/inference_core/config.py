@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import yaml
 from dotenv import load_dotenv
@@ -25,11 +25,19 @@ class FpnMaskCleanSettings:
 class FpnFloorplanRegionSettings:
     close_px: int
     approx_epsilon: float
+    boundary_approx_epsilon: float
+    boundary_dilate_px: int
+    min_component_area_ratio: float
 
 
 @dataclass(frozen=True)
 class FpnRoomComponentsSettings:
     min_area_px: int
+    approx_epsilon: float
+    opening_approx_epsilon: float
+    bright_vertex_box_radius: int
+    bright_vertex_threshold: float
+    bright_vertex_reject_fraction: float
 
 
 @dataclass(frozen=True)
@@ -83,6 +91,17 @@ class ImageEditSettings:
     prompts: ImageEditPrompts
 
 
+LabelDataMode = Literal["normal", "llm"]
+
+
+@dataclass(frozen=True)
+class LabelDataSettings:
+    mode: LabelDataMode
+    input_dir: Path
+    output_dir: Path
+    pipeline_output_dir: Path
+
+
 @dataclass(frozen=True)
 class Config:
     canvas_size: int
@@ -91,6 +110,7 @@ class Config:
     image_edit: ImageEditSettings
     room_masks: RoomMaskSettings
     fpn: FpnSettings
+    label_data: LabelDataSettings
     output: Path
 
 
@@ -129,9 +149,14 @@ def load_config(path: Path | None = None) -> Config:
     image_edit = raw.get("image_edit") or {}
     room_masks = raw.get("room_masks") or {}
     fpn = raw.get("fpn") or {}
+    label_data = raw.get("label_data") or {}
     prompts = image_edit.get("prompts") or {}
     inference_root = _find_inference_core_root()
+    repo_root = inference_root.parents[1]
     replicate_token = os.environ.get("REPLICATE_API_TOKEN") or str(raw.get("replicate_token") or "")
+    mode = str(label_data.get("mode", "normal"))
+    if mode not in ("normal", "llm"):
+        raise ValueError(f"label_data.mode must be 'normal' or 'llm', got {mode!r}")
     return Config(
         canvas_size=int(raw["canvas_size"]),
         hf_cache=_resolve(Path(raw["hf_cache"]), backend_root),
@@ -222,9 +247,23 @@ def load_config(path: Path | None = None) -> Config:
             floorplan_region=FpnFloorplanRegionSettings(
                 close_px=int((fpn.get("floorplan_region") or {}).get("close_px", 4)),
                 approx_epsilon=float((fpn.get("floorplan_region") or {}).get("approx_epsilon", 2.0)),
+                boundary_approx_epsilon=float(
+                    (fpn.get("floorplan_region") or {}).get("boundary_approx_epsilon", 8.0)
+                ),
+                boundary_dilate_px=int(
+                    (fpn.get("floorplan_region") or {}).get("boundary_dilate_px", 2)
+                ),
+                min_component_area_ratio=float(
+                    (fpn.get("floorplan_region") or {}).get("min_component_area_ratio", 0.02)
+                ),
             ),
             room_components=FpnRoomComponentsSettings(
-                min_area_px=int((fpn.get("room_components") or {}).get("min_area_px", 64)),
+                min_area_px=int((rc := fpn.get("room_components") or {}).get("min_area_px", 64)),
+                approx_epsilon=float(rc.get("approx_epsilon", 2.0)),
+                opening_approx_epsilon=float(rc.get("opening_approx_epsilon", 2.0)),
+                bright_vertex_box_radius=int(rc.get("bright_vertex_box_radius", 2)),
+                bright_vertex_threshold=float(rc.get("bright_vertex_threshold", 200.0)),
+                bright_vertex_reject_fraction=float(rc.get("bright_vertex_reject_fraction", 0.6)),
             ),
             room_polygon_llm=FpnRoomPolygonLlmSettings(
                 size=int((rpl := fpn.get("room_polygon_llm") or {}).get("size", 1024)),
@@ -239,6 +278,21 @@ def load_config(path: Path | None = None) -> Config:
                     rpl.get("cache_write_cost_per_million_usd", 12.5)
                 ),
                 output_cost_per_million_usd=float(rpl.get("output_cost_per_million_usd", 50.0)),
+            ),
+        ),
+        label_data=LabelDataSettings(
+            mode=cast(LabelDataMode, mode),
+            input_dir=_resolve(
+                Path(label_data.get("input_dir", "real_floorplan")),
+                inference_root,
+            ),
+            output_dir=_resolve(
+                Path(label_data.get("output_dir", "floorplan-manual-mask")),
+                repo_root,
+            ),
+            pipeline_output_dir=_resolve(
+                Path(label_data.get("pipeline_output_dir", "output/label_data")),
+                inference_root,
             ),
         ),
         output=_resolve(
