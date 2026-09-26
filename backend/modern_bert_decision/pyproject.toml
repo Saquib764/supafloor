@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "modern-bert-decision"
+version = "0.1.01"
+description = "ModernBERT encoder + shared linear head for multi-option decision scoring"
+requires-python = ">=3.11"
+dependencies = [
+  "dataset-manager",
+  "datasets>=3.0.0",
+  "huggingface_hub>=0.26.0",
+  "pyyaml>=6.0.2",
+  "safetensors>=0.4.0",
+  "torch>=2.4.0",
+  "tqdm>=4.66.0",
+  "transformers>=4.48.0",
+]
+
+[tool.uv.sources]
+dataset-manager = { path = "../../dataset_manager", editable = true }
+
+[project.scripts]
+modern-bert-decision = "decision_cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["model"]
+
+[tool.hatch.build.targets.editable]
+dev-mode-dirs = ["."]
+
+[tool.hatch.build.targets.wheel.force-include]
+"decision_cli.py" = "decision_cli.py"
+"config.py" = "config.py"
+"config.yaml" = "config.yaml"
+"device.py" = "device.py"
+"formatting.py" = "formatting.py"
+"checkpoint.py" = "checkpoint.py"
+"infer.py" = "infer.py"
+"preview.py" = "preview.py"
+"verify.py" = "verify.py"
+"data.py" = "data.py"
+"train.py" = "train.py"
+
+[tool.uv]
+package = true

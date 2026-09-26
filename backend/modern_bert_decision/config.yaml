@@ -1,0 +1,46 @@
+# ModernBERT multi-option decision model (encoder + shared scoring head)
+
+hf_cache: ../hf_cache
+pretrained_name: answerdotai/ModernBERT-base
+
+model:
+  # false: train marker embeddings + score head only (default)
+  # true:  fine-tune full pretrained encoder (all layers + vocab rows)
+  train_pretrained_encoder: false
+
+data:
+  dataset: race
+  source: local  # auto | local | hub — local reads race-data/*.jsonl (see download-data)
+  race_subset: all  # all | middle | high (Hub ehovy/race configs)
+  train_split: train
+  val_split: validation
+  seed: 42
+  num_workers: 0
+  # Training only: randomly drop options (keep ≥2); if gold is dropped → none_of_these_option
+  option_subset_prob: 0.5
+  none_of_these_option: "None of these"
+
+marker_tokens:
+  state: "[STATE]"
+  question: "[QUESTION]"
+  option: "[OPTION]"
+
+train:
+  session_dir: training_session
+  epochs: 10
+  batch_size: 2
+  grad_accum: 1
+  learning_rate: 2.0e-3
+  warmup_ratio: 0.05
+  weight_decay: 0.01
+  bf16: false
+  init_checkpoint: null
+  resume: true
+  save_steps: 500
+  # false: periodic saves are light (~few MB: head + marker rows + tokenizer)
+  # true: also write full encoder (~600MB) when saving (needs disk space)
+  save_full_encoder: false
+  max_grad_norm: 1.0
+
+infer:
+  checkpoint: training_session/last

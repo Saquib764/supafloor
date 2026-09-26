@@ -38,6 +38,9 @@ room_masks:
 
 output: output
 
+eval_ui:
+  llm_extract: true  # show LLM extract button, viewer, and comparison columns in infer_ui_eval
+
 label_data:
   mode: normal  # normal: FPN step-001 only | llm: step-001 + step-003 LLM refinement
   # input_dir: real_floorplan
@@ -70,7 +73,24 @@ fpn:
     bright_vertex_box_radius: 2       # 5×5 sample box (radius 2 → side 5)
     bright_vertex_threshold: 230      # mean gray above this counts as bright
     bright_vertex_reject_fraction: 0.8  # drop room polygon when this fraction of vertices are bright
-  room_polygon_llm:
+  room_names:  # step-001 room label detection
+    backend: paddle  # llm | paddle
+    size: 1024
+  room_names_llm:  # used when room_names.backend=llm
+    model: gpt-5.2
+    detail: high
+    input_cost_per_million_usd: 1.75
+    cached_input_cost_per_million_usd: 0.175
+    cache_write_cost_per_million_usd: 2.1875
+    output_cost_per_million_usd: 14.0
+  room_names_paddle:  # used when room_names.backend=paddle
+    lang: en
+    use_angle_cls: false
+    det_limit_side_len: 1024
+    min_confidence: 0.5
+    filter_dimensions: true
+    require_inside_room_mask: false
+  room_polygon_llm:  # step-003 polygon refinement + eval UI LLM extract
     size: 1024
     model: gpt-6-astra
     detail: high

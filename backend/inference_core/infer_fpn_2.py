@@ -44,12 +44,20 @@ def _print_step_outputs(paths: dict[str, object]) -> None:
         room_names = paths["room_names"]
         print(f"  room names json → {room_names['json']}")
         usage = room_names["usage"]
-        print(
-            "  room names llm tokens → "
-            f"input: {usage['input_tokens']:,}  "
-            f"output: {usage['output_tokens']:,}  "
-            f"cost: ${usage['cost_usd']:.4f}"
-        )
+        if isinstance(usage, dict) and "input_tokens" in usage:
+            print(
+                "  room names llm usage → "
+                f"input: {usage['input_tokens']:,}  "
+                f"output: {usage['output_tokens']:,}  "
+                f"cost: ${usage['cost_usd']:.4f}"
+            )
+        elif isinstance(usage, dict):
+            print(
+                "  room names paddle usage → "
+                f"detections: {usage.get('detections', 0)}  "
+                f"kept: {usage.get('kept', 0)}  "
+                f"elapsed: {usage.get('elapsed_ms', 0)}ms"
+            )
 
 
 def main(argv: list[str] | None = None) -> None:

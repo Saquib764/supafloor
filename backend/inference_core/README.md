@@ -17,7 +17,16 @@ For pygame UIs (`infer_ui_simple.py`, `label_data.py`), install dev dependencies
 uv sync --group dev
 ```
 
-Set `OPENAI_API_KEY` in `.env` when running step-001 room-name detection or step-003 LLM polygon refinement (not required for `infer-ui-simple` when the key is absent — step-001 skips the room-name LLM).
+Set `OPENAI_API_KEY` in `.env` when running step-001 room-name detection with `fpn.room_names.backend: llm`, or for step-003 LLM polygon refinement. With `fpn.room_names.backend: paddle`, step-001 uses local PaddleOCR instead (no API key).
+
+Toggle in `config.yaml`:
+
+```yaml
+fpn:
+  room_names:
+    backend: paddle  # llm | paddle
+    size: 1024
+```
 
 ## Image edit + room mask discovery
 
@@ -47,7 +56,7 @@ uv run python infer_fpn.py --image test_image/BE_01.jpg
 
 | Step | What it does |
 |---|---|
-| **step-001** | Detect floorplan region from background mask, mask the full canvas, run FPN inference, LLM room-name detection, clean masks, fit polygon JSON, wall centerlines |
+| **step-001** | Detect floorplan region from background mask, mask the full canvas, run FPN inference, room-name detection (LLM or PaddleOCR), clean masks, fit polygon JSON, wall centerlines |
 | **step-002** | Crop to region bbox (+ padding), re-infer on the cropped canvas, same artifacts as step-001 |
 | **step-003** | Send input + room mask to the LLM; write refined room/door/window polygons and `polygon-overlay.jpg` |
 

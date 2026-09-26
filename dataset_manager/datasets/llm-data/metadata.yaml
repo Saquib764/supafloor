@@ -1,0 +1,5 @@
+name: llm-data
+hf_repo: saquiboye/llm-data
+revision: main
+private: true
+local_root: llm-data

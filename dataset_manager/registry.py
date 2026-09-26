@@ -91,7 +91,14 @@ def local_dataset_root(name: str) -> Path | None:
 
 def local_dataset_available(name: str) -> bool:
     root = local_dataset_root(name)
-    return root is not None and (root / "input").is_dir()
+    if root is None or not root.is_dir():
+        return False
+    if (root / "input").is_dir():
+        return True
+    schema = _schema(name)
+    if hasattr(schema, "local_available"):
+        return schema.local_available(root)
+    return False
 
 
 def load_local_dataset(name: str) -> Dataset:
@@ -290,11 +297,13 @@ def download(
 ) -> Path:
     meta = _metadata(name)
     schema = _schema(name)
-    if not hasattr(schema, "write_local_folders"):
+    if not hasattr(schema, "materialize_local") and not hasattr(schema, "write_local_folders"):
         raise ValueError(f"Dataset {name!r} does not support folder download")
     local_root = _local_root(meta, name)
     target = Path(out) if out is not None else local_root
-    rev = revision or meta.get("revision") or "main"
+    rev = revision if revision is not None else meta.get("revision")
+    if rev is not None and str(rev).lower() in ("null", "none", ""):
+        rev = None
 
     marker = target / _MARKER
     if not force and marker.is_file():
@@ -302,8 +311,21 @@ def download(
         return target
 
     enable_download_progress()
-    dataset = schema.load_from_hub(meta["hf_repo"], revision=rev, cache_dir=cache_dir)
-    written = schema.write_local_folders(dataset, target)
+    subset = str(meta.get("race_subset") or "all")
+    if hasattr(schema, "materialize_local"):
+        print(f"Downloading {name!r} → {target} (subset={subset})", flush=True)
+        written = schema.materialize_local(
+            target,
+            repo=meta["hf_repo"],
+            subset=subset,
+            cache_dir=cache_dir,
+            revision=rev,
+        )
+    elif hasattr(schema, "write_local_folders"):
+        dataset = schema.load_from_hub(meta["hf_repo"], revision=rev, cache_dir=cache_dir)
+        written = schema.write_local_folders(dataset, target)
+    else:
+        raise ValueError(f"Dataset {name!r} does not support folder download")
     marker.write_text(f"{meta['hf_repo']}\n{rev}\n", encoding="utf-8")
     print(f"Downloaded {written} rows → {target}")
     return target

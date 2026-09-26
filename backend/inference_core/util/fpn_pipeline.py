@@ -29,7 +29,8 @@ from util.room_components import (
     save_mask_polygon_comparison,
     write_room_counts_markdown,
 )
-from util.room_names_llm import detect_room_names
+from util.room_names_llm import detect_room_names as detect_room_names_llm
+from util.room_names_paddle import detect_room_names as detect_room_names_paddle
 from util.final_mask_polygons import (
     load_layer_polygons,
     polygons_to_mask,
@@ -368,37 +369,82 @@ def _run_step_001(
     size: int,
     log: StepLogFn | None = None,
 ) -> dict[str, object]:
-    llm = cfg.fpn.room_polygon_llm
+    room_names = cfg.fpn.room_names
     room_labels: list[RoomLabel] | None = None
     room_names_meta: dict[str, object] | None = None
-    if llm.model and llm.openai_api_key:
+    if room_names.backend == "llm":
+        llm = cfg.fpn.room_names_llm
+        if llm.model and llm.openai_api_key:
+            if log is not None:
+                log(f"room names llm → {llm.model} at {room_names.size}px")
+            room_names_meta = detect_room_names_llm(
+                overlay,
+                step_dir,
+                llm_size=room_names.size,
+                pipeline_size=size,
+                model=llm.model,
+                detail=llm.detail,
+                api_key=llm.openai_api_key,
+                input_cost_per_million_usd=llm.input_cost_per_million_usd,
+                cached_input_cost_per_million_usd=llm.cached_input_cost_per_million_usd,
+                cache_write_cost_per_million_usd=llm.cache_write_cost_per_million_usd,
+                output_cost_per_million_usd=llm.output_cost_per_million_usd,
+                log=log,
+            )
+            room_labels = room_names_meta["rooms"]  # type: ignore[assignment]
+            usage = room_names_meta["usage"]
+            if log is not None and isinstance(usage, dict):
+                log(
+                    "room names llm usage → "
+                    f"input: {usage.get('input_tokens', 0):,}  "
+                    f"output: {usage.get('output_tokens', 0):,}  "
+                    f"cost: ${usage.get('cost_usd', 0.0):.4f}"
+                )
+        elif log is not None:
+            log("room names llm → skipped (missing model or OPENAI_API_KEY)")
+    elif room_names.backend == "paddle":
+        paddle = cfg.fpn.room_names_paddle
         if log is not None:
-            log(f"room names llm → {llm.model} at {llm.size}px")
-        room_names_meta = detect_room_names(
+            log(
+                "room names paddle → "
+                f"{paddle.lang} at {room_names.size}px "
+                f"(det_limit_side_len={paddle.det_limit_side_len})"
+            )
+        room_mask_for_ocr: np.ndarray | None = None
+        if paddle.require_inside_room_mask:
+            room_mask_image = Image.fromarray(
+                (cleaned[channels.room] > 0.5).astype(np.uint8) * 255,
+                mode="L",
+            )
+            room_mask_for_ocr = (
+                np.array(
+                    room_mask_image.resize((room_names.size, room_names.size), Image.NEAREST)
+                )
+                > 0
+            )
+        room_names_meta = detect_room_names_paddle(
             overlay,
             step_dir,
-            llm_size=llm.size,
+            ocr_size=room_names.size,
             pipeline_size=size,
-            model=llm.model,
-            detail=llm.detail,
-            api_key=llm.openai_api_key,
-            input_cost_per_million_usd=llm.input_cost_per_million_usd,
-            cached_input_cost_per_million_usd=llm.cached_input_cost_per_million_usd,
-            cache_write_cost_per_million_usd=llm.cache_write_cost_per_million_usd,
-            output_cost_per_million_usd=llm.output_cost_per_million_usd,
+            lang=paddle.lang,
+            use_angle_cls=paddle.use_angle_cls,
+            det_limit_side_len=paddle.det_limit_side_len,
+            min_confidence=paddle.min_confidence,
+            filter_dimensions=paddle.filter_dimensions,
+            require_inside_room_mask=paddle.require_inside_room_mask,
+            room_mask=room_mask_for_ocr,
             log=log,
         )
         room_labels = room_names_meta["rooms"]  # type: ignore[assignment]
         usage = room_names_meta["usage"]
         if log is not None and isinstance(usage, dict):
             log(
-                "room names llm usage → "
-                f"input: {usage.get('input_tokens', 0):,}  "
-                f"output: {usage.get('output_tokens', 0):,}  "
-                f"cost: ${usage.get('cost_usd', 0.0):.4f}"
+                "room names paddle usage → "
+                f"detections: {usage.get('detections', 0)}  "
+                f"kept: {usage.get('kept', 0)}  "
+                f"elapsed: {usage.get('elapsed_ms', 0)}ms"
             )
-    elif log is not None:
-        log("room names llm → skipped (missing model or OPENAI_API_KEY)")
 
     outputs = _write_step_artifacts(
         step_dir,

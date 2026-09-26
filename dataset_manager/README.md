@@ -23,6 +23,7 @@ Registered today:
 | `floorplan-manual` | Manual annotation publish/download + Florence training | `floorplan-manual` | `saquiboye/floorplan-manual` |
 | `floorplan-manual-mask` | Manual five-class mask publish/download + FPN Five training | `floorplan-manual-mask` | `saquiboye/floorplan-manual-mask` |
 | `floorplan-vae` | VAE view (`stem`, `plan_id`, `variant`, `image`, `simple_image`) | — | reads `floorplan-to-json` |
+| `race` | RACE reading comprehension MCQ (`state`, `question`, `options`, `answer_index`) | `race-data` (CMU tarball) | `ehovy/race` on Hub |
 
 Both uploadable datasets share the same local folder layout:
 

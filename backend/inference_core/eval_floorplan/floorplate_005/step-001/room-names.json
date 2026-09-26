@@ -1,0 +1,536 @@
+{
+  "width": 1000,
+  "height": 1000,
+  "llm_size": 1024,
+  "model": "gpt-6-astra",
+  "rooms": [
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 107,
+        "y": 177
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 246,
+        "y": 173
+      }
+    },
+    {
+      "room": "bedroom 3",
+      "position": {
+        "x": 392,
+        "y": 170
+      }
+    },
+    {
+      "room": "bedroom 4",
+      "position": {
+        "x": 99,
+        "y": 263
+      }
+    },
+    {
+      "room": "bath",
+      "position": {
+        "x": 258,
+        "y": 278
+      }
+    },
+    {
+      "room": "laundry",
+      "position": {
+        "x": 393,
+        "y": 269
+      }
+    },
+    {
+      "room": "kitchen / dining",
+      "position": {
+        "x": 326,
+        "y": 354
+      }
+    },
+    {
+      "room": "living room",
+      "position": {
+        "x": 143,
+        "y": 379
+      }
+    },
+    {
+      "room": "unit 1",
+      "position": {
+        "x": 254,
+        "y": 463
+      }
+    },
+    {
+      "room": "bedroom 3",
+      "position": {
+        "x": 610,
+        "y": 172
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 753,
+        "y": 172
+      }
+    },
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 896,
+        "y": 175
+      }
+    },
+    {
+      "room": "bedroom 4",
+      "position": {
+        "x": 906,
+        "y": 263
+      }
+    },
+    {
+      "room": "bath",
+      "position": {
+        "x": 738,
+        "y": 271
+      }
+    },
+    {
+      "room": "laundry",
+      "position": {
+        "x": 608,
+        "y": 269
+      }
+    },
+    {
+      "room": "kitchen / dining",
+      "position": {
+        "x": 671,
+        "y": 354
+      }
+    },
+    {
+      "room": "living room",
+      "position": {
+        "x": 852,
+        "y": 382
+      }
+    },
+    {
+      "room": "unit 2",
+      "position": {
+        "x": 746,
+        "y": 463
+      }
+    },
+    {
+      "room": "hallway",
+      "position": {
+        "x": 499,
+        "y": 478
+      }
+    },
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 104,
+        "y": 615
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 245,
+        "y": 598
+      }
+    },
+    {
+      "room": "bedroom 3",
+      "position": {
+        "x": 390,
+        "y": 598
+      }
+    },
+    {
+      "room": "bedroom 4",
+      "position": {
+        "x": 97,
+        "y": 690
+      }
+    },
+    {
+      "room": "bath",
+      "position": {
+        "x": 255,
+        "y": 704
+      }
+    },
+    {
+      "room": "laundry",
+      "position": {
+        "x": 391,
+        "y": 691
+      }
+    },
+    {
+      "room": "kitchen / dining",
+      "position": {
+        "x": 329,
+        "y": 779
+      }
+    },
+    {
+      "room": "living room",
+      "position": {
+        "x": 143,
+        "y": 804
+      }
+    },
+    {
+      "room": "unit 3",
+      "position": {
+        "x": 253,
+        "y": 887
+      }
+    },
+    {
+      "room": "bedroom 3",
+      "position": {
+        "x": 611,
+        "y": 598
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 755,
+        "y": 600
+      }
+    },
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 901,
+        "y": 615
+      }
+    },
+    {
+      "room": "bedroom 4",
+      "position": {
+        "x": 905,
+        "y": 688
+      }
+    },
+    {
+      "room": "bath",
+      "position": {
+        "x": 740,
+        "y": 698
+      }
+    },
+    {
+      "room": "laundry",
+      "position": {
+        "x": 610,
+        "y": 694
+      }
+    },
+    {
+      "room": "kitchen / dining",
+      "position": {
+        "x": 673,
+        "y": 779
+      }
+    },
+    {
+      "room": "living room",
+      "position": {
+        "x": 854,
+        "y": 805
+      }
+    },
+    {
+      "room": "unit 4",
+      "position": {
+        "x": 748,
+        "y": 887
+      }
+    }
+  ],
+  "rooms_llm": [
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 110,
+        "y": 181
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 252,
+        "y": 177
+      }
+    },
+    {
+      "room": "bedroom 3",
+      "position": {
+        "x": 401,
+        "y": 174
+      }
+    },
+    {
+      "room": "bedroom 4",
+      "position": {
+        "x": 101,
+        "y": 269
+      }
+    },
+    {
+      "room": "bath",
+      "position": {
+        "x": 264,
+        "y": 285
+      }
+    },
+    {
+      "room": "laundry",
+      "position": {
+        "x": 402,
+        "y": 275
+      }
+    },
+    {
+      "room": "kitchen / dining",
+      "position": {
+        "x": 334,
+        "y": 363
+      }
+    },
+    {
+      "room": "living room",
+      "position": {
+        "x": 146,
+        "y": 388
+      }
+    },
+    {
+      "room": "unit 1",
+      "position": {
+        "x": 260,
+        "y": 474
+      }
+    },
+    {
+      "room": "bedroom 3",
+      "position": {
+        "x": 625,
+        "y": 176
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 771,
+        "y": 176
+      }
+    },
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 918,
+        "y": 179
+      }
+    },
+    {
+      "room": "bedroom 4",
+      "position": {
+        "x": 928,
+        "y": 269
+      }
+    },
+    {
+      "room": "bath",
+      "position": {
+        "x": 756,
+        "y": 278
+      }
+    },
+    {
+      "room": "laundry",
+      "position": {
+        "x": 623,
+        "y": 275
+      }
+    },
+    {
+      "room": "kitchen / dining",
+      "position": {
+        "x": 687,
+        "y": 363
+      }
+    },
+    {
+      "room": "living room",
+      "position": {
+        "x": 872,
+        "y": 391
+      }
+    },
+    {
+      "room": "unit 2",
+      "position": {
+        "x": 764,
+        "y": 474
+      }
+    },
+    {
+      "room": "hallway",
+      "position": {
+        "x": 511,
+        "y": 489
+      }
+    },
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 106,
+        "y": 630
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 251,
+        "y": 612
+      }
+    },
+    {
+      "room": "bedroom 3",
+      "position": {
+        "x": 399,
+        "y": 612
+      }
+    },
+    {
+      "room": "bedroom 4",
+      "position": {
+        "x": 99,
+        "y": 707
+      }
+    },
+    {
+      "room": "bath",
+      "position": {
+        "x": 261,
+        "y": 721
+      }
+    },
+    {
+      "room": "laundry",
+      "position": {
+        "x": 400,
+        "y": 708
+      }
+    },
+    {
+      "room": "kitchen / dining",
+      "position": {
+        "x": 337,
+        "y": 798
+      }
+    },
+    {
+      "room": "living room",
+      "position": {
+        "x": 146,
+        "y": 823
+      }
+    },
+    {
+      "room": "unit 3",
+      "position": {
+        "x": 259,
+        "y": 908
+      }
+    },
+    {
+      "room": "bedroom 3",
+      "position": {
+        "x": 626,
+        "y": 612
+      }
+    },
+    {
+      "room": "bedroom 2",
+      "position": {
+        "x": 773,
+        "y": 614
+      }
+    },
+    {
+      "room": "bedroom 1",
+      "position": {
+        "x": 923,
+        "y": 630
+      }
+    },
+    {
+      "room": "bedroom 4",
+      "position": {
+        "x": 927,
+        "y": 705
+      }
+    },
+    {
+      "room": "bath",
+      "position": {
+        "x": 758,
+        "y": 715
+      }
+    },
+    {
+      "room": "laundry",
+      "position": {
+        "x": 625,
+        "y": 711
+      }
+    },
+    {
+      "room": "kitchen / dining",
+      "position": {
+        "x": 689,
+        "y": 798
+      }
+    },
+    {
+      "room": "living room",
+      "position": {
+        "x": 875,
+        "y": 824
+      }
+    },
+    {
+      "room": "unit 4",
+      "position": {
+        "x": 766,
+        "y": 908
+      }
+    }
+  ],
+  "usage": {
+    "input_tokens": 1509,
+    "cached_tokens": 0,
+    "cache_write_tokens": 1506,
+    "output_tokens": 848,
+    "total_tokens": 2357,
+    "cost_usd": 0.061255
+  }
+}

@@ -177,11 +177,14 @@ def detect_room_names(
     usage_summary = {**usage, "cost_usd": total_cost_usd}
 
     payload = {
+        "backend": "llm",
         "width": pipeline_size,
         "height": pipeline_size,
+        "ocr_size": llm_size,
         "llm_size": llm_size,
         "model": model,
         "rooms": rooms,
+        "rooms_raw": rooms_llm,
         "rooms_llm": rooms_llm,
         "usage": usage_summary,
     }

@@ -1,5 +1,5 @@
 hf_cache: ../hf_cache
-input_size: [768, 1024]
+input_size: [1024]
 
 mask_channels:
   background: 0

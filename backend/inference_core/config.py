@@ -40,6 +40,25 @@ class FpnRoomComponentsSettings:
     bright_vertex_reject_fraction: float
 
 
+RoomNamesBackend = Literal["llm", "paddle"]
+
+
+@dataclass(frozen=True)
+class FpnRoomNamesSettings:
+    backend: RoomNamesBackend
+    size: int
+
+
+@dataclass(frozen=True)
+class FpnRoomNamesPaddleSettings:
+    lang: str
+    use_angle_cls: bool
+    det_limit_side_len: int
+    min_confidence: float
+    filter_dimensions: bool
+    require_inside_room_mask: bool
+
+
 @dataclass(frozen=True)
 class FpnRoomPolygonLlmSettings:
     size: int
@@ -61,6 +80,9 @@ class FpnSettings:
     mask_clean: FpnMaskCleanSettings
     floorplan_region: FpnFloorplanRegionSettings
     room_components: FpnRoomComponentsSettings
+    room_names: FpnRoomNamesSettings
+    room_names_llm: FpnRoomPolygonLlmSettings
+    room_names_paddle: FpnRoomNamesPaddleSettings
     room_polygon_llm: FpnRoomPolygonLlmSettings
 
 
@@ -103,6 +125,11 @@ class LabelDataSettings:
 
 
 @dataclass(frozen=True)
+class EvalUiSettings:
+    llm_extract: bool
+
+
+@dataclass(frozen=True)
 class Config:
     canvas_size: int
     hf_cache: Path
@@ -111,6 +138,7 @@ class Config:
     room_masks: RoomMaskSettings
     fpn: FpnSettings
     label_data: LabelDataSettings
+    eval_ui: EvalUiSettings
     output: Path
 
 
@@ -134,6 +162,52 @@ def _resolve(path: Path, base: Path) -> Path:
     return path if path.is_absolute() else (base / path).resolve()
 
 
+def _load_room_names_settings(fpn: dict[str, Any]) -> FpnRoomNamesSettings:
+    room_names = fpn.get("room_names") or {}
+    llm = fpn.get("room_names_llm") or {}
+    backend = str(room_names.get("backend", "llm"))
+    if backend not in ("llm", "paddle"):
+        raise ValueError(f"fpn.room_names.backend must be 'llm' or 'paddle', got {backend!r}")
+    size = int(room_names.get("size", llm.get("size", 1024)))
+    return FpnRoomNamesSettings(backend=cast(RoomNamesBackend, backend), size=size)
+
+
+def _load_room_names_paddle_settings(raw: dict[str, Any]) -> FpnRoomNamesPaddleSettings:
+    return FpnRoomNamesPaddleSettings(
+        lang=str(raw.get("lang", "en")),
+        use_angle_cls=bool(raw.get("use_angle_cls", False)),
+        det_limit_side_len=int(raw.get("det_limit_side_len", 1024)),
+        min_confidence=float(raw.get("min_confidence", 0.5)),
+        filter_dimensions=bool(raw.get("filter_dimensions", True)),
+        require_inside_room_mask=bool(raw.get("require_inside_room_mask", False)),
+    )
+
+
+def _fpn_llm_settings(
+    raw: dict[str, Any],
+    *,
+    default_model: str,
+    default_input: float,
+    default_cached: float,
+    default_cache_write: float,
+    default_output: float,
+) -> FpnRoomPolygonLlmSettings:
+    return FpnRoomPolygonLlmSettings(
+        size=int(raw.get("size", 1024)),
+        model=str(raw.get("model", default_model)),
+        detail=str(raw.get("detail", "high")),
+        openai_api_key=str(os.environ.get("OPENAI_API_KEY") or ""),
+        input_cost_per_million_usd=float(raw.get("input_cost_per_million_usd", default_input)),
+        cached_input_cost_per_million_usd=float(
+            raw.get("cached_input_cost_per_million_usd", default_cached)
+        ),
+        cache_write_cost_per_million_usd=float(
+            raw.get("cache_write_cost_per_million_usd", default_cache_write)
+        ),
+        output_cost_per_million_usd=float(raw.get("output_cost_per_million_usd", default_output)),
+    )
+
+
 def _load_dotenv() -> None:
     load_dotenv(_PACKAGE_DIR / ".env")
     load_dotenv(Path.cwd() / ".env")
@@ -150,6 +224,7 @@ def load_config(path: Path | None = None) -> Config:
     room_masks = raw.get("room_masks") or {}
     fpn = raw.get("fpn") or {}
     label_data = raw.get("label_data") or {}
+    eval_ui = raw.get("eval_ui") or {}
     prompts = image_edit.get("prompts") or {}
     inference_root = _find_inference_core_root()
     repo_root = inference_root.parents[1]
@@ -265,19 +340,25 @@ def load_config(path: Path | None = None) -> Config:
                 bright_vertex_threshold=float(rc.get("bright_vertex_threshold", 200.0)),
                 bright_vertex_reject_fraction=float(rc.get("bright_vertex_reject_fraction", 0.6)),
             ),
-            room_polygon_llm=FpnRoomPolygonLlmSettings(
-                size=int((rpl := fpn.get("room_polygon_llm") or {}).get("size", 1024)),
-                model=str(rpl.get("model", "gpt-4.1")),
-                detail=str(rpl.get("detail", "high")),
-                openai_api_key=str(os.environ.get("OPENAI_API_KEY") or ""),
-                input_cost_per_million_usd=float(rpl.get("input_cost_per_million_usd", 10.0)),
-                cached_input_cost_per_million_usd=float(
-                    rpl.get("cached_input_cost_per_million_usd", 1.0)
-                ),
-                cache_write_cost_per_million_usd=float(
-                    rpl.get("cache_write_cost_per_million_usd", 12.5)
-                ),
-                output_cost_per_million_usd=float(rpl.get("output_cost_per_million_usd", 50.0)),
+            room_names=_load_room_names_settings(fpn),
+            room_names_llm=_fpn_llm_settings(
+                fpn.get("room_names_llm") or {},
+                default_model="gpt-5.2",
+                default_input=1.75,
+                default_cached=0.175,
+                default_cache_write=2.1875,
+                default_output=14.0,
+            ),
+            room_names_paddle=_load_room_names_paddle_settings(
+                fpn.get("room_names_paddle") or {}
+            ),
+            room_polygon_llm=_fpn_llm_settings(
+                fpn.get("room_polygon_llm") or {},
+                default_model="gpt-6-astra",
+                default_input=10.0,
+                default_cached=1.0,
+                default_cache_write=12.5,
+                default_output=50.0,
             ),
         ),
         label_data=LabelDataSettings(
@@ -294,6 +375,9 @@ def load_config(path: Path | None = None) -> Config:
                 Path(label_data.get("pipeline_output_dir", "output/label_data")),
                 inference_root,
             ),
+        ),
+        eval_ui=EvalUiSettings(
+            llm_extract=bool(eval_ui.get("llm_extract", False)),
         ),
         output=_resolve(
             Path(raw.get("output", "output")),

@@ -1,0 +1,5 @@
+{
+  "state": "Room A is north of the hallway.",
+  "question": "Is Room A south of the hallway?",
+  "options": ["No", "Yes"]
+}

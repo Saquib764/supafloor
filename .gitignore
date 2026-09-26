@@ -26,6 +26,7 @@ backend/florence_trainer/training_session_*
 backend/florence_trainer/hf_cache/
 backend/florence_trainer/_preview/
 backend/hf_cache/
+/race-data/
 backend/vae_trainer/training_session/
 backend/vae_trainer/hf_cache/
 backend/vae_trainer/dev/weights/
@@ -49,6 +50,12 @@ backend/vlm_ocr_trainer/training_session/
 backend/vlm_ocr_trainer/training_session_2/
 backend/vlm_ocr_trainer/_preview/
 backend/vlm_ocr_trainer/holdout/
+backend/modern_bert_decision/training_session/
+backend/modern_bert_decision/training_session_2/
+backend/modern_bert_decision/_preview/
+backend/sash_trainer/training_session/
+backend/sash_trainer/training_session_2/
+backend/sash_trainer/_preview/
 
 
 checkpoints/

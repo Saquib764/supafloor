@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sana-trainer"
+version = "0.1.0"
+description = "LoRA or full-transformer fine-tune for Sana 0.6B (diffusers)"
+requires-python = ">=3.11"
+dependencies = [
+  "accelerate>=1.0.0",
+  "dataset-manager",
+  "datasets>=3.0.0",
+  "diffusers>=0.32.0",
+  "huggingface_hub>=0.26.0",
+  "peft>=0.14.0",
+  "pillow>=10.4.0",
+  "pyyaml>=6.0.2",
+  "safetensors>=0.4.0",
+  "torch>=2.4.0",
+  "torchvision>=0.19.0",
+  "tqdm>=4.66.0",
+  "transformers>=4.48.0",
+]
+
+[tool.uv.sources]
+dataset-manager = { path = "../../dataset_manager", editable = true }
+
+[project.scripts]
+sana-train = "sana_cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = []
+
+[tool.hatch.build.targets.editable]
+dev-mode-dirs = ["."]
+
+[tool.hatch.build.targets.wheel.force-include]
+"sana_cli.py" = "sana_cli.py"
+"config.py" = "config.py"
+"config.yaml" = "config.yaml"
+"data.py" = "data.py"
+"model.py" = "model.py"
+"preview.py" = "preview.py"
+"train.py" = "train.py"
+
+[tool.uv]
+package = true

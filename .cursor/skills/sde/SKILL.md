@@ -117,6 +117,15 @@ Encode and respect this layout. Put new code in the matching folder; do not inve
 │       ├── model.py
 │       ├── train.py
 │       └── infer.py
+│   ├── sana_trainer/             # Sana 0.6B LoRA / full transformer (image + caption)
+│       ├── pyproject.toml
+│       ├── README.md
+│       ├── config.yaml
+│       ├── sana_cli.py           # uv run sana-train train|preview
+│       ├── data.py
+│       ├── model.py
+│       ├── train.py
+│       └── preview.py
 │   ├── vae_trainer/              # VAE (image → latent → simple_image)
 │       ├── pyproject.toml
 │       ├── README.md

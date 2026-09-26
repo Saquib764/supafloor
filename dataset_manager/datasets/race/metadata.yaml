@@ -1,0 +1,8 @@
+name: race
+# Hugging Face mirror of CMU RACE (reading comprehension MCQ)
+hf_repo: ehovy/race
+revision: null
+private: false
+# Extract CMU RACE.tar.gz here for local loading (train/middle, train/high, …)
+local_root: race-data
+race_subset: all
