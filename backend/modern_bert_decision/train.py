@@ -10,9 +10,11 @@ import torch.nn.functional as F
 from config import DecisionConfig, datasets_cache_dir, load_config
 from data import (
     DecisionCollator,
+    ListDecisionDataset,
     RaceDecisionDataset,
     RaceDecisionStreamDataset,
     load_race_decision_dataset,
+    load_race_eval_examples,
     race_split_row_count,
     use_local_race,
 )
@@ -97,8 +99,8 @@ def evaluate(
 ) -> tuple[float, float]:
     model.eval()
     total_loss = 0.0
-    total_acc = 0.0
-    batches = 0
+    total_correct = 0
+    total_n = 0
     for batch in loader:
         formatted = batch.formatted
         labels = batch.labels.to(device)
@@ -109,12 +111,31 @@ def evaluate(
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
             out = model(input_ids, attention_mask, option_positions, option_mask)
             loss = F.cross_entropy(out.logits, labels)
-        total_loss += float(loss.item())
-        total_acc += _accuracy(out.logits, labels, option_mask)
-        batches += 1
-    if batches == 0:
+        n = int(labels.size(0))
+        total_loss += float(loss.item()) * n
+        preds = out.logits.argmax(dim=-1)
+        valid = option_mask.any(dim=-1)
+        total_correct += int((preds[valid] == labels[valid]).sum().item())
+        total_n += int(valid.sum().item())
+    if total_n == 0:
         return 0.0, 0.0
-    return total_loss / batches, total_acc / batches
+    return total_loss / total_n, float(total_correct) / float(total_n)
+
+
+def _run_eval(
+    model: ModernBERTDecisionModel,
+    loader: DataLoader,
+    device: torch.device,
+    *,
+    amp: bool,
+    sample_count: int,
+    step: int | None = None,
+) -> tuple[float, float]:
+    loss, acc = evaluate(model, loader, device, amp=amp)
+    prefix = f"step {step} " if step is not None else ""
+    tqdm.write(f"{prefix}eval n={sample_count} loss={loss:.4f} acc={acc:.4f}")
+    model.train()
+    return loss, acc
 
 
 def _print_setup(
@@ -153,6 +174,8 @@ def _print_setup(
     print(f"train_encoder:  {cfg.model.train_pretrained_encoder}")
     print(f"resume:         {cfg.train.resume}")
     print(f"save_steps:     {cfg.train.save_steps}")
+    print(f"eval_samples:   {cfg.train.eval_samples}")
+    print(f"eval_steps:     {cfg.train.eval_steps}")
     print(f"save_full_encoder: {cfg.train.save_full_encoder}")
     print(f"checkpoint mode: {'full encoder' if should_write_encoder(cfg, at_end=False) else 'light (head + markers)'}")
     print()
@@ -169,22 +192,21 @@ def run(cfg: DecisionConfig) -> None:
             seed=cfg.data.seed,
             augment=True,
         )
-        val_ds = RaceDecisionStreamDataset(
-            cfg,
-            split=cfg.data.val_split,
-            shuffle=False,
-            seed=cfg.data.seed,
-            augment=False,
-        )
         train_len = race_split_row_count(cfg, cfg.data.train_split)
         val_len = race_split_row_count(cfg, cfg.data.val_split)
     else:
         train_hf = load_race_decision_dataset(cfg, split=cfg.data.train_split)
         val_hf = load_race_decision_dataset(cfg, split=cfg.data.val_split)
         train_ds = RaceDecisionDataset(train_hf, cfg, augment=True)
-        val_ds = RaceDecisionDataset(val_hf, cfg, augment=False)
         train_len = len(train_ds)
-        val_len = len(val_ds)
+        val_len = len(val_hf)
+
+    eval_examples = load_race_eval_examples(cfg, count=cfg.train.eval_samples)
+    if len(eval_examples) < cfg.train.eval_samples:
+        tqdm.write(
+            f"warning: eval set has {len(eval_examples)} examples "
+            f"(requested {cfg.train.eval_samples})"
+        )
 
     print("\n=== Model ===")
     model = print_model_summary(cfg, dummy_forward=False, show_samples=False)
@@ -201,8 +223,8 @@ def run(cfg: DecisionConfig) -> None:
         pin_memory=device.type == "cuda",
         drop_last=False,
     )
-    val_loader = DataLoader(
-        val_ds,
+    eval_loader = DataLoader(
+        ListDecisionDataset(eval_examples),
         batch_size=cfg.train.batch_size,
         shuffle=False,
         num_workers=cfg.data.num_workers,
@@ -210,6 +232,7 @@ def run(cfg: DecisionConfig) -> None:
         pin_memory=device.type == "cuda",
         drop_last=False,
     )
+    eval_n = len(eval_examples)
 
     steps_per_epoch = max(1, (train_len + cfg.train.batch_size - 1) // cfg.train.batch_size)
     steps_per_epoch = max(1, (steps_per_epoch + cfg.train.grad_accum - 1) // cfg.train.grad_accum)
@@ -280,6 +303,7 @@ def run(cfg: DecisionConfig) -> None:
             with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
                 out = model(input_ids, attention_mask, option_positions, option_mask)
                 loss = F.cross_entropy(out.logits, labels)
+            batch_acc = _accuracy(out.logits, labels, option_mask)
 
             (loss / accum).backward()
             micro += 1
@@ -296,9 +320,20 @@ def run(cfg: DecisionConfig) -> None:
             step += 1
             progress.update(1)
             progress.set_postfix_str(
-                f"loss={loss.item():.4f}, lr={float(optimizer.param_groups[0]['lr']):.2e}, "
+                f"loss={loss.item():.4f}, acc={batch_acc:.4f}, "
+                f"lr={float(optimizer.param_groups[0]['lr']):.2e}, "
                 f"epoch={epoch + 1}/{cfg.train.epochs}"
             )
+
+            if step % cfg.train.eval_steps == 0:
+                _run_eval(
+                    model,
+                    eval_loader,
+                    device,
+                    amp=amp,
+                    sample_count=eval_n,
+                    step=step,
+                )
 
             if step % cfg.train.save_steps == 0:
                 try:
@@ -314,9 +349,14 @@ def run(cfg: DecisionConfig) -> None:
                 except OSError as exc:
                     tqdm.write(f"checkpoint save failed (disk full?): {exc}")
 
-        val_loss, val_acc = evaluate(model, val_loader, device, amp=amp)
-        tqdm.write(f"epoch {epoch + 1} val loss={val_loss:.4f} acc={val_acc:.4f}")
-        model.train()
+        _run_eval(
+            model,
+            eval_loader,
+            device,
+            amp=amp,
+            sample_count=eval_n,
+        )
+        tqdm.write(f"epoch {epoch + 1} complete")
 
     if micro % accum != 0:
         torch.nn.utils.clip_grad_norm_(
@@ -338,8 +378,7 @@ def run(cfg: DecisionConfig) -> None:
         step=step,
         epoch=cfg.train.epochs,
     )
-    val_loss, val_acc = evaluate(model, val_loader, device, amp=amp)
-    tqdm.write(f"final val loss={val_loss:.4f} acc={val_acc:.4f}")
+    _run_eval(model, eval_loader, device, amp=amp, sample_count=eval_n)
     tqdm.write(f"Saved → {ckpt_dir}")
 
 

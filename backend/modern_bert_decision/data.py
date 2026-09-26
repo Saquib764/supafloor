@@ -149,10 +149,11 @@ def load_race_hub_split(cfg: DecisionConfig, *, split: str) -> Dataset:
     )
 
 
-def load_race_preview_examples(
+def load_race_split_examples(
     cfg: DecisionConfig,
-    count: int = 2,
     *,
+    split: str,
+    count: int,
     augment: bool = False,
 ) -> list[DecisionExample]:
     if count < 1:
@@ -161,7 +162,7 @@ def load_race_preview_examples(
         out: list[DecisionExample] = []
         for ex in iter_race_local_examples(
             cfg,
-            cfg.data.train_split,
+            split,
             shuffle=False,
             seed=cfg.data.seed,
             augment=augment,
@@ -179,7 +180,7 @@ def load_race_preview_examples(
     kwargs: dict[str, object] = {"cache_dir": str(cache)}
     if rev and str(rev).lower() not in ("null", "none", ""):
         kwargs["revision"] = rev
-    split_slice = f"{cfg.data.train_split}[:{count}]"
+    split_slice = f"{split}[:{count}]"
     raw = hf_load_dataset(meta["hf_repo"], cfg.data.race_subset, split=split_slice, **kwargs)
     out: list[DecisionExample] = []
     for index in range(len(raw)):
@@ -188,6 +189,40 @@ def load_race_preview_examples(
             ex = augment_training_example(ex, random.Random(cfg.data.seed + index), cfg)
         out.append(ex)
     return out
+
+
+def load_race_preview_examples(
+    cfg: DecisionConfig,
+    count: int = 2,
+    *,
+    augment: bool = False,
+) -> list[DecisionExample]:
+    return load_race_split_examples(
+        cfg,
+        split=cfg.data.train_split,
+        count=count,
+        augment=augment,
+    )
+
+
+def load_race_eval_examples(cfg: DecisionConfig, *, count: int) -> list[DecisionExample]:
+    return load_race_split_examples(
+        cfg,
+        split=cfg.data.val_split,
+        count=count,
+        augment=False,
+    )
+
+
+class ListDecisionDataset(TorchDataset):
+    def __init__(self, examples: list[DecisionExample]) -> None:
+        self._examples = examples
+
+    def __len__(self) -> int:
+        return len(self._examples)
+
+    def __getitem__(self, index: int) -> DecisionExample:
+        return self._examples[int(index)]
 
 
 def load_race_decision_dataset(cfg: DecisionConfig, *, split: str) -> Dataset:

@@ -37,6 +37,8 @@ train:
   init_checkpoint: null
   resume: true
   save_steps: 500
+  eval_samples: 100
+  eval_steps: 500
   # false: periodic saves are light (~few MB: head + marker rows + tokenizer)
   # true: also write full encoder (~600MB) when saving (needs disk space)
   save_full_encoder: false

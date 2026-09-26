@@ -67,6 +67,8 @@ class TrainSettings:
     save_steps: int
     save_full_encoder: bool
     max_grad_norm: float
+    eval_samples: int
+    eval_steps: int
 
 
 @dataclass(frozen=True)
@@ -206,6 +208,8 @@ def load_config(path: Path | None = None) -> DecisionConfig:
             save_steps=int(train_raw.get("save_steps", 500)),
             save_full_encoder=bool(train_raw.get("save_full_encoder", False)),
             max_grad_norm=float(train_raw.get("max_grad_norm", 1.0)),
+            eval_samples=max(1, int(train_raw.get("eval_samples", 100))),
+            eval_steps=max(1, int(train_raw.get("eval_steps", train_raw.get("save_steps", 500)))),
         ),
         infer=InferSettings(
             checkpoint=_resolve(
