@@ -80,6 +80,14 @@ def _save_training_state(
     )
 
 
+def _avg_random_chance(option_mask: torch.Tensor) -> float:
+    counts = option_mask.sum(dim=-1)
+    valid = counts > 0
+    if not valid.any():
+        return 0.0
+    return float((1.0 / counts[valid].float()).mean().item())
+
+
 def _accuracy(logits: torch.Tensor, labels: torch.Tensor, option_mask: torch.Tensor) -> float:
     preds = logits.argmax(dim=-1)
     valid = option_mask.any(dim=-1)
@@ -96,10 +104,11 @@ def evaluate(
     device: torch.device,
     *,
     amp: bool,
-) -> tuple[float, float]:
+) -> tuple[float, float, float]:
     model.eval()
     total_loss = 0.0
     total_correct = 0
+    total_random = 0.0
     total_n = 0
     for batch in loader:
         formatted = batch.formatted
@@ -116,10 +125,17 @@ def evaluate(
         preds = out.logits.argmax(dim=-1)
         valid = option_mask.any(dim=-1)
         total_correct += int((preds[valid] == labels[valid]).sum().item())
+        counts = option_mask.sum(dim=-1)
+        row_valid = counts > 0
+        total_random += float((1.0 / counts[row_valid].float()).sum().item())
         total_n += int(valid.sum().item())
     if total_n == 0:
-        return 0.0, 0.0
-    return total_loss / total_n, float(total_correct) / float(total_n)
+        return 0.0, 0.0, 0.0
+    return (
+        total_loss / total_n,
+        float(total_correct) / float(total_n),
+        total_random / total_n,
+    )
 
 
 def _run_eval(
@@ -130,12 +146,15 @@ def _run_eval(
     amp: bool,
     sample_count: int,
     step: int | None = None,
-) -> tuple[float, float]:
-    loss, acc = evaluate(model, loader, device, amp=amp)
+) -> tuple[float, float, float]:
+    loss, acc, rand_acc = evaluate(model, loader, device, amp=amp)
     prefix = f"step {step} " if step is not None else ""
-    tqdm.write(f"{prefix}eval n={sample_count} loss={loss:.4f} acc={acc:.4f}")
+    tqdm.write(
+        f"{prefix}eval n={sample_count} loss={loss:.4f} acc={acc:.4f} "
+        f"rand={rand_acc:.4f}"
+    )
     model.train()
-    return loss, acc
+    return loss, acc, rand_acc
 
 
 def _print_setup(
@@ -304,6 +323,7 @@ def run(cfg: DecisionConfig) -> None:
                 out = model(input_ids, attention_mask, option_positions, option_mask)
                 loss = F.cross_entropy(out.logits, labels)
             batch_acc = _accuracy(out.logits, labels, option_mask)
+            batch_rand = _avg_random_chance(option_mask)
 
             (loss / accum).backward()
             micro += 1
@@ -320,7 +340,7 @@ def run(cfg: DecisionConfig) -> None:
             step += 1
             progress.update(1)
             progress.set_postfix_str(
-                f"loss={loss.item():.4f}, acc={batch_acc:.4f}, "
+                f"loss={loss.item():.4f}, acc={batch_acc:.4f}, rand={batch_rand:.4f}, "
                 f"lr={float(optimizer.param_groups[0]['lr']):.2e}, "
                 f"epoch={epoch + 1}/{cfg.train.epochs}"
             )
