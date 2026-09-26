@@ -227,8 +227,29 @@ def run(cfg: DecisionConfig) -> None:
             f"(requested {cfg.train.eval_samples})"
         )
 
-    print("\n=== Model ===")
-    model = print_model_summary(cfg, dummy_forward=False, show_samples=False)
+    ckpt_dir = _checkpoint_dir(cfg)
+    state_path = ckpt_dir / TRAINING_STATE_NAME
+    step = 0
+    start_epoch = 0
+    training_state: dict[str, object] | None = None
+
+    if cfg.train.resume and ckpt_dir.is_dir() and state_path.is_file():
+        model = load_checkpoint(ckpt_dir, cfg)
+        training_state = torch.load(state_path, map_location="cpu", weights_only=False)
+        step = int(training_state["step"])
+        start_epoch = int(training_state["epoch"])
+    elif cfg.train.init_checkpoint is not None:
+        init_path = cfg.train.init_checkpoint
+        if init_path.is_dir():
+            model = load_checkpoint(init_path, cfg)
+            tqdm.write(f"Initialized weights from {init_path}")
+        else:
+            print("\n=== Model ===")
+            model = print_model_summary(cfg, dummy_forward=False, show_samples=False)
+    else:
+        print("\n=== Model ===")
+        model = print_model_summary(cfg, dummy_forward=False, show_samples=False)
+
     model.to(device)
 
     collator = DecisionCollator(model)
@@ -268,26 +289,13 @@ def run(cfg: DecisionConfig) -> None:
         lr_lambda=_lr_lambda(warmup_steps=warmup_steps, total_steps=max(1, total_steps)),
     )
 
-    ckpt_dir = _checkpoint_dir(cfg)
-    state_path = ckpt_dir / TRAINING_STATE_NAME
-    step = 0
-    start_epoch = 0
-
-    if cfg.train.resume and ckpt_dir.is_dir() and state_path.is_file():
-        model = load_checkpoint(ckpt_dir, cfg)
-        model.to(device)
-        state = torch.load(state_path, map_location=device, weights_only=False)
-        optimizer.load_state_dict(state["optimizer"])
-        scheduler.load_state_dict(state["scheduler"])
-        step = int(state["step"])
-        start_epoch = int(state["epoch"])
+    if training_state is not None:
+        try:
+            optimizer.load_state_dict(training_state["optimizer"])  # type: ignore[arg-type]
+            scheduler.load_state_dict(training_state["scheduler"])  # type: ignore[arg-type]
+        except (ValueError, KeyError) as exc:
+            tqdm.write(f"warning: could not restore optimizer ({exc}); using fresh optimizer")
         tqdm.write(f"Resumed step {step} epoch {start_epoch} ← {ckpt_dir}")
-    elif cfg.train.init_checkpoint is not None:
-        init_path = cfg.train.init_checkpoint
-        if init_path.is_dir():
-            model = load_checkpoint(init_path, cfg)
-            model.to(device)
-            tqdm.write(f"Initialized weights from {init_path}")
 
     _print_setup(cfg, train_len, val_len, steps_per_epoch, total_steps, warmup_steps, device)
     if use_local_race(cfg):
