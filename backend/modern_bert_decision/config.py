@@ -32,11 +32,6 @@ CONFIG_PATH = _project_dir() / "config.yaml"
 
 
 @dataclass(frozen=True)
-class PromptSettings:
-    candidate_question: str
-
-
-@dataclass(frozen=True)
 class InferSettings:
     checkpoint: Path
 
@@ -245,7 +240,6 @@ class DecisionConfig:
     pretrained_name: str
     model: ModelSettings
     data: DataSettings
-    prompt: PromptSettings
     train: TrainSettings
     infer: InferSettings
 
@@ -303,7 +297,6 @@ def load_config(path: Path | None = None) -> DecisionConfig:
     raw: dict[str, Any] = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     base = config_path.parent
     data_raw = raw.get("data") or {}
-    prompt_raw = raw.get("prompt") or {}
     infer_raw = raw.get("infer") or {}
     train_raw = raw.get("train") or {}
     model_raw = raw.get("model") or {}
@@ -316,11 +309,6 @@ def load_config(path: Path | None = None) -> DecisionConfig:
     race_subset = str(data_raw.get("race_subset") or "all").strip().lower()
     if race_subset not in ("all", "middle", "high"):
         raise ValueError("data.race_subset must be all, middle, or high")
-    candidate_question = str(
-        prompt_raw.get("candidate_question") or "Is the correct answer {candidate}?"
-    ).strip()
-    if "{candidate}" not in candidate_question:
-        raise ValueError("prompt.candidate_question must contain {candidate}")
     hub_raw = raw.get("hub") or {}
     pretrained = str(hub_raw.get("pretrained") or raw.get("pretrained_name") or "").strip()
     if not pretrained:
@@ -348,7 +336,6 @@ def load_config(path: Path | None = None) -> DecisionConfig:
             seed=int(data_raw.get("seed", 42)),
             num_workers=int(data_raw.get("num_workers", 0)),
         ),
-        prompt=PromptSettings(candidate_question=candidate_question),
         train=TrainSettings(
             session_dir=_resolve(
                 Path(_train_get(train_raw, "session_dir", default="training_session")),

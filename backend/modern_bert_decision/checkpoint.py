@@ -117,7 +117,6 @@ def save_checkpoint(
         "train_cls_embedding": model.train_cls_embedding,
         "marker_embedding_train": list(model.marker_embedding_train),
         "marker_embedding_learning_rates": list(model.marker_embedding_lrs),
-        "candidate_question": model.cfg.prompt.candidate_question,
     }
     meta_tmp = _meta_path(root).with_suffix(".json.tmp")
     meta_tmp.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
@@ -248,10 +247,6 @@ def load_checkpoint(
             f"checkpoint pretrained_name {meta['pretrained_name']!r} "
             f"does not match config {cfg.pretrained_name!r}"
         )
-    stored_prompt = str(meta.get("candidate_question") or "")
-    if stored_prompt and stored_prompt != cfg.prompt.candidate_question:
-        raise ValueError("checkpoint candidate_question does not match config prompt")
-
     from transformers import AutoTokenizer
 
     encoder_dir = root / CHECKPOINT_ENCODER_DIR

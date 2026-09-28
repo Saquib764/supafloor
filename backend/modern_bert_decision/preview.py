@@ -10,7 +10,7 @@ import torch
 from config import CONFIG_PATH, DecisionConfig, apply_hf_cache, load_config
 from model.decision_model import ModernBERTDecisionModel
 from device import pick_device
-from formatting import format_batch
+from formatting import format_batch, format_candidate_sequence_text
 
 
 def _fmt_params(n: int) -> str:
@@ -62,6 +62,17 @@ def _print_training_samples(cfg: DecisionConfig, count: int = 2) -> list[dict[st
             mark = " *" if opt_index == ex.answer_index else ""
             print(f"  option[{opt_index}]: {_clip(option, 120)}{mark}", flush=True)
         print(f"answer_index:  {ex.answer_index}", flush=True)
+        gold = ex.options[ex.answer_index]
+        print("model input (gold candidate row):", flush=True)
+        print(
+            format_candidate_sequence_text(
+                state=ex.state,
+                question=ex.question,
+                options=ex.options,
+                candidate=gold,
+            ),
+            flush=True,
+        )
     return requests
 
 

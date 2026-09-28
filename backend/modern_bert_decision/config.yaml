@@ -17,10 +17,6 @@ data:
   seed: 42
   num_workers: 0
 
-# Kept for checkpoint metadata compatibility (not used in tokenized sequences).
-prompt:
-  candidate_question: "Is the correct answer {candidate}?"
-
 train:
   session_dir: training_session
 
@@ -30,7 +26,7 @@ train:
     save_steps: 500
 
   schedule:
-    epochs: 10
+    epochs: 1
     batch_size: 2
     variations: 2  # 1 gold + (variations - 1) wrong rows per example
     grad_accum: 1

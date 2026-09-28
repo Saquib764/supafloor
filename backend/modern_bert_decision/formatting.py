@@ -86,6 +86,25 @@ def format_all_options(options: list[str]) -> str:
     return "\n".join(lines)
 
 
+def format_candidate_sequence_text(
+    *,
+    state: str,
+    question: str,
+    options: list[str],
+    candidate: str,
+) -> str:
+    """Human-readable layout matching ``build_candidate_sequence`` segment order."""
+    return "\n".join(
+        [
+            "[CLS]",
+            f"[state] {state.strip()}",
+            f"[question] {question.strip()}",
+            f"[options]\n{format_all_options(options)}",
+            f"[candidate] {candidate.strip()}",
+        ]
+    )
+
+
 def build_candidate_sequence(
     *,
     tokenizer: PreTrainedTokenizerBase,
