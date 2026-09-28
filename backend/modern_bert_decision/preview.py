@@ -99,7 +99,7 @@ def print_model_summary(
         flush=True,
     )
     print(
-        "Scoring:    Linear on [CLS] only; train = BCE per candidate row, infer = softmax",
+        "Scoring:    Linear on [CLS] only; train = margin on logits (gold>0.1, wrong<-0.1), infer = softmax",
         flush=True,
     )
     print(f"Context:    max {model.max_len} tokens (no truncation)", flush=True)

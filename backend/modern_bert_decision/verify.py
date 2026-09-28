@@ -13,6 +13,7 @@ from checkpoint import save_checkpoint, load_checkpoint
 from config import CONFIG_PATH, DecisionConfig, load_config
 from device import pick_device
 from formatting import build_candidate_sequence, format_batch, format_train_batch, resolve_segment_marker_ids
+from loss import margin_logit_loss
 from model.decision_model import build_model
 
 
@@ -47,10 +48,10 @@ def run_checks(cfg: DecisionConfig) -> None:
     gold_logits = model.score_gold(train_batch.input_ids, train_batch.attention_mask)
     if gold_logits.shape != (2,):
         raise AssertionError(f"gold logits shape {tuple(gold_logits.shape)}")
-    train_loss = F.binary_cross_entropy_with_logits(gold_logits, train_labels)
+    train_loss = margin_logit_loss(gold_logits, train_labels)
     train_loss.backward()
     if model.score_head.weight.grad is None or model.score_head.weight.grad.abs().sum().item() == 0.0:
-        raise AssertionError("score_head should receive gradients from gold BCE")
+        raise AssertionError("score_head should receive gradients from margin loss")
 
     model.zero_grad(set_to_none=True)
 

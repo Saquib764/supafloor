@@ -32,7 +32,7 @@ uv run modern-bert-decision infer
 ## Data and training
 
 - RACE rows are used as-is (no option subsetting or shuffling augment).
-- Train: dataset length = examples × `variations`; slot 0 = gold candidate, slots 1… = wrong (shuffled); BCE 0/1.
+- Train: dataset length = examples × `variations`; slot 0 = gold candidate, slots 1… = wrong (shuffled); margin loss on raw logits (gold ≥ 0.1, wrong ≤ −0.1, no sigmoid).
 - Eval/infer: one forward per option; **softmax** over options; pick `argmax`.
 - Checkpoints: `{session_dir}/last/` — full encoder, tokenizer, score head, optional CLS row, and finetune toggles/LRs in meta (used on **resume**; **init_checkpoint** keeps weights but applies train settings from config).
 

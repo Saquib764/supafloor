@@ -41,6 +41,7 @@ dev-mode-dirs = ["."]
 "preview.py" = "preview.py"
 "verify.py" = "verify.py"
 "data.py" = "data.py"
+"loss.py" = "loss.py"
 "train.py" = "train.py"
 
 [tool.uv]

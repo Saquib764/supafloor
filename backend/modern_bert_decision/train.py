@@ -1,4 +1,4 @@
-"""Train ModernBERT decision model on RACE (BCE on expanded candidate rows)."""
+"""Train ModernBERT decision model on RACE (margin loss on expanded candidate rows)."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from data import (
     use_local_race,
 )
 from device import pick_device
+from loss import margin_logit_loss
 from model.decision_model import ModernBERTDecisionModel, build_model
 from model.freeze import encoder_finetune_param_groups
 from model.segment_markers import marker_embedding_param_groups
@@ -403,7 +404,7 @@ def run(cfg: DecisionConfig) -> None:
 
             with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
                 logits = model.score_gold(input_ids, attention_mask)
-                loss = F.binary_cross_entropy_with_logits(logits, labels)
+                loss = margin_logit_loss(logits, labels)
 
             (loss / accum).backward()
             micro += 1
