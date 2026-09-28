@@ -39,16 +39,13 @@ def _clip(text: str, limit: int = 280) -> str:
 def _print_training_samples(cfg: DecisionConfig, count: int = 2) -> list[dict[str, object]]:
     from data import example_to_request, load_race_preview_examples
 
-    print("\n=== Training data sample (with augment) ===", flush=True)
+    print("\n=== Training data sample ===", flush=True)
     print(f"dataset:      {cfg.data.dataset}", flush=True)
     print(f"source:       {cfg.data.source}", flush=True)
     print(f"train_split:  {cfg.data.train_split}", flush=True)
     print(f"race_subset:  {cfg.data.race_subset}", flush=True)
-    print(f"option_subset_prob: {cfg.data.option_subset_prob}", flush=True)
-    print(f"none_of_these:    {cfg.data.none_of_these_option!r}", flush=True)
-    print("  (random subset keep ≥2, optional None-of-these, then shuffle)", flush=True)
     try:
-        examples = load_race_preview_examples(cfg, count=count, augment=True)
+        examples = load_race_preview_examples(cfg, count=count)
     except Exception as exc:
         print(f"(could not load samples: {exc})", flush=True)
         return []
@@ -85,46 +82,58 @@ def print_model_summary(
 
     print("\n=== Architecture ===", flush=True)
     print(f"Backbone:   {cfg.pretrained_name} (encoder only, no MLM head)", flush=True)
-    print(f"Markers:    {cfg.marker_tokens.state}, {cfg.marker_tokens.question}, {cfg.marker_tokens.option}", flush=True)
-    print(f"Sequence:   [CLS] [STATE] … [QUESTION] … [OPTION] option_i … [SEP]", flush=True)
-    print(f"Scoring:    shared Linear({model.hidden_size}, 1, bias=False) on each [OPTION] hidden", flush=True)
-    print(f"Context:    max {model.max_len} tokens (no truncation)", flush=True)
-    enc_label = "trainable" if model.train_pretrained_encoder else "frozen"
     print(
-        f"Encoder:    {enc_label} "
-        f"(config model.train_pretrained_encoder={model.train_pretrained_encoder})",
+        "Sequence:   [CLS] [state] … [question] … [options] … [candidate] … "
+        "(one sequence per candidate option)",
         flush=True,
     )
+    print(
+        "Scoring:    Linear on [CLS] only; train = BCE per candidate row, infer = softmax",
+        flush=True,
+    )
+    print(f"Context:    max {model.max_len} tokens (no truncation)", flush=True)
+    n_ft = model.finetune_last_n_layers
+    if n_ft:
+        on = sum(model.encoder_layer_train)
+        enc_label = f"last {n_ft} block(s), {on} trainable"
+    else:
+        enc_label = "frozen"
+    print(f"Encoder:    {enc_label} (finetune_last_n_layers={n_ft})", flush=True)
+    if n_ft:
+        print(f"            train: {list(model.encoder_layer_train)}", flush=True)
+        print(f"            LRs:   {list(model.encoder_finetune_lrs)}", flush=True)
     print(flush=True)
     print("ModernBERTDecisionModel", flush=True)
-    print(f"├─ encoder   pretrained ModernBERT blocks (+ 3 marker embedding rows)", flush=True)
-    print(f"└─ score_head  one logit per option column", flush=True)
-
-    print("\n=== Parameters (original vs new) ===", flush=True)
-    orig_b = counts.original_pretrained * 4
-    marker_b = counts.marker_embeddings * 4
-    head_b = counts.score_head * 4
+    print(f"├─ encoder   pretrained ModernBERT blocks", flush=True)
     print(
-        f"{'pretrained encoder:':<22} {_fmt_line(counts.original_pretrained, orig_b)}  ({enc_label})",
+        f"└─ score_head  dropout={cfg.model.score_head_dropout}, one CLS logit per forward",
         flush=True,
     )
+
+    print("\n=== Parameters ===", flush=True)
+    enc_b = counts.encoder_trainable * 4
+    head_b = counts.score_head * 4
     print(
-        f"{'marker embeddings:':<22} {_fmt_line(counts.marker_embeddings, marker_b)}  (3 × {model.hidden_size}, trainable)",
+        f"{'encoder (train):':<22} {_fmt_line(counts.encoder_trainable, enc_b)}  ({enc_label})",
         flush=True,
     )
     print(
         f"{'score_head:':<22} {_fmt_line(counts.score_head, head_b)}  (trainable)",
         flush=True,
     )
-    print(f"{'new (trainable):':<22} {_fmt_line(counts.new_trainable, counts.new_trainable * 4)}", flush=True)
+    if counts.marker_embeddings:
+        print(
+            f"{'marker embed:':<22} {_fmt_line(counts.marker_embeddings, counts.marker_embeddings * 4)}",
+            flush=True,
+        )
+    if counts.cls_embedding:
+        print(
+            f"{'CLS embedding:':<22} {_fmt_line(counts.cls_embedding, counts.cls_embedding * 4)}  (trainable row)",
+            flush=True,
+        )
     print(f"{'frozen:':<22} {_fmt_line(counts.frozen, counts.frozen * 4)}", flush=True)
     print(f"{'trainable total:':<22} {_fmt_line(counts.trainable, counts.trainable * 4)}", flush=True)
     print(f"{'total:':<22} {_fmt_line(counts.total, counts.total * 4)}", flush=True)
-    if not model.train_pretrained_encoder:
-        print(
-            "  (pretrained embedding rows are grad-masked; only marker rows update)",
-            flush=True,
-        )
 
     sample_requests: list[dict[str, object]] = []
     if show_samples:
@@ -140,15 +149,15 @@ def print_model_summary(
                 "options": ["Door 1", "Door 2"],
             },
             {
-                "state": "Single option example.",
-                "question": "Pick the only label.",
-                "options": ["Only choice"],
+                "state": "Two choices.",
+                "question": "Pick one?",
+                "options": ["A", "B"],
             },
         ]
         batch = format_batch(
             requests,
+            cfg=cfg,
             tokenizer=model.tokenizer,
-            markers=model.markers,
             max_len=model.max_len,
             device=device,
         )
@@ -156,16 +165,15 @@ def print_model_summary(
             out = model(
                 batch.input_ids,
                 batch.attention_mask,
-                batch.option_positions,
                 batch.option_mask,
             )
-        b, k = batch.option_mask.shape
+        b, k, seq_len = batch.input_ids.shape
         print("\n=== Dummy forward ===", flush=True)
         print(f"batch_size:        {b}", flush=True)
         print(f"K_max:             {k}", flush=True)
+        print(f"seq_len:           {seq_len}", flush=True)
         print(f"input_ids:         {tuple(batch.input_ids.shape)}", flush=True)
         print(f"attention_mask:    {tuple(batch.attention_mask.shape)}", flush=True)
-        print(f"option_positions:  {tuple(batch.option_positions.shape)}", flush=True)
         print(f"option_mask:       {tuple(batch.option_mask.shape)}", flush=True)
         print(f"logits:            {tuple(out.logits.shape)}", flush=True)
         print(f"probabilities:     {tuple(out.probabilities.shape)}", flush=True)
@@ -178,15 +186,6 @@ def print_model_summary(
     print("\n=== Config ===", flush=True)
     print(f"pretrained_name: {cfg.pretrained_name}", flush=True)
     print(f"hf_cache:        {cfg.hf_cache}", flush=True)
-    print(f"train_encoder:   {cfg.model.train_pretrained_encoder}", flush=True)
-    t = cfg.train
-    print(f"session_dir:     {t.session_dir}", flush=True)
-    print(f"epochs:          {t.epochs}", flush=True)
-    print(f"batch_size:      {t.batch_size}", flush=True)
-    print(f"grad_accum:      {t.grad_accum}", flush=True)
-    print(f"learning_rate:   {t.learning_rate}", flush=True)
-    print(f"init_checkpoint: {t.init_checkpoint or '(none)'}", flush=True)
-    print(f"resume:          {t.resume}", flush=True)
     print(f"infer_ckpt:      {cfg.infer.checkpoint}", flush=True)
     print(flush=True)
     return model

@@ -1,4 +1,4 @@
-"""Parameter counts for pretrained vs newly added trainable pieces."""
+"""Parameter counts for pretrained vs trainable pieces."""
 
 from __future__ import annotations
 
@@ -6,45 +6,35 @@ from dataclasses import dataclass
 
 from model.decision_model import ModernBERTDecisionModel
 
-NUM_MARKER_TOKENS = 3
-
 
 @dataclass(frozen=True)
 class ParameterBreakdown:
-    original_pretrained: int
-    marker_embeddings: int
+    encoder_trainable: int
     score_head: int
-    new_trainable: int
+    marker_embeddings: int
+    cls_embedding: int
     frozen: int
     trainable: int
     total: int
 
 
-def _param_bytes(n: int) -> int:
-    return n * 4
-
-
 def parameter_breakdown(model: ModernBERTDecisionModel) -> ParameterBreakdown:
-    hidden = model.hidden_size
-    marker = NUM_MARKER_TOKENS * hidden
     head = sum(p.numel() for p in model.score_head.parameters())
-    encoder_total = sum(p.numel() for p in model.encoder.parameters())
-    original = encoder_total - marker
-    new_trainable = marker + head
+    cls_row = model.hidden_size if model.train_cls_embedding else 0
+    marker = sum(
+        p.numel() for p in model.marker_embedding_params.parameters() if p.requires_grad
+    )
+    encoder_trainable = sum(p.numel() for p in model.encoder.parameters() if p.requires_grad)
+    encoder_blocks = max(0, encoder_trainable - cls_row)
     total = sum(p.numel() for p in model.parameters())
-    if not model.train_pretrained_encoder:
-        trainable = new_trainable
-        frozen = total - trainable
-    else:
-        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        frozen = total - trainable
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    frozen = total - trainable
     return ParameterBreakdown(
-        original_pretrained=original,
-        marker_embeddings=marker,
+        encoder_trainable=encoder_blocks,
         score_head=head,
-        new_trainable=new_trainable,
+        marker_embeddings=marker,
+        cls_embedding=cls_row,
         frozen=frozen,
         trainable=trainable,
         total=total,
     )
-

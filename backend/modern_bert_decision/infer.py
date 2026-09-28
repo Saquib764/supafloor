@@ -27,10 +27,9 @@ def forward_batch(
     *,
     input_ids: torch.Tensor,
     attention_mask: torch.Tensor,
-    option_positions: torch.Tensor,
     option_mask: torch.Tensor,
 ) -> DecisionForwardOutput:
-    return model(input_ids, attention_mask, option_positions, option_mask)
+    return model(input_ids, attention_mask, option_mask)
 
 
 @torch.inference_mode()
@@ -45,8 +44,8 @@ def predict(
     try:
         batch = format_batch(
             requests,
+            cfg=model.cfg,
             tokenizer=model.tokenizer,
-            markers=model.markers,
             max_len=model.max_len,
             device=device,
         )
@@ -54,7 +53,6 @@ def predict(
             model,
             input_ids=batch.input_ids,
             attention_mask=batch.attention_mask,
-            option_positions=batch.option_positions,
             option_mask=batch.option_mask,
         )
         results: list[PredictionItem] = []
@@ -113,7 +111,7 @@ def parse_request_file(path: Path) -> list[dict[str, object]]:
 def request_from_race_example(cfg: DecisionConfig) -> list[dict[str, object]]:
     from data import example_to_request, load_race_preview_examples
 
-    examples = load_race_preview_examples(cfg, count=1, augment=False)
+    examples = load_race_preview_examples(cfg, count=1)
     if not examples:
         raise RuntimeError("no RACE rows available for --from-race")
     return [example_to_request(examples[0])]

@@ -1,4 +1,4 @@
-"""Train ModernBERT decision model on RACE (cross-entropy over option logits)."""
+"""Train ModernBERT decision model on RACE (BCE on expanded candidate rows)."""
 
 from __future__ import annotations
 
@@ -9,25 +9,30 @@ import torch
 import torch.nn.functional as F
 from config import DecisionConfig, datasets_cache_dir, load_config
 from data import (
-    DecisionCollator,
+    EvalCollator,
+    ExpandedMapTrainDataset,
+    ExpandedTrainStreamDataset,
     ListDecisionDataset,
+    TrainCollator,
     RaceDecisionDataset,
-    RaceDecisionStreamDataset,
     load_race_decision_dataset,
-    load_race_eval_examples,
+    ensure_eval_examples,
+    ensure_test_train_examples,
     race_split_row_count,
     use_local_race,
 )
 from device import pick_device
-from model.decision_model import ModernBERTDecisionModel
-from preview import print_model_summary
+from model.decision_model import ModernBERTDecisionModel, build_model
+from model.freeze import encoder_finetune_param_groups
+from model.segment_markers import marker_embedding_param_groups
+from model.params import parameter_breakdown
 from registry import load_dotenv
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from checkpoint import load_checkpoint, save_checkpoint, should_write_encoder
+from checkpoint import load_checkpoint, save_checkpoint
 
 TRAINING_STATE_NAME = "training_state.pt"
 
@@ -80,21 +85,44 @@ def _save_training_state(
     )
 
 
-def _avg_random_chance(option_mask: torch.Tensor) -> float:
+def _optimizer_param_groups(
+    model: ModernBERTDecisionModel,
+    cfg: DecisionConfig,
+) -> list[dict[str, object]]:
+    groups: list[dict[str, object]] = [
+        {
+            "params": list(model.score_head.parameters()),
+            "lr": cfg.train.head_learning_rate,
+        },
+    ]
+    groups.extend(encoder_finetune_param_groups(model))
+    groups.extend(marker_embedding_param_groups(model))
+    if model.train_cls_embedding:
+        embed = model.encoder.get_input_embeddings()
+        if embed is not None and embed.weight.requires_grad:
+            groups.append({"params": [embed.weight], "lr": cfg.train.cls_embedding_learning_rate})
+    return groups
+
+
+def _sum_random_chance(option_mask: torch.Tensor) -> float:
     counts = option_mask.sum(dim=-1)
     valid = counts > 0
     if not valid.any():
         return 0.0
-    return float((1.0 / counts[valid].float()).mean().item())
+    return float((1.0 / counts[valid].float()).sum().item())
 
 
-def _accuracy(logits: torch.Tensor, labels: torch.Tensor, option_mask: torch.Tensor) -> float:
+def _batch_correct(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    option_mask: torch.Tensor,
+) -> tuple[int, int]:
     preds = logits.argmax(dim=-1)
     valid = option_mask.any(dim=-1)
     if not valid.any():
-        return 0.0
-    correct = (preds[valid] == labels[valid]).sum().item()
-    return float(correct) / float(valid.sum().item())
+        return 0, 0
+    correct = int((preds[valid] == labels[valid]).sum().item())
+    return correct, int(valid.sum().item())
 
 
 @torch.no_grad()
@@ -115,20 +143,20 @@ def evaluate(
         labels = batch.labels.to(device)
         input_ids = formatted.input_ids.to(device)
         attention_mask = formatted.attention_mask.to(device)
-        option_positions = formatted.option_positions.to(device)
         option_mask = formatted.option_mask.to(device)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-            out = model(input_ids, attention_mask, option_positions, option_mask)
-            loss = F.cross_entropy(out.logits, labels)
-        n = int(labels.size(0))
-        total_loss += float(loss.item()) * n
-        preds = out.logits.argmax(dim=-1)
-        valid = option_mask.any(dim=-1)
-        total_correct += int((preds[valid] == labels[valid]).sum().item())
-        counts = option_mask.sum(dim=-1)
-        row_valid = counts > 0
-        total_random += float((1.0 / counts[row_valid].float()).sum().item())
-        total_n += int(valid.sum().item())
+            out = model(input_ids, attention_mask, option_mask)
+            gold_logits = out.logits.gather(1, labels.unsqueeze(1)).squeeze(1)
+            loss = F.binary_cross_entropy_with_logits(
+                gold_logits,
+                torch.ones_like(gold_logits),
+            )
+        batch_n = int(labels.size(0))
+        total_loss += float(loss.item()) * batch_n
+        correct, n = _batch_correct(out.logits, labels, option_mask)
+        total_correct += correct
+        total_random += _sum_random_chance(option_mask)
+        total_n += n
     if total_n == 0:
         return 0.0, 0.0, 0.0
     return (
@@ -159,6 +187,7 @@ def _run_eval(
 
 def _print_setup(
     cfg: DecisionConfig,
+    model: ModernBERTDecisionModel,
     train_len: int,
     val_len: int,
     steps_per_epoch: int,
@@ -166,6 +195,11 @@ def _print_setup(
     warmup_steps: int,
     device: torch.device,
 ) -> None:
+    counts = parameter_breakdown(model)
+    print("\n=== Parameters ===")
+    print(f"total:          {counts.total:,}")
+    print(f"trainable:      {counts.trainable:,}")
+
     print("\n=== Device ===")
     print(f"device:         {device}")
     print(f"compute dtype:  {'bfloat16' if use_bf16(cfg) else 'float32'}")
@@ -189,38 +223,75 @@ def _print_setup(
     print(f"steps/epoch:    {steps_per_epoch:,}")
     print(f"total_steps:    {total_steps:,}")
     print(f"warmup_steps:   {warmup_steps:,}")
-    print(f"learning_rate:  {cfg.train.learning_rate}")
-    print(f"train_encoder:  {cfg.model.train_pretrained_encoder}")
+    print(f"head_lr:        {cfg.train.head_learning_rate}")
+    print(f"cls_embed_lr:   {cfg.train.cls_embedding_learning_rate}")
+    print(f"train_cls_emb:  {cfg.train.train_cls_embedding}")
+    print(f"head_dropout:   {cfg.model.score_head_dropout}")
+    n_ft = model.finetune_last_n_layers
+    if n_ft:
+        print(f"encoder_ft:     last {n_ft} block(s) (per-layer train toggles)")
+        print(f"encoder_train:  {list(model.encoder_layer_train)}")
+        print(f"encoder_lrs:    {list(model.encoder_finetune_lrs)}")
+    else:
+        print("encoder_ft:     frozen")
+    print(f"marker_train:   {list(model.marker_embedding_train)}")
+    print(f"marker_lrs:     {list(model.marker_embedding_lrs)}")
     print(f"resume:         {cfg.train.resume}")
     print(f"save_steps:     {cfg.train.save_steps}")
     print(f"eval_samples:   {cfg.train.eval_samples}")
     print(f"eval_steps:     {cfg.train.eval_steps}")
-    print(f"save_full_encoder: {cfg.train.save_full_encoder}")
-    print(f"checkpoint mode: {'full encoder' if should_write_encoder(cfg, at_end=False) else 'light (head + markers)'}")
+    print(f"eval_seed:      {cfg.train.eval_seed}")
+    print(f"test_mode:      {cfg.train.test_mode}")
+    if cfg.train.test_mode:
+        print(f"test_samples:   {cfg.train.test_samples}")
+    print(
+        f"variations:     {cfg.train.variations} "
+        f"(1 gold + {max(0, cfg.train.variations - 1)} wrong rows per example)",
+    )
+    print("checkpoint mode: full encoder (always)")
     print()
 
 
 def run(cfg: DecisionConfig) -> None:
     load_dotenv(cfg.train.session_dir.parent, Path.cwd())
     device = pick_device()
-    if use_local_race(cfg):
-        train_ds: RaceDecisionDataset | RaceDecisionStreamDataset = RaceDecisionStreamDataset(
+    test_train_fixture: Path | None = None
+    if cfg.train.test_mode:
+        train_examples, test_train_fixture = ensure_test_train_examples(cfg)
+        base_ds = ListDecisionDataset(train_examples)
+        train_ds = ExpandedMapTrainDataset(
+            base_ds,
+            variations=cfg.train.variations,
+            seed=cfg.data.seed,
+        )
+        train_len = len(train_ds)
+        if use_local_race(cfg):
+            val_len = race_split_row_count(cfg, cfg.data.val_split)
+        else:
+            val_len = len(load_race_decision_dataset(cfg, split=cfg.data.val_split))
+    elif use_local_race(cfg):
+        train_ds = ExpandedTrainStreamDataset(
             cfg,
             split=cfg.data.train_split,
+            variations=cfg.train.variations,
             shuffle=True,
             seed=cfg.data.seed,
-            augment=True,
         )
-        train_len = race_split_row_count(cfg, cfg.data.train_split)
+        train_len = race_split_row_count(cfg, cfg.data.train_split) * cfg.train.variations
         val_len = race_split_row_count(cfg, cfg.data.val_split)
     else:
         train_hf = load_race_decision_dataset(cfg, split=cfg.data.train_split)
         val_hf = load_race_decision_dataset(cfg, split=cfg.data.val_split)
-        train_ds = RaceDecisionDataset(train_hf, cfg, augment=True)
+        base_ds = RaceDecisionDataset(train_hf, cfg)
+        train_ds = ExpandedMapTrainDataset(
+            base_ds,
+            variations=cfg.train.variations,
+            seed=cfg.data.seed,
+        )
         train_len = len(train_ds)
         val_len = len(val_hf)
 
-    eval_examples = load_race_eval_examples(cfg, count=cfg.train.eval_samples)
+    eval_examples, eval_fixture_path = ensure_eval_examples(cfg)
     if len(eval_examples) < cfg.train.eval_samples:
         tqdm.write(
             f"warning: eval set has {len(eval_examples)} examples "
@@ -241,25 +312,24 @@ def run(cfg: DecisionConfig) -> None:
     elif cfg.train.init_checkpoint is not None:
         init_path = cfg.train.init_checkpoint
         if init_path.is_dir():
-            model = load_checkpoint(init_path, cfg)
+            model = load_checkpoint(init_path, cfg, trainability_from_config=True)
             tqdm.write(f"Initialized weights from {init_path}")
         else:
-            print("\n=== Model ===")
-            model = print_model_summary(cfg, dummy_forward=False, show_samples=False)
+            raise FileNotFoundError(f"init_checkpoint not found: {init_path}")
     else:
-        print("\n=== Model ===")
-        model = print_model_summary(cfg, dummy_forward=False, show_samples=False)
+        model = build_model(cfg)
 
     model.to(device)
 
-    collator = DecisionCollator(model)
-    train_shuffle = not use_local_race(cfg)
+    train_collator = TrainCollator(model)
+    eval_collator = EvalCollator(model)
+    train_shuffle = cfg.train.test_mode or not use_local_race(cfg)
     loader = DataLoader(
         train_ds,
         batch_size=cfg.train.batch_size,
         shuffle=train_shuffle,
         num_workers=cfg.data.num_workers,
-        collate_fn=collator,
+        collate_fn=train_collator,
         pin_memory=device.type == "cuda",
         drop_last=False,
     )
@@ -268,7 +338,7 @@ def run(cfg: DecisionConfig) -> None:
         batch_size=cfg.train.batch_size,
         shuffle=False,
         num_workers=cfg.data.num_workers,
-        collate_fn=collator,
+        collate_fn=eval_collator,
         pin_memory=device.type == "cuda",
         drop_last=False,
     )
@@ -280,8 +350,7 @@ def run(cfg: DecisionConfig) -> None:
     warmup_steps = int(total_steps * cfg.train.warmup_ratio)
 
     optimizer = AdamW(
-        (p for p in model.parameters() if p.requires_grad),
-        lr=cfg.train.learning_rate,
+        _optimizer_param_groups(model, cfg),
         weight_decay=cfg.train.weight_decay,
     )
     scheduler = LambdaLR(
@@ -297,7 +366,12 @@ def run(cfg: DecisionConfig) -> None:
             tqdm.write(f"warning: could not restore optimizer ({exc}); using fresh optimizer")
         tqdm.write(f"Resumed step {step} epoch {start_epoch} ← {ckpt_dir}")
 
-    _print_setup(cfg, train_len, val_len, steps_per_epoch, total_steps, warmup_steps, device)
+    _print_setup(
+        cfg, model, train_len, val_len, steps_per_epoch, total_steps, warmup_steps, device
+    )
+    print(f"eval_fixture:   {eval_fixture_path} ({eval_n} fixed rows)", flush=True)
+    if test_train_fixture is not None:
+        print(f"test_train:     {test_train_fixture} ({train_len} fixed rows)", flush=True)
     if use_local_race(cfg):
         from data import race_local_root
 
@@ -317,21 +391,17 @@ def run(cfg: DecisionConfig) -> None:
     )
 
     for epoch in range(start_epoch, cfg.train.epochs):
-        if isinstance(train_ds, RaceDecisionStreamDataset):
+        if isinstance(train_ds, ExpandedTrainStreamDataset):
             train_ds.epoch = epoch
         for batch in loader:
             formatted = batch.formatted
             labels = batch.labels.to(device, non_blocking=True)
             input_ids = formatted.input_ids.to(device, non_blocking=True)
             attention_mask = formatted.attention_mask.to(device, non_blocking=True)
-            option_positions = formatted.option_positions.to(device, non_blocking=True)
-            option_mask = formatted.option_mask.to(device, non_blocking=True)
 
             with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-                out = model(input_ids, attention_mask, option_positions, option_mask)
-                loss = F.cross_entropy(out.logits, labels)
-            batch_acc = _accuracy(out.logits, labels, option_mask)
-            batch_rand = _avg_random_chance(option_mask)
+                logits = model.score_gold(input_ids, attention_mask)
+                loss = F.binary_cross_entropy_with_logits(logits, labels)
 
             (loss / accum).backward()
             micro += 1
@@ -348,7 +418,7 @@ def run(cfg: DecisionConfig) -> None:
             step += 1
             progress.update(1)
             progress.set_postfix_str(
-                f"loss={loss.item():.4f}, acc={batch_acc:.4f}, rand={batch_rand:.4f}, "
+                f"loss={loss.item():.4f}, "
                 f"lr={float(optimizer.param_groups[0]['lr']):.2e}, "
                 f"epoch={epoch + 1}/{cfg.train.epochs}"
             )

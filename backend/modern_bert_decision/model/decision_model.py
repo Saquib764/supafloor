@@ -1,4 +1,4 @@
-"""ModernBERT encoder with a shared linear scoring head over [OPTION] markers."""
+"""ModernBERT encoder with a CLS linear score head (one forward pass per candidate)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import torch.nn as nn
 from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase
 
 from config import DecisionConfig, assert_hub_has_space, hub_from_pretrained_kwargs
-from formatting import MarkerIds, marker_ids_from_tokenizer, max_sequence_length
 
 
 @dataclass
@@ -28,19 +27,27 @@ class ModernBERTDecisionModel(nn.Module):
         tokenizer: PreTrainedTokenizerBase,
         *,
         cfg: DecisionConfig,
-        markers: MarkerIds,
         max_len: int,
     ) -> None:
         super().__init__()
         self.cfg = cfg
         self.encoder = encoder
         self.tokenizer = tokenizer
-        self.markers = markers
         self.max_len = max_len
-        self.base_vocab_size = 0
-        self.train_pretrained_encoder = False
+        self.base_vocab_size = len(tokenizer)
+        self.finetune_last_n_layers = 0
+        self.encoder_layer_train: tuple[bool, ...] = ()
+        self.encoder_finetune_lrs: tuple[float, ...] = ()
+        self.train_cls_embedding = False
+        self.marker_token_ids: dict[str, int] = {}
+        self.marker_embedding_params = nn.ParameterDict()
+        self.marker_embedding_train: tuple[bool, ...] = ()
+        self.marker_embedding_lrs: tuple[float, ...] = ()
+        self._embedding_forward_hook = None
+        self.cls_token_id: int | None = None
         self._embedding_grad_hook = None
         hidden = int(encoder.config.hidden_size)
+        self.score_head_dropout = nn.Dropout(p=float(cfg.model.score_head_dropout))
         self.score_head = nn.Linear(hidden, 1, bias=False)
 
     @property
@@ -58,21 +65,34 @@ class ModernBERTDecisionModel(nn.Module):
 
         return load_checkpoint(root, cfg)
 
+    def _cls_logits(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        cls_hidden = outputs.last_hidden_state[:, 0, :]
+        cls_hidden = self.score_head_dropout(cls_hidden)
+        return self.score_head(cls_hidden).squeeze(-1)
+
+    def score_gold(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        """Training: one gold-verification sequence per example → logits [B]."""
+        if input_ids.dim() != 2:
+            raise ValueError(f"score_gold expects [B, L], got {tuple(input_ids.shape)}")
+        return self._cls_logits(input_ids, attention_mask)
+
     def forward(
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
-        option_positions: torch.Tensor,
         option_mask: torch.Tensor,
     ) -> DecisionForwardOutput:
-        outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        hidden = outputs.last_hidden_state
-        batch_size, k_max = option_positions.shape
-        gather_index = option_positions.unsqueeze(-1).expand(batch_size, k_max, hidden.size(-1))
-        option_hidden = torch.gather(hidden, dim=1, index=gather_index)
-        logits = self.score_head(option_hidden).squeeze(-1)
-        logits = logits.masked_fill(~option_mask, float("-inf"))
+        """Inference/eval: one logit per option; softmax over valid options for the decision."""
+        if input_ids.dim() != 3:
+            raise ValueError(f"forward expects [B, K, L], got shape {tuple(input_ids.shape)}")
+        batch_size, k_max, seq_len = input_ids.shape
+        flat_ids = input_ids.reshape(batch_size * k_max, seq_len)
+        flat_mask = attention_mask.reshape(batch_size * k_max, seq_len)
+        flat_logits = self._cls_logits(flat_ids, flat_mask)
+        logits = flat_logits.reshape(batch_size, k_max)
 
+        logits = logits.masked_fill(~option_mask, float("-inf"))
         probs = torch.softmax(logits.float(), dim=-1)
         probs = probs * option_mask.float()
         selected = torch.argmax(logits, dim=-1)
@@ -82,11 +102,6 @@ class ModernBERTDecisionModel(nn.Module):
             selected_indices=selected,
             option_mask=option_mask,
         )
-
-
-def _add_marker_tokens(tokenizer: PreTrainedTokenizerBase, cfg: DecisionConfig) -> None:
-    tokens = [cfg.marker_tokens.state, cfg.marker_tokens.question, cfg.marker_tokens.option]
-    tokenizer.add_special_tokens({"additional_special_tokens": tokens})
 
 
 def _raise_load_failure(cfg: DecisionConfig, kind: str, exc: BaseException) -> None:
@@ -109,8 +124,6 @@ def build_model(cfg: DecisionConfig) -> ModernBERTDecisionModel:
         tokenizer = AutoTokenizer.from_pretrained(cfg.pretrained_name, use_fast=True, **hub_kw)
     except OSError as exc:
         _raise_load_failure(cfg, "tokenizer", exc)
-    base_vocab_size = len(tokenizer)
-    _add_marker_tokens(tokenizer, cfg)
     if tokenizer.pad_token_id is None:
         if tokenizer.eos_token is not None:
             tokenizer.pad_token = tokenizer.eos_token
@@ -124,21 +137,29 @@ def build_model(cfg: DecisionConfig) -> ModernBERTDecisionModel:
         if "No space" in str(exc) or "disk" in str(exc).lower():
             _raise_load_failure(cfg, "encoder", exc)
         raise
-    encoder.resize_token_embeddings(len(tokenizer))
-    markers = marker_ids_from_tokenizer(tokenizer, cfg)
+    from formatting import max_sequence_length
+
     max_len = max_sequence_length(tokenizer, encoder.config)
     model = ModernBERTDecisionModel(
         encoder,
         tokenizer,
         cfg=cfg,
-        markers=markers,
         max_len=max_len,
     )
     from model.freeze import apply_encoder_trainability
+    from model.segment_markers import apply_marker_embedding_trainability, init_marker_parameters
 
+    init_marker_parameters(model)
     apply_encoder_trainability(
         model,
-        base_vocab_size=base_vocab_size,
-        train_pretrained_encoder=cfg.model.train_pretrained_encoder,
+        finetune_last_n_layers=cfg.model.finetune_last_n_layers,
+        encoder_layer_train=cfg.train.encoder_layer_train,
+        encoder_layer_learning_rates=cfg.train.encoder_layer_learning_rates,
+        train_cls_embedding=cfg.train.train_cls_embedding,
+    )
+    apply_marker_embedding_trainability(
+        model,
+        marker_embedding_train=cfg.train.marker_embedding_train,
+        marker_embedding_learning_rates=cfg.train.marker_embedding_learning_rates,
     )
     return model

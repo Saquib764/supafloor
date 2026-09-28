@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import random
+from random import Random
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import torch
 from config import DecisionConfig, datasets_cache_dir
 from datasets import Dataset
-from formatting import FormattedBatch, format_batch
+from formatting import FormattedBatch, FormattedTrainBatch, format_batch, format_train_batch
 from model.decision_model import ModernBERTDecisionModel
 from registry import _metadata, _schema, local_dataset_available, local_dataset_root
 from torch.utils.data import Dataset as TorchDataset, IterableDataset
@@ -22,6 +25,43 @@ class DecisionExample:
     question: str
     options: list[str]
     answer_index: int
+
+
+@dataclass(frozen=True)
+class TrainRow:
+    state: str
+    question: str
+    options: list[str]
+    candidate: str
+    label: float
+
+
+def _shuffled_wrong_indices(example: DecisionExample, rng: Random) -> list[int]:
+    wrong = [i for i in range(len(example.options)) if i != example.answer_index]
+    order = wrong.copy()
+    rng.shuffle(order)
+    return order
+
+
+def train_row_for_variation(
+    example: DecisionExample,
+    variation: int,
+    *,
+    wrong_order: list[int],
+) -> TrainRow:
+    if variation == 0:
+        candidate_index = example.answer_index
+    else:
+        candidate_index = wrong_order[(variation - 1) % len(wrong_order)]
+    candidate = example.options[candidate_index]
+    label = 1.0 if candidate_index == example.answer_index else 0.0
+    return TrainRow(
+        state=example.state,
+        question=example.question,
+        options=example.options,
+        candidate=candidate,
+        label=label,
+    )
 
 
 def race_row_to_example(row: dict[str, Any]) -> DecisionExample:
@@ -40,42 +80,6 @@ def race_row_to_example(row: dict[str, Any]) -> DecisionExample:
     return DecisionExample(
         state=state,
         question=question,
-        options=options,
-        answer_index=answer_index,
-    )
-
-
-def _shuffle_options(options: list[str], answer_index: int, rng: random.Random) -> tuple[list[str], int]:
-    order = list(range(len(options)))
-    rng.shuffle(order)
-    shuffled = [options[i] for i in order]
-    new_answer = order.index(answer_index)
-    return shuffled, new_answer
-
-
-def augment_training_example(
-    example: DecisionExample,
-    rng: random.Random,
-    cfg: DecisionConfig,
-) -> DecisionExample:
-    options = list(example.options)
-    answer_index = example.answer_index
-    none_label = cfg.data.none_of_these_option
-
-    if len(options) > 2 and rng.random() < cfg.data.option_subset_prob:
-        keep_count = rng.randint(2, len(options) - 1)
-        kept = sorted(rng.sample(range(len(options)), keep_count))
-        options = [options[i] for i in kept]
-        if answer_index in kept:
-            answer_index = kept.index(answer_index)
-        else:
-            options.append(none_label)
-            answer_index = len(options) - 1
-
-    options, answer_index = _shuffle_options(options, answer_index, rng)
-    return DecisionExample(
-        state=example.state,
-        question=example.question,
         options=options,
         answer_index=answer_index,
     )
@@ -120,7 +124,6 @@ def iter_race_local_examples(
     *,
     shuffle: bool = False,
     seed: int = 0,
-    augment: bool = False,
 ) -> Iterator[DecisionExample]:
     schema = _schema(cfg.data.dataset)
     root = race_local_root(cfg)
@@ -128,12 +131,8 @@ def iter_race_local_examples(
         rows = schema.iter_split_rows_shuffled(root, split, seed=seed)
     else:
         rows = schema.iter_split_rows(root, split)
-    rng = random.Random(seed) if augment else None
     for row in rows:
-        ex = race_row_to_example(row)
-        if augment and rng is not None:
-            ex = augment_training_example(ex, rng, cfg)
-        yield ex
+        yield race_row_to_example(row)
 
 
 def load_race_hub_split(cfg: DecisionConfig, *, split: str) -> Dataset:
@@ -154,7 +153,6 @@ def load_race_split_examples(
     *,
     split: str,
     count: int,
-    augment: bool = False,
 ) -> list[DecisionExample]:
     if count < 1:
         return []
@@ -165,7 +163,6 @@ def load_race_split_examples(
             split,
             shuffle=False,
             seed=cfg.data.seed,
-            augment=augment,
         ):
             out.append(ex)
             if len(out) >= count:
@@ -185,33 +182,134 @@ def load_race_split_examples(
     out: list[DecisionExample] = []
     for index in range(len(raw)):
         ex = race_row_to_example(schema.row_from_hf(dict(raw[int(index)])))
-        if augment:
-            ex = augment_training_example(ex, random.Random(cfg.data.seed + index), cfg)
         out.append(ex)
     return out
 
 
-def load_race_preview_examples(
+def load_race_preview_examples(cfg: DecisionConfig, count: int = 2) -> list[DecisionExample]:
+    return load_race_split_examples(cfg, split=cfg.data.train_split, count=count)
+
+
+EVAL_SAMPLES_FILENAME = "eval_samples.jsonl"
+TEST_TRAIN_SAMPLES_FILENAME = "test_train_samples.jsonl"
+
+
+def example_to_json(ex: DecisionExample) -> dict[str, object]:
+    return {
+        "state": ex.state,
+        "question": ex.question,
+        "options": ex.options,
+        "answer_index": ex.answer_index,
+    }
+
+
+def example_from_json(row: dict[str, object]) -> DecisionExample:
+    return race_row_to_example(row)
+
+
+def write_eval_examples(path: Path, examples: list[DecisionExample]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = "\n".join(json.dumps(example_to_json(ex), ensure_ascii=False) for ex in examples)
+    path.write_text(text + ("\n" if text else ""), encoding="utf-8")
+
+
+def read_eval_examples(path: Path) -> list[DecisionExample]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    out: list[DecisionExample] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        out.append(example_from_json(json.loads(stripped)))
+    return out
+
+
+def _validation_example_pool(cfg: DecisionConfig) -> list[DecisionExample]:
+    if use_local_race(cfg):
+        return list(
+            iter_race_local_examples(
+                cfg,
+                cfg.data.val_split,
+                shuffle=False,
+                seed=cfg.data.seed,
+            )
+        )
+    rows = load_race_hub_split(cfg, split=cfg.data.val_split)
+    schema = _schema(cfg.data.dataset)
+    return [race_row_to_example(schema.row_from_hf(dict(rows[int(i)]))) for i in range(len(rows))]
+
+
+def pick_eval_examples_from_validation(
     cfg: DecisionConfig,
-    count: int = 2,
     *,
-    augment: bool = False,
+    count: int,
+    seed: int,
 ) -> list[DecisionExample]:
-    return load_race_split_examples(
-        cfg,
-        split=cfg.data.train_split,
-        count=count,
-        augment=augment,
-    )
+    pool = _validation_example_pool(cfg)
+    if not pool:
+        return []
+    rng = random.Random(seed)
+    order = list(range(len(pool)))
+    rng.shuffle(order)
+    take = min(count, len(order))
+    return [pool[i] for i in order[:take]]
 
 
-def load_race_eval_examples(cfg: DecisionConfig, *, count: int) -> list[DecisionExample]:
-    return load_race_split_examples(
+def _train_example_pool(cfg: DecisionConfig) -> list[DecisionExample]:
+    if use_local_race(cfg):
+        return list(
+            iter_race_local_examples(
+                cfg,
+                cfg.data.train_split,
+                shuffle=False,
+                seed=cfg.data.seed,
+            )
+        )
+    rows = load_race_hub_split(cfg, split=cfg.data.train_split)
+    schema = _schema(cfg.data.dataset)
+    return [race_row_to_example(schema.row_from_hf(dict(rows[int(i)]))) for i in range(len(rows))]
+
+
+def pick_train_examples(
+    cfg: DecisionConfig,
+    *,
+    count: int,
+    seed: int,
+) -> list[DecisionExample]:
+    pool = _train_example_pool(cfg)
+    if not pool:
+        return []
+    rng = random.Random(seed)
+    order = list(range(len(pool)))
+    rng.shuffle(order)
+    take = min(count, len(order))
+    return [pool[i] for i in order[:take]]
+
+
+def ensure_eval_examples(cfg: DecisionConfig) -> tuple[list[DecisionExample], Path]:
+    path = cfg.train.session_dir / EVAL_SAMPLES_FILENAME
+    if path.is_file():
+        return read_eval_examples(path), path
+    picked = pick_eval_examples_from_validation(
         cfg,
-        split=cfg.data.val_split,
-        count=count,
-        augment=False,
+        count=cfg.train.eval_samples,
+        seed=cfg.train.eval_seed,
     )
+    write_eval_examples(path, picked)
+    return picked, path
+
+
+def ensure_test_train_examples(cfg: DecisionConfig) -> tuple[list[DecisionExample], Path]:
+    path = cfg.train.session_dir / TEST_TRAIN_SAMPLES_FILENAME
+    if path.is_file():
+        return read_eval_examples(path), path
+    picked = pick_train_examples(
+        cfg,
+        count=cfg.train.test_samples,
+        seed=cfg.data.seed,
+    )
+    write_eval_examples(path, picked)
+    return picked, path
 
 
 class ListDecisionDataset(TorchDataset):
@@ -225,6 +323,69 @@ class ListDecisionDataset(TorchDataset):
         return self._examples[int(index)]
 
 
+class ExpandedMapTrainDataset(TorchDataset):
+    """One dataset row per (example × variation); batch_size applies to these rows."""
+
+    def __init__(
+        self,
+        base: TorchDataset,
+        *,
+        variations: int,
+        seed: int,
+    ) -> None:
+        self._base = base
+        self._variations = max(1, variations)
+        self._seed = seed
+
+    def __len__(self) -> int:
+        return len(self._base) * self._variations
+
+    def __getitem__(self, index: int) -> TrainRow:
+        base_idx = int(index) // self._variations
+        slot = int(index) % self._variations
+        ex = self._base[base_idx]
+        rng = Random(self._seed + base_idx)
+        wrong_order = _shuffled_wrong_indices(ex, rng)
+        return train_row_for_variation(ex, slot, wrong_order=wrong_order)
+
+
+class ExpandedTrainStreamDataset(IterableDataset):
+    def __init__(
+        self,
+        cfg: DecisionConfig,
+        *,
+        split: str,
+        variations: int,
+        shuffle: bool = False,
+        seed: int = 0,
+        epoch: int = 0,
+    ) -> None:
+        self._inner = RaceDecisionStreamDataset(
+            cfg,
+            split=split,
+            shuffle=shuffle,
+            seed=seed,
+            epoch=epoch,
+        )
+        self._variations = max(1, variations)
+        self._rng = Random(seed + epoch)
+
+    @property
+    def epoch(self) -> int:
+        return self._inner.epoch
+
+    @epoch.setter
+    def epoch(self, value: int) -> None:
+        self._inner.epoch = value
+        self._rng = Random(self._inner.seed + value)
+
+    def __iter__(self) -> Iterator[TrainRow]:
+        for ex in self._inner:
+            wrong_order = _shuffled_wrong_indices(ex, self._rng)
+            for slot in range(self._variations):
+                yield train_row_for_variation(ex, slot, wrong_order=wrong_order)
+
+
 def load_race_decision_dataset(cfg: DecisionConfig, *, split: str) -> Dataset:
     if use_local_race(cfg):
         raise RuntimeError("use RaceDecisionStreamDataset for local RACE (streaming JSONL)")
@@ -232,23 +393,15 @@ def load_race_decision_dataset(cfg: DecisionConfig, *, split: str) -> Dataset:
 
 
 class RaceDecisionDataset(TorchDataset):
-    def __init__(self, rows: Dataset, cfg: DecisionConfig, *, augment: bool = False) -> None:
+    def __init__(self, rows: Dataset, cfg: DecisionConfig) -> None:
         self._rows = rows
         self.cfg = cfg
-        self.augment = augment
 
     def __len__(self) -> int:
         return len(self._rows)
 
     def __getitem__(self, index: int) -> DecisionExample:
-        ex = race_row_to_example(self._rows[int(index)])
-        if self.augment:
-            ex = augment_training_example(
-                ex,
-                random.Random(self.cfg.data.seed + int(index)),
-                self.cfg,
-            )
-        return ex
+        return race_row_to_example(self._rows[int(index)])
 
 
 class RaceDecisionStreamDataset(IterableDataset):
@@ -260,14 +413,12 @@ class RaceDecisionStreamDataset(IterableDataset):
         shuffle: bool = False,
         seed: int = 0,
         epoch: int = 0,
-        augment: bool = False,
     ) -> None:
         self.cfg = cfg
         self.split = split
         self.shuffle = shuffle
         self.seed = seed
         self.epoch = epoch
-        self.augment = augment
 
     def __iter__(self) -> Iterator[DecisionExample]:
         epoch_seed = self.seed + self.epoch
@@ -276,7 +427,6 @@ class RaceDecisionStreamDataset(IterableDataset):
             self.split,
             shuffle=self.shuffle,
             seed=epoch_seed,
-            augment=self.augment,
         )
 
 
@@ -292,21 +442,43 @@ def download_race_local(cfg: DecisionConfig, *, force: bool = False) -> Path:
 
 @dataclass
 class TrainBatch:
+    formatted: FormattedTrainBatch
+    labels: torch.Tensor
+
+
+@dataclass
+class EvalBatch:
     formatted: FormattedBatch
     labels: torch.Tensor
 
 
-class DecisionCollator:
+class TrainCollator:
     def __init__(self, model: ModernBERTDecisionModel) -> None:
         self.model = model
 
-    def __call__(self, examples: list[DecisionExample]) -> TrainBatch:
+    def __call__(self, rows: list[TrainRow]) -> TrainBatch:
+        sequences = [(r.state, r.question, r.options, r.candidate) for r in rows]
+        formatted = format_train_batch(
+            sequences,
+            cfg=self.model.cfg,
+            tokenizer=self.model.tokenizer,
+            max_len=self.model.max_len,
+        )
+        labels = torch.tensor([r.label for r in rows], dtype=torch.float32)
+        return TrainBatch(formatted=formatted, labels=labels)
+
+
+class EvalCollator:
+    def __init__(self, model: ModernBERTDecisionModel) -> None:
+        self.model = model
+
+    def __call__(self, examples: list[DecisionExample]) -> EvalBatch:
         requests = [example_to_request(ex) for ex in examples]
         formatted = format_batch(
             requests,
+            cfg=self.model.cfg,
             tokenizer=self.model.tokenizer,
-            markers=self.model.markers,
             max_len=self.model.max_len,
         )
         labels = torch.tensor([ex.answer_index for ex in examples], dtype=torch.long)
-        return TrainBatch(formatted=formatted, labels=labels)
+        return EvalBatch(formatted=formatted, labels=labels)
