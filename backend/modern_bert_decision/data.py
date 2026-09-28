@@ -148,6 +148,12 @@ def load_race_hub_split(cfg: DecisionConfig, *, split: str) -> Dataset:
     )
 
 
+def _examples_from_hub_split(cfg: DecisionConfig, split: str) -> list[DecisionExample]:
+    """Rows from ``load_race_hub_split`` are already registry FEATURES (state, answer_index)."""
+    rows = load_race_hub_split(cfg, split=split)
+    return [race_row_to_example(dict(rows[int(i)])) for i in range(len(rows))]
+
+
 def load_race_split_examples(
     cfg: DecisionConfig,
     *,
@@ -234,9 +240,7 @@ def _validation_example_pool(cfg: DecisionConfig) -> list[DecisionExample]:
                 seed=cfg.data.seed,
             )
         )
-    rows = load_race_hub_split(cfg, split=cfg.data.val_split)
-    schema = _schema(cfg.data.dataset)
-    return [race_row_to_example(schema.row_from_hf(dict(rows[int(i)]))) for i in range(len(rows))]
+    return _examples_from_hub_split(cfg, cfg.data.val_split)
 
 
 def pick_eval_examples_from_validation(
@@ -265,9 +269,7 @@ def _train_example_pool(cfg: DecisionConfig) -> list[DecisionExample]:
                 seed=cfg.data.seed,
             )
         )
-    rows = load_race_hub_split(cfg, split=cfg.data.train_split)
-    schema = _schema(cfg.data.dataset)
-    return [race_row_to_example(schema.row_from_hf(dict(rows[int(i)]))) for i in range(len(rows))]
+    return _examples_from_hub_split(cfg, cfg.data.train_split)
 
 
 def pick_train_examples(
