@@ -263,6 +263,7 @@ def run(cfg: DecisionConfig) -> None:
             base_ds,
             variations=cfg.train.variations,
             seed=cfg.data.seed,
+            augment=cfg.data.train_augment,
         )
         train_len = len(train_ds)
         if use_local_race(cfg):
@@ -287,6 +288,7 @@ def run(cfg: DecisionConfig) -> None:
             base_ds,
             variations=cfg.train.variations,
             seed=cfg.data.seed,
+            augment=cfg.data.train_augment,
         )
         train_len = len(train_ds)
         val_len = len(val_hf)
