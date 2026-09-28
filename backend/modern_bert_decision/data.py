@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from config import DecisionConfig, datasets_cache_dir
+from config import DecisionConfig, TrainAugmentSettings, datasets_cache_dir
 from datasets import Dataset
 from formatting import FormattedBatch, FormattedTrainBatch, format_batch, format_train_batch
 from model.decision_model import ModernBERTDecisionModel
@@ -34,6 +34,43 @@ class TrainRow:
     options: list[str]
     candidate: str
     label: float
+
+
+def augment_training_example(
+    example: DecisionExample,
+    rng: Random,
+    augment: TrainAugmentSettings,
+) -> DecisionExample:
+    """Drop random wrong options (keep ≥2 total), then shuffle; remap ``answer_index``."""
+    if not augment.shuffle_options and not augment.omit_wrong_options:
+        return example
+    n = len(example.options)
+    gold_idx = example.answer_index
+    gold_text = example.options[gold_idx]
+    kept = list(range(n))
+    if augment.omit_wrong_options and n > 2:
+        wrong = [i for i in kept if i != gold_idx]
+        k_drop = rng.randint(0, len(wrong) - 1)
+        rng.shuffle(wrong)
+        drop = set(wrong[:k_drop])
+        kept = [i for i in kept if i not in drop]
+    options = [example.options[i] for i in kept]
+    answer_index = kept.index(gold_idx)
+    if augment.shuffle_options and len(options) > 1:
+        order = list(range(len(options)))
+        rng.shuffle(order)
+        options = [options[i] for i in order]
+        answer_index = order.index(answer_index)
+    if len(options) < 2:
+        raise ValueError("augmented example must have at least two options")
+    if options[answer_index] != gold_text:
+        raise ValueError("augmented answer_index does not point at gold option")
+    return DecisionExample(
+        state=example.state,
+        question=example.question,
+        options=options,
+        answer_index=answer_index,
+    )
 
 
 def _shuffled_wrong_indices(example: DecisionExample, rng: Random) -> list[int]:
@@ -334,10 +371,12 @@ class ExpandedMapTrainDataset(TorchDataset):
         *,
         variations: int,
         seed: int,
+        augment: TrainAugmentSettings,
     ) -> None:
         self._base = base
         self._variations = max(1, variations)
         self._seed = seed
+        self._augment = augment
 
     def __len__(self) -> int:
         return len(self._base) * self._variations
@@ -347,6 +386,7 @@ class ExpandedMapTrainDataset(TorchDataset):
         slot = int(index) % self._variations
         ex = self._base[base_idx]
         rng = Random(self._seed + base_idx)
+        ex = augment_training_example(ex, rng, self._augment)
         wrong_order = _shuffled_wrong_indices(ex, rng)
         return train_row_for_variation(ex, slot, wrong_order=wrong_order)
 
@@ -382,7 +422,9 @@ class ExpandedTrainStreamDataset(IterableDataset):
         self._rng = Random(self._inner.seed + value)
 
     def __iter__(self) -> Iterator[TrainRow]:
+        augment = self._inner.cfg.data.train_augment
         for ex in self._inner:
+            ex = augment_training_example(ex, self._rng, augment)
             wrong_order = _shuffled_wrong_indices(ex, self._rng)
             for slot in range(self._variations):
                 yield train_row_for_variation(ex, slot, wrong_order=wrong_order)

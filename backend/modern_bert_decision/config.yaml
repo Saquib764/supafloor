@@ -16,6 +16,9 @@ data:
   val_split: validation
   seed: 42
   num_workers: 0
+  train_augment:
+    shuffle_options: true
+    omit_wrong_options: true
 
 train:
   session_dir: training_session

@@ -37,6 +37,12 @@ class InferSettings:
 
 
 @dataclass(frozen=True)
+class TrainAugmentSettings:
+    shuffle_options: bool
+    omit_wrong_options: bool
+
+
+@dataclass(frozen=True)
 class DataSettings:
     dataset: str
     source: str
@@ -45,6 +51,7 @@ class DataSettings:
     val_split: str
     seed: int
     num_workers: int
+    train_augment: TrainAugmentSettings
 
 
 @dataclass(frozen=True)
@@ -323,6 +330,11 @@ def load_config(path: Path | None = None) -> DecisionConfig:
     )
     lr_raw = train_raw.get("learning_rates") or {}
     train_cls, cls_lr = _load_cls_embedding_settings(train_raw, lr_raw)
+    augment_raw = data_raw.get("train_augment") or {}
+    train_augment = TrainAugmentSettings(
+        shuffle_options=bool(augment_raw.get("shuffle_options", False)),
+        omit_wrong_options=bool(augment_raw.get("omit_wrong_options", False)),
+    )
     return DecisionConfig(
         hf_cache=apply_hf_cache(_resolve(Path(hf_cache_path), base)),
         pretrained_name=pretrained,
@@ -335,6 +347,7 @@ def load_config(path: Path | None = None) -> DecisionConfig:
             val_split=str(data_raw.get("val_split") or "validation"),
             seed=int(data_raw.get("seed", 42)),
             num_workers=int(data_raw.get("num_workers", 0)),
+            train_augment=train_augment,
         ),
         train=TrainSettings(
             session_dir=_resolve(
