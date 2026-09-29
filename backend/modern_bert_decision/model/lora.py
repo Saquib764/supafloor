@@ -108,6 +108,24 @@ def load_encoder_lora_adapter(encoder: PreTrainedModel, adapter_dir) -> PeftMode
     return PeftModel.from_pretrained(encoder, str(adapter_dir), is_trainable=True)
 
 
+def native_encoder_state_dict(encoder: PreTrainedModel) -> dict[str, torch.Tensor]:
+    """Base weights with native module names (strip PEFT ``base_layer`` / ``lora_*``)."""
+    if not isinstance(encoder, PeftModel):
+        return {k: v.detach().cpu() for k, v in encoder.state_dict().items()}
+
+    prefix = "base_model.model."
+    out: dict[str, torch.Tensor] = {}
+    for key, value in encoder.state_dict().items():
+        if "lora_" in key:
+            continue
+        native = key
+        if native.startswith(prefix):
+            native = native[len(prefix) :]
+        native = native.replace(".base_layer.", ".")
+        out[native] = value.detach().cpu()
+    return out
+
+
 def save_encoder_lora_adapter(encoder: PreTrainedModel, adapter_dir) -> None:
     if not isinstance(encoder, PeftModel):
         raise ValueError("save_encoder_lora_adapter expects a PeftModel encoder")

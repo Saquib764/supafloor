@@ -72,6 +72,22 @@ def _encode_field(tokenizer: PreTrainedTokenizerBase, text: str) -> list[int]:
 
 
 CANDIDATE_SEGMENT_TEMPLATE = "Is the correct answer to the question is: {candidate}"
+STATE_SEGMENT_PREFIX = "Context:\n"
+QUESTION_SEGMENT_PREFIX = "Question:\n"
+
+
+def format_state_segment(state: str) -> str:
+    text = state.strip()
+    if not text:
+        raise ValueError("state must be non-blank after stripping")
+    return f"{STATE_SEGMENT_PREFIX}{text}"
+
+
+def format_question_segment(question: str) -> str:
+    text = question.strip()
+    if not text:
+        raise ValueError("question must be non-blank after stripping")
+    return f"{QUESTION_SEGMENT_PREFIX}{text}"
 
 
 def format_candidate_segment(candidate: str) -> str:
@@ -90,8 +106,8 @@ def format_candidate_sequence_text(
     """Human-readable layout matching ``build_candidate_sequence`` segment order."""
     return "\n".join(
         [
-            state.strip(),
-            f"[SEP] {question.strip()}",
+            format_state_segment(state),
+            f"[SEP] {format_question_segment(question)}",
             f"[SEP] {format_candidate_segment(candidate)}",
         ]
     )
@@ -106,7 +122,11 @@ def build_candidate_sequence(
     candidate: str,
     max_len: int,
 ) -> list[int]:
-    segments = [state, question, format_candidate_segment(candidate)]
+    segments = [
+        format_state_segment(state),
+        format_question_segment(question),
+        format_candidate_segment(candidate),
+    ]
     input_ids: list[int] = []
     input_ids.extend(_encode_field(tokenizer, segments[0]))
     for text in segments[1:]:

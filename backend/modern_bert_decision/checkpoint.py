@@ -60,16 +60,25 @@ def _atomic_save_pretrained(module, dest_dir: Path) -> None:
         raise
 
 
-def _encoder_for_full_save(model: ModernBERTDecisionModel):
-    enc = model.encoder
-    get_base = getattr(enc, "get_base_model", None)
-    if get_base is not None:
-        return get_base()
-    return enc
-
-
 def _atomic_save_encoder(model: ModernBERTDecisionModel, encoder_dir: Path) -> None:
-    _atomic_save_pretrained(_encoder_for_full_save(model), encoder_dir)
+    from peft import PeftModel
+    from transformers import AutoModel
+
+    from model.lora import native_encoder_state_dict
+
+    enc = model.encoder
+    if isinstance(enc, PeftModel):
+        native = native_encoder_state_dict(enc)
+        base_config = enc.get_base_model().config
+        clean = AutoModel.from_config(base_config)
+        missing, unexpected = clean.load_state_dict(native, strict=True)
+        if missing or unexpected:
+            raise RuntimeError(
+                f"encoder save: state dict mismatch missing={missing!r} unexpected={unexpected!r}"
+            )
+        _atomic_save_pretrained(clean, encoder_dir)
+    else:
+        _atomic_save_pretrained(enc, encoder_dir)
 
 
 def save_checkpoint(

@@ -2,7 +2,7 @@
 
 Multi-option scoring with a pretrained **ModernBERT** encoder and a linear score head. For each candidate option the model runs a separate forward pass on:
 
-`state … [SEP] question … [SEP] Is the correct answer to the question is: {option} …` (one forward per option)
+`Context:\n` state … [SEP] `Question:\n` question … [SEP] Is the correct answer to the question is: {option} …` (one forward per option)
 
 It returns one logit per option (softmax over candidates). It does **not** generate text.
 

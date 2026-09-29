@@ -12,9 +12,11 @@ from config import CONFIG_PATH, DecisionConfig, apply_hf_cache, load_config
 from model.decision_model import ModernBERTDecisionModel
 from device import pick_device
 from formatting import (
+    STATE_SEGMENT_PREFIX,
     build_candidate_sequence,
     format_batch,
     format_candidate_segment,
+    format_question_segment,
     resolve_sequence_boundary_ids,
 )
 
@@ -115,8 +117,8 @@ def _print_training_samples(
             )
         gold = ex.options[ex.answer_index]
         print("  segment sketch (full state in model input; not repeated here):", flush=True)
-        print(f"    <state passage>", flush=True)
-        print(f"    [SEP] {ex.question.strip()}", flush=True)
+        print(f"    {STATE_SEGMENT_PREFIX}<state passage>", flush=True)
+        print(f"    [SEP] {format_question_segment(ex.question)}", flush=True)
         print(f"    [SEP] {format_candidate_segment(gold)}", flush=True)
     print(f"\ntotal tokens (all option sequences, {len(examples)} examples): {total_tokens}", flush=True)
     return requests
@@ -140,7 +142,7 @@ def print_model_summary(
     print("\n=== Architecture ===", flush=True)
     print(f"Backbone:   {cfg.pretrained_name} (encoder only, no MLM head)", flush=True)
     print(
-        "Sequence:   state … [SEP] question … [SEP] candidate prompt … "
+        "Sequence:   Context:\n state … [SEP] Question:\n question … [SEP] candidate prompt … "
         "(one sequence per option; candidate = template + option text)",
         flush=True,
     )
