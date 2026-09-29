@@ -2,13 +2,13 @@
 
 Multi-option scoring with a pretrained **ModernBERT** encoder and a CLS linear head. For each candidate option the model runs a separate forward pass on:
 
-`[CLS] [state] … [question] … [options] … [candidate] …` (one forward per option; candidate text is the option under test)
+`[CLS] state … [SEP] question … [SEP] Is the correct answer to the question is: {option} …` (one forward per option)
 
 It returns one logit per option (softmax over candidates). It does **not** generate text.
 
 The CLS score head **must be trained** before predictions are useful.
 
-Four learnable segment markers — `[state]`, `[question]`, `[options]`, `[candidate]` — are added to the tokenizer; configure each under `train.markers.<name>: {train, lr}`. Scoring uses **CLS hidden state only**. Partial encoder fine-tune: `train.encoder.last_n_layers` and `train.encoder.layers[]`. Optional `[CLS]` row: `train.cls_embedding: {train, lr}`. Hub paths: `hub.cache`, `hub.pretrained`. See `config.yaml` for the full nested layout (legacy flat keys under `train` still load).
+Segments are delimited with the tokenizer’s existing `[SEP]` token (no extra vocab tokens). Context length is the encoder’s **8192** positions (`max_position_embeddings`); tokenization never truncates—overlong inputs raise during formatting. Scoring uses **CLS hidden state only**. Encoder adaptation: optional **LoRA** on encoder blocks (`train.lora.all_layers`, `train.lora.layers`, or auto), plus optional full-weight fine-tune on the last `train.encoder.last_n_layers` blocks. Score head is always a separate linear head (no LoRA). LoRA LR: `train.lora.lr`. Score head LR: `train.head.lr` (plain linear layer, no LoRA). Optional `[CLS]` row: `train.cls_embedding: {train, lr}`. LoRA checkpoints save `lora_adapter/` + score head; full checkpoints save the encoder weights. Hub paths: `hub.cache`, `hub.pretrained`. Optimizer: AdamW via `train.optimizer` (`betas`, `eps`; weight decay from `train.schedule.weight_decay`). See `config.yaml` for the full nested layout (legacy flat keys under `train` still load).
 
 ## Setup
 
@@ -31,9 +31,10 @@ uv run modern-bert-decision infer
 
 ## Data and training
 
-- RACE rows are used as-is (no option subsetting or shuffling augment).
-- Train: dataset length = examples × `variations`; slot 0 = gold candidate, slots 1… = wrong (shuffled); margin loss on raw logits (gold ≥ 0.1, wrong ≤ −0.1, no sigmoid).
-- Eval/infer: one forward per option; **softmax** over options; pick `argmax`.
+- RACE rows are used as-is (no augmentation). Softmax uses every option in each row.
+- Train: one row per question; encoder forward per option; **soft-target cross-entropy** on logits (one-hot at `answer_index`).
+- **Test mode** — train on a fixed subset instead of the full split: set `train.test_mode.enabled: true` and `train.test_mode.samples` (e.g. 100 or 200), or run `uv run modern-bert-decision train --test-mode --test-samples 200`. The chosen rows are saved as `{session_dir}/test_train_samples.jsonl` and reused; pass `--test-refresh` to draw a new subset.
+- Eval/infer: same multi-option forward; **softmax** over options; pick `argmax`.
 - Checkpoints: `{session_dir}/last/` — full encoder, tokenizer, score head, optional CLS row, and finetune toggles/LRs in meta (used on **resume**; **init_checkpoint** keeps weights but applies train settings from config).
 
 ## Tensor contract
@@ -48,4 +49,4 @@ Forward outputs: `logits`, `probabilities` `[B, K_max]`; `selected_indices` `[B]
 
 ## Checkpoints
 
-Metadata includes `architecture: cls_per_candidate_v1`. Checkpoints from the old marker-token layout must be retrained.
+Metadata includes `architecture: cls_per_candidate_v1`. Checkpoints from the old learnable segment-marker layout must be retrained.

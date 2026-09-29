@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 
 import torch
+import torch.nn as nn
 
 from model.decision_model import ModernBERTDecisionModel
 
@@ -19,6 +20,14 @@ def _zero_non_cls_embedding_grad(grad: torch.Tensor, cls_token_id: int) -> torch
     return out
 
 
+def _encoder_stack(model: ModernBERTDecisionModel) -> nn.Module:
+    enc = model.encoder
+    get_base = getattr(enc, "get_base_model", None)
+    if get_base is not None:
+        return get_base()
+    return enc
+
+
 def _deepest_trained_slot(train_mask: Sequence[bool]) -> int | None:
     for j in range(len(train_mask) - 1, -1, -1):
         if train_mask[j]:
@@ -31,7 +40,7 @@ def _finetune_slots(model: ModernBERTDecisionModel) -> Iterator[tuple[int, int]]
     n = model.finetune_last_n_layers
     if n <= 0:
         return
-    layers = model.encoder.layers
+    layers = _encoder_stack(model).layers
     start = len(layers) - n
     for slot in range(n):
         yield slot, start + slot
@@ -43,7 +52,8 @@ def encoder_finetune_param_groups(model: ModernBERTDecisionModel) -> list[dict[s
         return []
     train_mask = model.encoder_layer_train
     layer_lrs = model.encoder_finetune_lrs
-    layers = model.encoder.layers
+    stack = _encoder_stack(model)
+    layers = stack.layers
     groups: list[dict[str, object]] = []
     for slot, layer_idx in _finetune_slots(model):
         if not train_mask[slot]:
@@ -53,7 +63,7 @@ def encoder_finetune_param_groups(model: ModernBERTDecisionModel) -> list[dict[s
             groups.append({"params": params, "lr": float(layer_lrs[slot])})
     deepest = _deepest_trained_slot(train_mask)
     if deepest is not None:
-        norm_params = [p for p in model.encoder.final_norm.parameters() if p.requires_grad]
+        norm_params = [p for p in stack.final_norm.parameters() if p.requires_grad]
         if norm_params:
             groups.append({"params": norm_params, "lr": float(layer_lrs[deepest])})
     return groups
@@ -72,8 +82,9 @@ def apply_encoder_trainability(
         hook.remove()
         model._embedding_grad_hook = None
 
+    stack = _encoder_stack(model)
+    layers = stack.layers
     n = max(0, int(finetune_last_n_layers))
-    layers = model.encoder.layers
     if n > len(layers):
         raise ValueError(
             f"finetune_last_n_layers={n} exceeds encoder depth {len(layers)}"
@@ -87,7 +98,9 @@ def apply_encoder_trainability(
     model.train_cls_embedding = train_cls_embedding
     model.cls_token_id = None
 
-    for param in model.encoder.parameters():
+    for name, param in model.encoder.named_parameters():
+        if "lora_" in name:
+            continue
         param.requires_grad = False
     for param in model.score_head.parameters():
         param.requires_grad = True
@@ -98,8 +111,13 @@ def apply_encoder_trainability(
         for param in layers[layer_idx].parameters():
             param.requires_grad = True
     if _deepest_trained_slot(train_mask) is not None:
-        for param in model.encoder.final_norm.parameters():
+        for param in stack.final_norm.parameters():
             param.requires_grad = True
+
+    if model.lora_enabled:
+        for name, param in model.encoder.named_parameters():
+            if "lora_" in name:
+                param.requires_grad = True
 
     if not train_cls_embedding:
         return

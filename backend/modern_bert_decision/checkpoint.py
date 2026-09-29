@@ -16,22 +16,16 @@ from config import (
     load_config,
 )
 from formatting import max_sequence_length
-from model.decision_model import ModernBERTDecisionModel
-from model.segment_markers import (
-    MARKER_NAMES,
-    apply_marker_embedding_state,
-    apply_marker_embedding_trainability,
-    init_marker_parameters,
-    marker_embedding_state,
-)
+from model.decision_model import ModernBERTDecisionModel, configure_for_training
 
 CHECKPOINT_ENCODER_DIR = "encoder"
 CHECKPOINT_TOKENIZER_DIR = "tokenizer"
+CHECKPOINT_LORA_DIR = "lora_adapter"
 CHECKPOINT_SCORER = "scoring_head.pt"
 CHECKPOINT_CLS_EMBEDDING = "cls_embedding.pt"
-CHECKPOINT_MARKER_EMBEDDINGS = "marker_embeddings.pt"
 CHECKPOINT_META = "decision_meta.json"
 CHECKPOINT_KIND_FULL = "full"
+CHECKPOINT_KIND_LORA = "lora"
 
 
 def _meta_path(root: Path) -> Path:
@@ -88,24 +82,27 @@ def save_checkpoint(
     root.mkdir(parents=True, exist_ok=True)
     tokenizer_dir = root / CHECKPOINT_TOKENIZER_DIR
     encoder_dir = root / CHECKPOINT_ENCODER_DIR
+    lora = model.cfg.train.lora
+    use_lora = model.lora_enabled and lora.enabled
     if write_encoder is None:
-        write_encoder = True
+        write_encoder = not use_lora
 
     model.tokenizer.save_pretrained(tokenizer_dir)
     torch.save({"weight": model.score_head.weight.detach().cpu()}, root / CHECKPOINT_SCORER)
     cls_state = _cls_embedding_state(model)
     if cls_state is not None:
         torch.save(cls_state, root / CHECKPOINT_CLS_EMBEDDING)
-    markers = marker_embedding_state(model)
-    if markers is not None:
-        torch.save(markers, root / CHECKPOINT_MARKER_EMBEDDINGS)
 
-    kind = CHECKPOINT_KIND_FULL
-    if write_encoder:
+    kind = CHECKPOINT_KIND_LORA if use_lora else CHECKPOINT_KIND_FULL
+    if use_lora:
+        from model.lora import save_encoder_lora_adapter
+
+        save_encoder_lora_adapter(model.encoder, root / CHECKPOINT_LORA_DIR)
+    elif write_encoder:
         _atomic_save_encoder(model, encoder_dir)
 
     meta = {
-        "architecture": ARCHITECTURE_SEGMENT_MARKERS,
+        "architecture": ARCHITECTURE_CLS_PER_CANDIDATE,
         "checkpoint_kind": kind,
         "pretrained_name": model.cfg.pretrained_name,
         "max_len": model.max_len,
@@ -115,8 +112,10 @@ def save_checkpoint(
         "encoder_layer_train": list(model.encoder_layer_train),
         "encoder_layer_learning_rates": list(model.encoder_finetune_lrs),
         "train_cls_embedding": model.train_cls_embedding,
-        "marker_embedding_train": list(model.marker_embedding_train),
-        "marker_embedding_learning_rates": list(model.marker_embedding_lrs),
+        "lora_enabled": model.lora_enabled,
+        "lora_rank": lora.rank if use_lora else None,
+        "lora_alpha": lora.alpha if use_lora else None,
+        "lora_dropout": lora.dropout if use_lora else None,
     }
     meta_tmp = _meta_path(root).with_suffix(".json.tmp")
     meta_tmp.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
@@ -131,16 +130,16 @@ def _load_encoder_from_hub(cfg: DecisionConfig):
 
 def _reject_legacy_checkpoint(meta: dict[str, object]) -> None:
     arch = meta.get("architecture")
-    if arch == ARCHITECTURE_SEGMENT_MARKERS:
-        return
     if arch == ARCHITECTURE_CLS_PER_CANDIDATE:
+        return
+    if arch == ARCHITECTURE_SEGMENT_MARKERS:
         raise ValueError(
-            "checkpoint uses the old CLS+[SEP] layout without segment markers; retrain from Hub base"
+            "checkpoint uses learnable segment marker tokens; retrain from Hub base with CLS+[SEP] layout"
         )
-    if meta.get("marker_tokens") or meta.get("marker_ids"):
+    if meta.get("marker_tokens") or meta.get("marker_ids") or meta.get("marker_embedding_train"):
         raise ValueError(
             "checkpoint uses an obsolete marker layout; retrain from Hub base "
-            f"(expected architecture {ARCHITECTURE_SEGMENT_MARKERS!r})"
+            f"(expected architecture {ARCHITECTURE_CLS_PER_CANDIDATE!r})"
         )
 
 
@@ -180,22 +179,6 @@ def _resolve_encoder_trainability(
     return n, train, lrs, train_cls
 
 
-def _resolve_marker_trainability(
-    meta: dict[str, object],
-    cfg: DecisionConfig,
-    *,
-    trainability_from_config: bool,
-) -> tuple[tuple[bool, ...], tuple[float, ...]]:
-    n = len(MARKER_NAMES)
-    if trainability_from_config or "marker_embedding_train" not in meta:
-        return cfg.train.marker_embedding_train, cfg.train.marker_embedding_learning_rates
-    train = tuple(bool(x) for x in meta["marker_embedding_train"])  # type: ignore[union-attr]
-    lrs = tuple(float(x) for x in meta["marker_embedding_learning_rates"])  # type: ignore[union-attr]
-    if len(train) != n or len(lrs) != n:
-        raise ValueError("checkpoint marker meta lists length mismatch")
-    return train, lrs
-
-
 def _finalize_trainability(
     model: ModernBERTDecisionModel,
     cfg: DecisionConfig,
@@ -203,15 +186,26 @@ def _finalize_trainability(
     *,
     trainability_from_config: bool,
 ) -> None:
+    if trainability_from_config:
+        configure_for_training(model, cfg)
+        return
+    if bool(meta.get("lora_enabled")):
+        if not model.lora_enabled:
+            raise ValueError("checkpoint metadata expects LoRA but adapter was not loaded")
+        from model.freeze import apply_encoder_trainability
+
+        apply_encoder_trainability(
+            model,
+            finetune_last_n_layers=0,
+            encoder_layer_train=(),
+            encoder_layer_learning_rates=(),
+            train_cls_embedding=bool(meta.get("train_cls_embedding", cfg.train.train_cls_embedding)),
+        )
+        return
     finetune_n, layer_train, layer_lrs, train_cls = _resolve_encoder_trainability(
         meta,
         cfg,
-        trainability_from_config=trainability_from_config,
-    )
-    marker_train, marker_lrs = _resolve_marker_trainability(
-        meta,
-        cfg,
-        trainability_from_config=trainability_from_config,
+        trainability_from_config=False,
     )
     from model.freeze import apply_encoder_trainability
 
@@ -221,11 +215,6 @@ def _finalize_trainability(
         encoder_layer_train=layer_train,
         encoder_layer_learning_rates=layer_lrs,
         train_cls_embedding=train_cls,
-    )
-    apply_marker_embedding_trainability(
-        model,
-        marker_embedding_train=marker_train,
-        marker_embedding_learning_rates=marker_lrs,
     )
 
 
@@ -251,6 +240,7 @@ def load_checkpoint(
 
     encoder_dir = root / CHECKPOINT_ENCODER_DIR
     tokenizer_dir = root / CHECKPOINT_TOKENIZER_DIR
+    lora_dir = root / CHECKPOINT_LORA_DIR
     scorer_path = root / CHECKPOINT_SCORER
     if not tokenizer_dir.is_dir():
         raise FileNotFoundError(f"missing tokenizer: {tokenizer_dir}")
@@ -258,8 +248,19 @@ def load_checkpoint(
         raise FileNotFoundError(f"missing scoring head: {scorer_path}")
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir, use_fast=True)
+    if tokenizer.pad_token_id is None:
+        if tokenizer.eos_token is not None:
+            tokenizer.pad_token = tokenizer.eos_token
+        elif tokenizer.sep_token is not None:
+            tokenizer.pad_token = tokenizer.sep_token
+
+    lora_in_ckpt = bool(meta.get("lora_enabled"))
     kind = str(meta.get("checkpoint_kind") or CHECKPOINT_KIND_FULL)
-    use_local_encoder = kind == CHECKPOINT_KIND_FULL and encoder_dir.is_dir()
+    use_local_encoder = (
+        not lora_in_ckpt
+        and kind == CHECKPOINT_KIND_FULL
+        and encoder_dir.is_dir()
+    )
     if use_local_encoder:
         from transformers import AutoModel
 
@@ -267,21 +268,28 @@ def load_checkpoint(
     else:
         encoder = _load_encoder_from_hub(cfg)
 
-    max_len = int(meta.get("max_len") or max_sequence_length(tokenizer, encoder.config))
+    if lora_in_ckpt:
+        if not lora_dir.is_dir():
+            raise FileNotFoundError(f"missing LoRA adapter: {lora_dir}")
+        from model.lora import load_encoder_lora_adapter
+
+        encoder = load_encoder_lora_adapter(encoder, lora_dir)
+
+    max_len = max_sequence_length(tokenizer, encoder.config)
+    meta_len = meta.get("max_len")
+    if meta_len is not None and int(meta_len) != max_len:
+        raise ValueError(
+            f"checkpoint max_len {meta_len} != encoder context {max_len}; refusing to load"
+        )
     model = ModernBERTDecisionModel(
         encoder,
         tokenizer,
         cfg=cfg,
         max_len=max_len,
     )
+    model.lora_enabled = lora_in_ckpt
     state = torch.load(scorer_path, map_location="cpu", weights_only=False)
     model.score_head.load_state_dict(state, strict=True)
-    init_marker_parameters(model)
-    marker_path = root / CHECKPOINT_MARKER_EMBEDDINGS
-    if marker_path.is_file():
-        marker_state = torch.load(marker_path, map_location="cpu", weights_only=False)
-        if isinstance(marker_state, dict):
-            apply_marker_embedding_state(model, marker_state)
     cls_path = root / CHECKPOINT_CLS_EMBEDDING
     if cls_path.is_file():
         cls_state = torch.load(cls_path, map_location="cpu", weights_only=False)

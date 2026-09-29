@@ -39,16 +39,13 @@ class ModernBERTDecisionModel(nn.Module):
         self.encoder_layer_train: tuple[bool, ...] = ()
         self.encoder_finetune_lrs: tuple[float, ...] = ()
         self.train_cls_embedding = False
-        self.marker_token_ids: dict[str, int] = {}
-        self.marker_embedding_params = nn.ParameterDict()
-        self.marker_embedding_train: tuple[bool, ...] = ()
-        self.marker_embedding_lrs: tuple[float, ...] = ()
-        self._embedding_forward_hook = None
+        self.lora_enabled = False
         self.cls_token_id: int | None = None
         self._embedding_grad_hook = None
         hidden = int(encoder.config.hidden_size)
         self.score_head_dropout = nn.Dropout(p=float(cfg.model.score_head_dropout))
         self.score_head = nn.Linear(hidden, 1, bias=False)
+        nn.init.zeros_(self.score_head.weight)
 
     @property
     def hidden_size(self) -> int:
@@ -71,19 +68,13 @@ class ModernBERTDecisionModel(nn.Module):
         cls_hidden = self.score_head_dropout(cls_hidden)
         return self.score_head(cls_hidden).squeeze(-1)
 
-    def score_gold(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        """Training: one gold-verification sequence per example → logits [B]."""
-        if input_ids.dim() != 2:
-            raise ValueError(f"score_gold expects [B, L], got {tuple(input_ids.shape)}")
-        return self._cls_logits(input_ids, attention_mask)
-
     def forward(
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
         option_mask: torch.Tensor,
     ) -> DecisionForwardOutput:
-        """Inference/eval: one logit per option; softmax over valid options for the decision."""
+        """One logit per option; softmax over valid options for train/eval/infer."""
         if input_ids.dim() != 3:
             raise ValueError(f"forward expects [B, K, L], got shape {tuple(input_ids.shape)}")
         batch_size, k_max, seq_len = input_ids.shape
@@ -146,20 +137,31 @@ def build_model(cfg: DecisionConfig) -> ModernBERTDecisionModel:
         cfg=cfg,
         max_len=max_len,
     )
-    from model.freeze import apply_encoder_trainability
-    from model.segment_markers import apply_marker_embedding_trainability, init_marker_parameters
+    configure_for_training(model, cfg)
+    return model
 
-    init_marker_parameters(model)
+
+def configure_for_training(model: ModernBERTDecisionModel, cfg: DecisionConfig) -> None:
+    from model.freeze import apply_encoder_trainability
+    from model.lora import apply_encoder_lora
+
+    lora = cfg.train.lora
+    finetune_n = cfg.model.finetune_last_n_layers
+    layer_train = cfg.train.encoder_layer_train
+    layer_lrs = cfg.train.encoder_layer_learning_rates
+    if lora.enabled:
+        if not model.lora_enabled:
+            model.encoder = apply_encoder_lora(
+                model.encoder,
+                lora,
+                skip_last_n_layers=finetune_n,
+            )
+            model.lora_enabled = True
+
     apply_encoder_trainability(
         model,
-        finetune_last_n_layers=cfg.model.finetune_last_n_layers,
-        encoder_layer_train=cfg.train.encoder_layer_train,
-        encoder_layer_learning_rates=cfg.train.encoder_layer_learning_rates,
+        finetune_last_n_layers=finetune_n,
+        encoder_layer_train=layer_train,
+        encoder_layer_learning_rates=layer_lrs,
         train_cls_embedding=cfg.train.train_cls_embedding,
     )
-    apply_marker_embedding_trainability(
-        model,
-        marker_embedding_train=cfg.train.marker_embedding_train,
-        marker_embedding_learning_rates=cfg.train.marker_embedding_learning_rates,
-    )
-    return model

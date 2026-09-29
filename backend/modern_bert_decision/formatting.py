@@ -1,4 +1,4 @@
-"""Build batched encoder inputs: CLS-scored sequences with segment marker tokens."""
+"""Build batched encoder inputs: CLS-scored sequences with [SEP] segment boundaries."""
 
 from __future__ import annotations
 
@@ -11,12 +11,6 @@ from config import DecisionConfig
 
 
 @dataclass(frozen=True)
-class FormattedTrainBatch:
-    input_ids: torch.Tensor
-    attention_mask: torch.Tensor
-
-
-@dataclass(frozen=True)
 class FormattedBatch:
     input_ids: torch.Tensor
     attention_mask: torch.Tensor
@@ -24,12 +18,9 @@ class FormattedBatch:
 
 
 @dataclass(frozen=True)
-class SegmentMarkerIds:
+class SequenceBoundaryIds:
     cls_id: int
-    state_id: int
-    question_id: int
-    options_id: int
-    candidate_id: int
+    sep_id: int
     pad_id: int
 
 
@@ -46,61 +37,68 @@ def _require_boundary_tokens(tokenizer: PreTrainedTokenizerBase) -> tuple[int, i
     return cls_id, pad_id
 
 
-def resolve_segment_marker_ids(tokenizer: PreTrainedTokenizerBase) -> SegmentMarkerIds:
-    from model.segment_markers import marker_token_ids
-
+def resolve_sequence_boundary_ids(tokenizer: PreTrainedTokenizerBase) -> SequenceBoundaryIds:
     cls_id, pad_id = _require_boundary_tokens(tokenizer)
-    ids = marker_token_ids(tokenizer)
-    return SegmentMarkerIds(
-        cls_id=cls_id,
-        state_id=ids["state"],
-        question_id=ids["question"],
-        options_id=ids["options"],
-        candidate_id=ids["candidate"],
-        pad_id=pad_id,
-    )
+    sep_id = tokenizer.sep_token_id
+    if sep_id is None:
+        raise ValueError("tokenizer must define sep_token_id")
+    return SequenceBoundaryIds(cls_id=cls_id, sep_id=int(sep_id), pad_id=pad_id)
 
 
 def max_sequence_length(tokenizer: PreTrainedTokenizerBase, encoder_config) -> int:
-    if getattr(encoder_config, "max_position_embeddings", None) is not None:
-        return int(encoder_config.max_position_embeddings)
-    model_max = getattr(tokenizer, "model_max_length", None)
-    if model_max is not None and model_max < 1_000_000:
-        return int(model_max)
-    raise ValueError("could not determine encoder context limit from config or tokenizer")
+    """Encoder context size (e.g. 8192 for ModernBERT-base); syncs tokenizer ``model_max_length``."""
+    mpe = getattr(encoder_config, "max_position_embeddings", None)
+    if mpe is None:
+        model_max = getattr(tokenizer, "model_max_length", None)
+        if model_max is not None and model_max < 1_000_000:
+            max_len = int(model_max)
+        else:
+            raise ValueError(
+                "encoder config must define max_position_embeddings (or tokenizer model_max_length)"
+            )
+    else:
+        max_len = int(mpe)
+    if max_len < 1:
+        raise ValueError(f"invalid encoder context limit {max_len}")
+    tokenizer.model_max_length = max_len
+    return max_len
 
 
 def _encode_field(tokenizer: PreTrainedTokenizerBase, text: str) -> list[int]:
     stripped = text.strip()
     if not stripped:
         raise ValueError("text segment must be non-blank after stripping")
-    return tokenizer.encode(stripped, add_special_tokens=False)
+    return tokenizer.encode(
+        stripped,
+        add_special_tokens=False,
+        truncation=False,
+        max_length=None,
+    )
 
 
-def format_all_options(options: list[str]) -> str:
-    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    lines: list[str] = []
-    for index, opt in enumerate(options):
-        label = letters[index] if index < len(letters) else str(index + 1)
-        lines.append(f"({label}) {opt}")
-    return "\n".join(lines)
+CANDIDATE_SEGMENT_TEMPLATE = "Is the correct answer to the question is: {candidate}"
+
+
+def format_candidate_segment(candidate: str) -> str:
+    text = candidate.strip()
+    if not text:
+        raise ValueError("candidate must be non-blank after stripping")
+    return CANDIDATE_SEGMENT_TEMPLATE.format(candidate=text)
 
 
 def format_candidate_sequence_text(
     *,
     state: str,
     question: str,
-    options: list[str],
     candidate: str,
 ) -> str:
     """Human-readable layout matching ``build_candidate_sequence`` segment order."""
     return "\n".join(
         [
             "[CLS]",
-            f"[state] {state.strip()}",
-            f"[question] {question.strip()}",
-            f"[options]\n{format_all_options(options)}",
-            f"[candidate] {candidate.strip()}",
+            state.strip(),
+            f"[SEP] {question.strip()}",
+            f"[SEP] {format_candidate_segment(candidate)}",
         ]
     )
 
@@ -108,24 +106,17 @@ def format_candidate_sequence_text(
 def build_candidate_sequence(
     *,
     tokenizer: PreTrainedTokenizerBase,
-    markers: SegmentMarkerIds,
+    boundaries: SequenceBoundaryIds,
     state: str,
     question: str,
-    options: list[str],
     candidate: str,
     max_len: int,
 ) -> list[int]:
-    if not options:
-        raise ValueError("options must be a non-empty list")
-    segments: list[tuple[int, str]] = [
-        (markers.state_id, state),
-        (markers.question_id, question),
-        (markers.options_id, format_all_options(options)),
-        (markers.candidate_id, candidate),
-    ]
-    input_ids: list[int] = [markers.cls_id]
-    for marker_id, text in segments:
-        input_ids.append(marker_id)
+    segments = [state, question, format_candidate_segment(candidate)]
+    input_ids: list[int] = [boundaries.cls_id]
+    input_ids.extend(_encode_field(tokenizer, segments[0]))
+    for text in segments[1:]:
+        input_ids.append(boundaries.sep_id)
         input_ids.extend(_encode_field(tokenizer, text))
     if len(input_ids) > max_len:
         raise ValueError(
@@ -154,46 +145,6 @@ def format_request(
     )
 
 
-def format_train_batch(
-    rows: list[tuple[str, str, list[str], str]],
-    *,
-    cfg: DecisionConfig,
-    tokenizer: PreTrainedTokenizerBase,
-    max_len: int,
-    device: torch.device | None = None,
-) -> FormattedTrainBatch:
-    if not rows:
-        raise ValueError("rows must be non-empty")
-    markers = resolve_segment_marker_ids(tokenizer)
-    sequences: list[list[int]] = []
-    for state, question, options, candidate in rows:
-        sequences.append(
-            build_candidate_sequence(
-                tokenizer=tokenizer,
-                markers=markers,
-                state=state,
-                question=question,
-                options=options,
-                candidate=candidate,
-                max_len=max_len,
-            )
-        )
-    batch_size = len(sequences)
-    max_seq = max(len(seq) for seq in sequences)
-    input_ids = torch.full((batch_size, max_seq), markers.pad_id, dtype=torch.long)
-    attention_mask = torch.zeros((batch_size, max_seq), dtype=torch.long)
-    for row, seq in enumerate(sequences):
-        attention_mask[row, : len(seq)] = 1
-        input_ids[row, : len(seq)] = torch.tensor(seq, dtype=torch.long)
-    out = FormattedTrainBatch(input_ids=input_ids, attention_mask=attention_mask)
-    if device is not None:
-        return FormattedTrainBatch(
-            input_ids=out.input_ids.to(device),
-            attention_mask=out.attention_mask.to(device),
-        )
-    return out
-
-
 def format_batch(
     requests: list[dict[str, object]],
     *,
@@ -204,7 +155,7 @@ def format_batch(
 ) -> FormattedBatch:
     if not requests:
         raise ValueError("requests must be non-empty")
-    markers = resolve_segment_marker_ids(tokenizer)
+    boundaries = resolve_sequence_boundary_ids(tokenizer)
 
     per_question: list[list[list[int]]] = []
     k_max = 0
@@ -220,10 +171,9 @@ def format_batch(
             sequences.append(
                 build_candidate_sequence(
                     tokenizer=tokenizer,
-                    markers=markers,
+                    boundaries=boundaries,
                     state=state,
                     question=question,
-                    options=options,
                     candidate=candidate,
                     max_len=max_len,
                 )
@@ -234,7 +184,7 @@ def format_batch(
     batch_size = len(per_question)
     max_seq = max(len(seq) for seqs in per_question for seq in seqs)
 
-    input_ids = torch.full((batch_size, k_max, max_seq), markers.pad_id, dtype=torch.long)
+    input_ids = torch.full((batch_size, k_max, max_seq), boundaries.pad_id, dtype=torch.long)
     attention_mask = torch.zeros((batch_size, k_max, max_seq), dtype=torch.long)
     option_mask = torch.zeros((batch_size, k_max), dtype=torch.bool)
 
@@ -256,9 +206,3 @@ def format_batch(
             option_mask=out.option_mask.to(device),
         )
     return out
-
-
-def required_marker_tokens() -> tuple[str, ...]:
-    from model.segment_markers import MARKER_TOKEN_STRINGS
-
-    return MARKER_TOKEN_STRINGS

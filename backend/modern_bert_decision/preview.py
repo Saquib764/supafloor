@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import torch
@@ -10,7 +11,12 @@ import torch
 from config import CONFIG_PATH, DecisionConfig, apply_hf_cache, load_config
 from model.decision_model import ModernBERTDecisionModel
 from device import pick_device
-from formatting import format_batch, format_candidate_sequence_text
+from formatting import (
+    build_candidate_sequence,
+    format_batch,
+    format_candidate_segment,
+    resolve_sequence_boundary_ids,
+)
 
 
 def _fmt_params(n: int) -> str:
@@ -29,6 +35,21 @@ def _fmt_line(n: int, num_bytes: int) -> str:
     return f"{n:,} ({_fmt_params(n)}, {_fmt_mb(num_bytes)})"
 
 
+def _default_preview_requests(_cfg: DecisionConfig) -> list[dict[str, object]]:
+    path = CONFIG_PATH.parent / "example_request.json"
+    if path.is_file():
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict) and "options" in raw:
+            return [raw]
+    return [
+        {
+            "state": "Sample passage for preview.",
+            "question": "Which answer is correct?",
+            "options": ["First choice", "Second choice", "Third choice", "Fourth choice"],
+        },
+    ]
+
+
 def _clip(text: str, limit: int = 280) -> str:
     text = " ".join(text.split())
     if len(text) <= limit:
@@ -36,7 +57,13 @@ def _clip(text: str, limit: int = 280) -> str:
     return text[: limit - 3] + "..."
 
 
-def _print_training_samples(cfg: DecisionConfig, count: int = 2) -> list[dict[str, object]]:
+def _print_training_samples(
+    cfg: DecisionConfig,
+    *,
+    tokenizer,
+    max_len: int,
+    count: int = 2,
+) -> list[dict[str, object]]:
     from data import example_to_request, load_race_preview_examples
 
     print("\n=== Training data sample ===", flush=True)
@@ -52,27 +79,46 @@ def _print_training_samples(cfg: DecisionConfig, count: int = 2) -> list[dict[st
     if not examples:
         print("(no rows)", flush=True)
         return []
+    boundaries = resolve_sequence_boundary_ids(tokenizer)
     requests: list[dict[str, object]] = []
+    total_tokens = 0
     for index, ex in enumerate(examples, start=1):
         requests.append(example_to_request(ex))
         print(f"\n--- example {index} ---", flush=True)
         print(f"state:         {_clip(ex.state)}", flush=True)
         print(f"question:      {ex.question}", flush=True)
+        print(f"answer_index:  {ex.answer_index}", flush=True)
+        n_opts = len(ex.options)
+        print(f"  options: {n_opts} (one encoder forward + logit each; softmax over all)", flush=True)
+        token_lens: list[int] = []
         for opt_index, option in enumerate(ex.options):
             mark = " *" if opt_index == ex.answer_index else ""
-            print(f"  option[{opt_index}]: {_clip(option, 120)}{mark}", flush=True)
-        print(f"answer_index:  {ex.answer_index}", flush=True)
-        gold = ex.options[ex.answer_index]
-        print("model input (gold candidate row):", flush=True)
-        print(
-            format_candidate_sequence_text(
+            seq = build_candidate_sequence(
+                tokenizer=tokenizer,
+                boundaries=boundaries,
                 state=ex.state,
                 question=ex.question,
-                options=ex.options,
-                candidate=gold,
-            ),
-            flush=True,
-        )
+                candidate=option,
+                max_len=max_len,
+            )
+            token_lens.append(len(seq))
+            total_tokens += len(seq)
+            print(
+                f"  [{opt_index}] tokens={len(seq)}{mark}  {_clip(option, 120)}",
+                flush=True,
+            )
+        if token_lens and len(set(token_lens)) == 1:
+            print(
+                f"  (each option sequence length {token_lens[0]} — state+question shared; "
+                "candidate segment differs)",
+                flush=True,
+            )
+        gold = ex.options[ex.answer_index]
+        print("  segment sketch (full state in model input; not repeated here):", flush=True)
+        print(f"    [CLS] <state passage>", flush=True)
+        print(f"    [SEP] {ex.question.strip()}", flush=True)
+        print(f"    [SEP] {format_candidate_segment(gold)}", flush=True)
+    print(f"\ntotal tokens (all option sequences, {len(examples)} examples): {total_tokens}", flush=True)
     return requests
 
 
@@ -94,49 +140,73 @@ def print_model_summary(
     print("\n=== Architecture ===", flush=True)
     print(f"Backbone:   {cfg.pretrained_name} (encoder only, no MLM head)", flush=True)
     print(
-        "Sequence:   [CLS] [state] … [question] … [options] … [candidate] … "
-        "(one sequence per candidate option)",
+        "Sequence:   [CLS] state … [SEP] question … [SEP] candidate prompt … "
+        "(one sequence per option; candidate = template + option text)",
         flush=True,
     )
     print(
-        "Scoring:    Linear on [CLS] only; train = margin on logits (gold>0.1, wrong<-0.1), infer = softmax",
+        "Scoring:    Linear on [CLS]; softmax over every option in the request (train/eval/infer)",
         flush=True,
     )
     print(f"Context:    max {model.max_len} tokens (no truncation)", flush=True)
-    n_ft = model.finetune_last_n_layers
-    if n_ft:
-        on = sum(model.encoder_layer_train)
-        enc_label = f"last {n_ft} block(s), {on} trainable"
+    lora = cfg.train.lora
+    if model.lora_enabled:
+        from model.lora import resolve_lora_layer_indices
+
+        n_ft = model.finetune_last_n_layers
+        n_layers = len(model.encoder.layers)
+        lora_blocks = resolve_lora_layer_indices(
+            n_layers,
+            lora,
+            skip_last_n_layers=n_ft,
+        )
+        blocks_label = ",".join(str(i) for i in lora_blocks)
+        enc_label = f"LoRA rank {lora.rank}, alpha {lora.alpha} (blocks [{blocks_label}] / {n_layers})"
+        print(f"Encoder:    {enc_label}", flush=True)
+        print(
+            f"            targets: {', '.join(lora.target_modules)} "
+            f"(not score_head)",
+            flush=True,
+        )
+        print(f"            lr:      {lora.learning_rate}", flush=True)
     else:
-        enc_label = "frozen"
-    print(f"Encoder:    {enc_label} (finetune_last_n_layers={n_ft})", flush=True)
-    if n_ft:
-        print(f"            train: {list(model.encoder_layer_train)}", flush=True)
-        print(f"            LRs:   {list(model.encoder_finetune_lrs)}", flush=True)
+        n_ft = model.finetune_last_n_layers
+        if n_ft:
+            on = sum(model.encoder_layer_train)
+            enc_label = f"last {n_ft} block(s), {on} trainable"
+        else:
+            enc_label = "frozen"
+        print(f"Encoder:    {enc_label} (finetune_last_n_layers={n_ft})", flush=True)
+        if n_ft:
+            print(f"            train: {list(model.encoder_layer_train)}", flush=True)
+            print(f"            LRs:   {list(model.encoder_finetune_lrs)}", flush=True)
     print(flush=True)
     print("ModernBERTDecisionModel", flush=True)
     print(f"├─ encoder   pretrained ModernBERT blocks", flush=True)
     print(
-        f"└─ score_head  dropout={cfg.model.score_head_dropout}, one CLS logit per forward",
+        f"└─ score_head  dropout={cfg.model.score_head_dropout}, lr={cfg.train.head_learning_rate}, "
+        "one CLS logit per forward",
         flush=True,
     )
 
     print("\n=== Parameters ===", flush=True)
     enc_b = counts.encoder_trainable * 4
     head_b = counts.score_head * 4
-    print(
-        f"{'encoder (train):':<22} {_fmt_line(counts.encoder_trainable, enc_b)}  ({enc_label})",
-        flush=True,
-    )
+    if model.lora_enabled:
+        lora_b = counts.lora * 4
+        print(
+            f"{'lora:':<22} {_fmt_line(counts.lora, lora_b)}  ({enc_label})",
+            flush=True,
+        )
+    else:
+        print(
+            f"{'encoder (train):':<22} {_fmt_line(counts.encoder_trainable, enc_b)}  ({enc_label})",
+            flush=True,
+        )
     print(
         f"{'score_head:':<22} {_fmt_line(counts.score_head, head_b)}  (trainable)",
         flush=True,
     )
-    if counts.marker_embeddings:
-        print(
-            f"{'marker embed:':<22} {_fmt_line(counts.marker_embeddings, counts.marker_embeddings * 4)}",
-            flush=True,
-        )
     if counts.cls_embedding:
         print(
             f"{'CLS embedding:':<22} {_fmt_line(counts.cls_embedding, counts.cls_embedding * 4)}  (trainable row)",
@@ -148,23 +218,17 @@ def print_model_summary(
 
     sample_requests: list[dict[str, object]] = []
     if show_samples:
-        sample_requests = _print_training_samples(cfg, count=sample_count)
+        sample_requests = _print_training_samples(
+            cfg,
+            tokenizer=model.tokenizer,
+            max_len=model.max_len,
+            count=sample_count,
+        )
 
     if dummy_forward:
         device = pick_device()
         model.to(device)
-        requests = sample_requests if sample_requests else [
-            {
-                "state": "Room A is north of the hallway.",
-                "question": "Which door connects to the kitchen?",
-                "options": ["Door 1", "Door 2"],
-            },
-            {
-                "state": "Two choices.",
-                "question": "Pick one?",
-                "options": ["A", "B"],
-            },
-        ]
+        requests = sample_requests if sample_requests else _default_preview_requests(cfg)
         batch = format_batch(
             requests,
             cfg=cfg,
@@ -179,7 +243,7 @@ def print_model_summary(
                 batch.option_mask,
             )
         b, k, seq_len = batch.input_ids.shape
-        print("\n=== Dummy forward ===", flush=True)
+        print("\n=== Dummy forward (softmax over all options per row) ===", flush=True)
         print(f"batch_size:        {b}", flush=True)
         print(f"K_max:             {k}", flush=True)
         print(f"seq_len:           {seq_len}", flush=True)
@@ -189,6 +253,27 @@ def print_model_summary(
         print(f"logits:            {tuple(out.logits.shape)}", flush=True)
         print(f"probabilities:     {tuple(out.probabilities.shape)}", flush=True)
         print(f"selected_indices:  {tuple(out.selected_indices.shape)}", flush=True)
+        for row, req in enumerate(requests):
+            raw_opts = req.get("options")
+            if not isinstance(raw_opts, list):
+                continue
+            options = [str(o) for o in raw_opts]
+            n_opts = len(options)
+            mask = batch.option_mask[row].cpu()
+            if int(mask.sum().item()) != n_opts:
+                raise RuntimeError(
+                    f"preview row {row}: option_mask count {int(mask.sum())} != {n_opts} options"
+                )
+            print(f"\n  row {row + 1}: {n_opts} options scored", flush=True)
+            for i, opt in enumerate(options):
+                prob = float(out.probabilities[row, i].item())
+                logit = float(out.logits[row, i].item())
+                print(
+                    f"    [{i}] p={prob:.4f} logit={logit:.4f}  {_clip(opt, 100)}",
+                    flush=True,
+                )
+            sel = int(out.selected_indices[row].item())
+            print(f"    argmax → [{sel}] {_clip(options[sel], 100)}", flush=True)
         print(
             "\nNote: untrained scoring head — softmax values are not meaningful decisions.",
             flush=True,

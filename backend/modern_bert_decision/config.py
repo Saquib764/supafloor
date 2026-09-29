@@ -14,9 +14,9 @@ import yaml
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
-ARCHITECTURE_SEGMENT_MARKERS = "segment_markers_v1"
-# Legacy checkpoints saved under this id used CLS+[SEP] layout without segment markers.
 ARCHITECTURE_CLS_PER_CANDIDATE = "cls_per_candidate_v1"
+# Legacy checkpoints with learnable [state]/[question]/[options]/[candidate] tokens.
+ARCHITECTURE_SEGMENT_MARKERS = "segment_markers_v1"
 
 
 def _project_dir() -> Path:
@@ -37,9 +37,15 @@ class InferSettings:
 
 
 @dataclass(frozen=True)
-class TrainAugmentSettings:
-    shuffle_options: bool
-    omit_wrong_options: bool
+class LoraSettings:
+    enabled: bool
+    rank: int
+    alpha: int
+    dropout: float
+    learning_rate: float
+    target_modules: tuple[str, ...]
+    layer_indices: tuple[int, ...]  # empty + all_layers false → auto (see resolve_lora_layer_indices)
+    all_layers: bool
 
 
 @dataclass(frozen=True)
@@ -51,7 +57,12 @@ class DataSettings:
     val_split: str
     seed: int
     num_workers: int
-    train_augment: TrainAugmentSettings
+
+
+@dataclass(frozen=True)
+class OptimizerSettings:
+    betas: tuple[float, float]
+    eps: float
 
 
 @dataclass(frozen=True)
@@ -63,10 +74,9 @@ class TrainSettings:
     head_learning_rate: float
     train_cls_embedding: bool
     cls_embedding_learning_rate: float
-    marker_embedding_train: tuple[bool, ...]
-    marker_embedding_learning_rates: tuple[float, ...]
     encoder_layer_train: tuple[bool, ...]
     encoder_layer_learning_rates: tuple[float, ...]
+    lora: LoraSettings
     warmup_ratio: float
     weight_decay: float
     bf16: bool
@@ -79,7 +89,7 @@ class TrainSettings:
     eval_seed: int
     test_mode: bool
     test_samples: int
-    variations: int
+    optimizer: OptimizerSettings
 
 
 @dataclass(frozen=True)
@@ -131,6 +141,81 @@ def _load_cls_embedding_settings(
     return train, lr
 
 
+def _load_head_learning_rate(train_raw: dict[str, Any]) -> float:
+    head = train_raw.get("head") or {}
+    if isinstance(head, dict) and head.get("lr") is not None:
+        return float(head["lr"])
+    lr_raw = train_raw.get("learning_rates") or {}
+    if lr_raw.get("head") is not None:
+        return float(lr_raw["head"])
+    if train_raw.get("head_learning_rate") is not None:
+        return float(train_raw["head_learning_rate"])
+    return 2.0e-5
+
+
+def _load_lora_settings(train_raw: dict[str, Any]) -> LoraSettings:
+    lora = train_raw.get("lora") or {}
+    if not isinstance(lora, dict):
+        raise ValueError("train.lora must be a mapping")
+    enabled = bool(lora.get("enabled", False))
+    rank = int(lora.get("rank", 8))
+    alpha = int(lora.get("alpha", 16))
+    dropout = float(lora.get("dropout", 0.05))
+    lr_raw = train_raw.get("learning_rates") or {}
+    lr = float(lora.get("lr", lr_raw.get("lora", 1.0e-4)))
+    raw_targets = lora.get("target_modules")
+    if raw_targets is None:
+        target_modules: tuple[str, ...] = ("Wqkv", "Wo")
+    elif not isinstance(raw_targets, list) or not raw_targets:
+        raise ValueError("train.lora.target_modules must be a non-empty list of module name strings")
+    else:
+        target_modules = tuple(str(x).strip() for x in raw_targets if str(x).strip())
+        if not target_modules:
+            raise ValueError("train.lora.target_modules must not be empty")
+    raw_layer_indices = lora.get("layers")
+    if raw_layer_indices is None:
+        layer_indices: tuple[int, ...] = ()
+    elif not isinstance(raw_layer_indices, list) or not raw_layer_indices:
+        raise ValueError("train.lora.layers must be a non-empty list of encoder block indices")
+    else:
+        layer_indices = tuple(int(x) for x in raw_layer_indices)
+    all_layers = bool(lora.get("all_layers", False))
+    if all_layers and layer_indices:
+        raise ValueError("set train.lora.all_layers or train.lora.layers, not both")
+    if rank < 1:
+        raise ValueError("train.lora.rank must be >= 1")
+    if alpha < 1:
+        raise ValueError("train.lora.alpha must be >= 1")
+    if not 0.0 <= dropout < 1.0:
+        raise ValueError("train.lora.dropout must be in [0.0, 1.0)")
+    return LoraSettings(
+        enabled=enabled,
+        rank=rank,
+        alpha=alpha,
+        dropout=dropout,
+        learning_rate=lr,
+        target_modules=target_modules,
+        layer_indices=layer_indices,
+        all_layers=all_layers,
+    )
+
+
+def _load_optimizer_settings(train_raw: dict[str, Any]) -> OptimizerSettings:
+    opt = train_raw.get("optimizer") or {}
+    if not isinstance(opt, dict):
+        raise ValueError("train.optimizer must be a mapping")
+    if "name" in opt and str(opt["name"]).strip().lower() != "adamw":
+        raise ValueError("only AdamW is supported; omit train.optimizer.name or set it to adamw")
+    raw_betas = opt.get("betas", [0.9, 0.999])
+    if not isinstance(raw_betas, list) or len(raw_betas) != 2:
+        raise ValueError("train.optimizer.betas must be a list of two floats")
+    betas = (float(raw_betas[0]), float(raw_betas[1]))
+    eps = float(opt.get("eps", 1.0e-8))
+    if eps <= 0.0:
+        raise ValueError("train.optimizer.eps must be > 0")
+    return OptimizerSettings(betas=betas, eps=eps)
+
+
 def _finetune_last_n_layers(model_raw: dict[str, Any], train_raw: dict[str, Any]) -> int:
     encoder = train_raw.get("encoder") or {}
     if encoder.get("last_n_layers") is not None:
@@ -138,41 +223,6 @@ def _finetune_last_n_layers(model_raw: dict[str, Any], train_raw: dict[str, Any]
     if model_raw.get("finetune_last_n_layers") is not None:
         return max(0, int(model_raw["finetune_last_n_layers"]))
     return 0
-
-
-def _load_marker_embedding_settings(
-    train_raw: dict[str, Any],
-) -> tuple[tuple[bool, ...], tuple[float, ...]]:
-    from model.segment_markers import MARKER_NAMES
-
-    markers = train_raw.get("markers")
-    if isinstance(markers, dict) and markers:
-        train_flags: list[bool] = []
-        layer_lrs: list[float] = []
-        for name in MARKER_NAMES:
-            entry = markers.get(name)
-            if not isinstance(entry, dict):
-                raise ValueError(f"train.markers.{name} must be {{train, lr}}")
-            train_flags.append(bool(entry.get("train", True)))
-            layer_lrs.append(float(entry.get("lr", 1.0e-5)))
-        return tuple(train_flags), tuple(layer_lrs)
-
-    n = len(MARKER_NAMES)
-    train_raw_flags = train_raw.get("marker_embedding_train")
-    rates_raw = train_raw.get("marker_embedding_learning_rates")
-    if train_raw_flags is None:
-        train_flags_t = tuple(True for _ in range(n))
-    elif not isinstance(train_raw_flags, list) or len(train_raw_flags) != n:
-        raise ValueError(f"train.marker_embedding_train must be a list of {n} booleans")
-    else:
-        train_flags_t = tuple(bool(x) for x in train_raw_flags)
-    if rates_raw is None:
-        layer_lrs_t = tuple(1.0e-5 for _ in range(n))
-    elif not isinstance(rates_raw, list) or len(rates_raw) != n:
-        raise ValueError(f"train.marker_embedding_learning_rates must be a list of length {n}")
-    else:
-        layer_lrs_t = tuple(float(x) for x in rates_raw)
-    return train_flags_t, layer_lrs_t
 
 
 def _load_encoder_layer_finetune(
@@ -323,18 +373,15 @@ def load_config(path: Path | None = None) -> DecisionConfig:
     hf_cache_path = hub_raw.get("cache") or raw.get("hf_cache") or "../hf_cache"
     finetune_n = _finetune_last_n_layers(model_raw, train_raw)
     model = _load_model_settings(model_raw, finetune_last_n_layers=finetune_n)
-    marker_train, marker_lrs = _load_marker_embedding_settings(train_raw)
     encoder_layer_train, encoder_layer_lrs = _load_encoder_layer_finetune(
         train_raw,
         finetune_last_n_layers=finetune_n,
     )
     lr_raw = train_raw.get("learning_rates") or {}
+    head_lr = _load_head_learning_rate(train_raw)
+    lora = _load_lora_settings(train_raw)
     train_cls, cls_lr = _load_cls_embedding_settings(train_raw, lr_raw)
-    augment_raw = data_raw.get("train_augment") or {}
-    train_augment = TrainAugmentSettings(
-        shuffle_options=bool(augment_raw.get("shuffle_options", False)),
-        omit_wrong_options=bool(augment_raw.get("omit_wrong_options", False)),
-    )
+    optimizer = _load_optimizer_settings(train_raw)
     return DecisionConfig(
         hf_cache=apply_hf_cache(_resolve(Path(hf_cache_path), base)),
         pretrained_name=pretrained,
@@ -347,7 +394,6 @@ def load_config(path: Path | None = None) -> DecisionConfig:
             val_split=str(data_raw.get("val_split") or "validation"),
             seed=int(data_raw.get("seed", 42)),
             num_workers=int(data_raw.get("num_workers", 0)),
-            train_augment=train_augment,
         ),
         train=TrainSettings(
             session_dir=_resolve(
@@ -360,15 +406,12 @@ def load_config(path: Path | None = None) -> DecisionConfig:
                 1,
                 int(_train_get(train_raw, "schedule", "grad_accum", legacy_key="grad_accum", default=1)),
             ),
-            head_learning_rate=float(
-                lr_raw.get("head", train_raw.get("head_learning_rate", 2.0e-5))
-            ),
+            head_learning_rate=head_lr,
             train_cls_embedding=train_cls,
             cls_embedding_learning_rate=cls_lr,
-            marker_embedding_train=marker_train,
-            marker_embedding_learning_rates=marker_lrs,
             encoder_layer_train=encoder_layer_train,
             encoder_layer_learning_rates=encoder_layer_lrs,
+            lora=lora,
             warmup_ratio=float(
                 _train_get(train_raw, "schedule", "warmup_ratio", legacy_key="warmup_ratio", default=0.05)
             ),
@@ -428,10 +471,7 @@ def load_config(path: Path | None = None) -> DecisionConfig:
                 1,
                 int(_train_get(train_raw, "test_mode", "samples", legacy_key="test_samples", default=200)),
             ),
-            variations=max(
-                1,
-                int(_train_get(train_raw, "schedule", "variations", legacy_key="variations", default=2)),
-            ),
+            optimizer=optimizer,
         ),
         infer=InferSettings(
             checkpoint=_resolve(

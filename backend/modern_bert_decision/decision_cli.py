@@ -49,6 +49,23 @@ def main(argv: list[str] | None = None) -> None:
 
     p_train = sub.add_parser("train", help="Train on RACE (dataset_manager race)")
     p_train.add_argument("--config", type=Path, default=CONFIG_PATH)
+    p_train.add_argument(
+        "--test-mode",
+        action="store_true",
+        help="Train on a fixed subset (train.test_mode.samples) instead of the full train split",
+    )
+    p_train.add_argument(
+        "--test-samples",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Override train.test_mode.samples (implies --test-mode)",
+    )
+    p_train.add_argument(
+        "--test-refresh",
+        action="store_true",
+        help="Resample test_train_samples.jsonl (delete cached fixture first)",
+    )
 
     p_dl = sub.add_parser(
         "download-data",
@@ -86,9 +103,20 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.cmd == "train":
+        from dataclasses import replace
+
         from train import run as run_train
 
-        run_train(cfg)
+        train = cfg.train
+        train_updates: dict[str, object] = {}
+        if args.test_mode:
+            train_updates["test_mode"] = True
+        if args.test_samples is not None:
+            train_updates["test_samples"] = max(1, int(args.test_samples))
+            train_updates["test_mode"] = True
+        if train_updates:
+            cfg = replace(cfg, train=replace(train, **train_updates))
+        run_train(cfg, test_refresh=bool(args.test_refresh))
         return
 
     if args.cmd == "download-data":

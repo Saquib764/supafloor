@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import json
 import random
-from random import Random
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import torch
-from config import DecisionConfig, TrainAugmentSettings, datasets_cache_dir
+from config import DecisionConfig, datasets_cache_dir
 from datasets import Dataset
-from formatting import FormattedBatch, FormattedTrainBatch, format_batch, format_train_batch
+from formatting import FormattedBatch, format_batch
 from model.decision_model import ModernBERTDecisionModel
 from registry import _metadata, _schema, local_dataset_available, local_dataset_root
 from torch.utils.data import Dataset as TorchDataset, IterableDataset
@@ -25,80 +24,6 @@ class DecisionExample:
     question: str
     options: list[str]
     answer_index: int
-
-
-@dataclass(frozen=True)
-class TrainRow:
-    state: str
-    question: str
-    options: list[str]
-    candidate: str
-    label: float
-
-
-def augment_training_example(
-    example: DecisionExample,
-    rng: Random,
-    augment: TrainAugmentSettings,
-) -> DecisionExample:
-    """Drop random wrong options (keep ≥2 total), then shuffle; remap ``answer_index``."""
-    if not augment.shuffle_options and not augment.omit_wrong_options:
-        return example
-    n = len(example.options)
-    gold_idx = example.answer_index
-    gold_text = example.options[gold_idx]
-    kept = list(range(n))
-    if augment.omit_wrong_options and n > 2:
-        wrong = [i for i in kept if i != gold_idx]
-        k_drop = rng.randint(0, len(wrong) - 1)
-        rng.shuffle(wrong)
-        drop = set(wrong[:k_drop])
-        kept = [i for i in kept if i not in drop]
-    options = [example.options[i] for i in kept]
-    answer_index = kept.index(gold_idx)
-    if augment.shuffle_options and len(options) > 1:
-        order = list(range(len(options)))
-        rng.shuffle(order)
-        options = [options[i] for i in order]
-        answer_index = order.index(answer_index)
-    if len(options) < 2:
-        raise ValueError("augmented example must have at least two options")
-    if options[answer_index] != gold_text:
-        raise ValueError("augmented answer_index does not point at gold option")
-    return DecisionExample(
-        state=example.state,
-        question=example.question,
-        options=options,
-        answer_index=answer_index,
-    )
-
-
-def _shuffled_wrong_indices(example: DecisionExample, rng: Random) -> list[int]:
-    wrong = [i for i in range(len(example.options)) if i != example.answer_index]
-    order = wrong.copy()
-    rng.shuffle(order)
-    return order
-
-
-def train_row_for_variation(
-    example: DecisionExample,
-    variation: int,
-    *,
-    wrong_order: list[int],
-) -> TrainRow:
-    if variation == 0:
-        candidate_index = example.answer_index
-    else:
-        candidate_index = wrong_order[(variation - 1) % len(wrong_order)]
-    candidate = example.options[candidate_index]
-    label = 1.0 if candidate_index == example.answer_index else 0.0
-    return TrainRow(
-        state=example.state,
-        question=example.question,
-        options=example.options,
-        candidate=candidate,
-        label=label,
-    )
 
 
 def race_row_to_example(row: dict[str, Any]) -> DecisionExample:
@@ -296,26 +221,27 @@ def pick_eval_examples_from_validation(
     return [pool[i] for i in order[:take]]
 
 
-def _train_example_pool(cfg: DecisionConfig) -> list[DecisionExample]:
-    if use_local_race(cfg):
-        return list(
-            iter_race_local_examples(
-                cfg,
-                cfg.data.train_split,
-                shuffle=False,
-                seed=cfg.data.seed,
-            )
-        )
-    return _examples_from_hub_split(cfg, cfg.data.train_split)
-
-
 def pick_train_examples(
     cfg: DecisionConfig,
     *,
     count: int,
     seed: int,
 ) -> list[DecisionExample]:
-    pool = _train_example_pool(cfg)
+    if count < 1:
+        return []
+    if use_local_race(cfg):
+        out: list[DecisionExample] = []
+        for ex in iter_race_local_examples(
+            cfg,
+            cfg.data.train_split,
+            shuffle=True,
+            seed=seed,
+        ):
+            out.append(ex)
+            if len(out) >= count:
+                break
+        return out
+    pool = _examples_from_hub_split(cfg, cfg.data.train_split)
     if not pool:
         return []
     rng = random.Random(seed)
@@ -338,8 +264,14 @@ def ensure_eval_examples(cfg: DecisionConfig) -> tuple[list[DecisionExample], Pa
     return picked, path
 
 
-def ensure_test_train_examples(cfg: DecisionConfig) -> tuple[list[DecisionExample], Path]:
+def ensure_test_train_examples(
+    cfg: DecisionConfig,
+    *,
+    refresh: bool = False,
+) -> tuple[list[DecisionExample], Path]:
     path = cfg.train.session_dir / TEST_TRAIN_SAMPLES_FILENAME
+    if refresh and path.is_file():
+        path.unlink()
     if path.is_file():
         return read_eval_examples(path), path
     picked = pick_train_examples(
@@ -347,6 +279,11 @@ def ensure_test_train_examples(cfg: DecisionConfig) -> tuple[list[DecisionExampl
         count=cfg.train.test_samples,
         seed=cfg.data.seed,
     )
+    if not picked:
+        raise FileNotFoundError(
+            "train.test_mode: no training examples available "
+            f"(split {cfg.data.train_split!r}); run download-data or fix data.source"
+        )
     write_eval_examples(path, picked)
     return picked, path
 
@@ -360,74 +297,6 @@ class ListDecisionDataset(TorchDataset):
 
     def __getitem__(self, index: int) -> DecisionExample:
         return self._examples[int(index)]
-
-
-class ExpandedMapTrainDataset(TorchDataset):
-    """One dataset row per (example × variation); batch_size applies to these rows."""
-
-    def __init__(
-        self,
-        base: TorchDataset,
-        *,
-        variations: int,
-        seed: int,
-        augment: TrainAugmentSettings,
-    ) -> None:
-        self._base = base
-        self._variations = max(1, variations)
-        self._seed = seed
-        self._augment = augment
-
-    def __len__(self) -> int:
-        return len(self._base) * self._variations
-
-    def __getitem__(self, index: int) -> TrainRow:
-        base_idx = int(index) // self._variations
-        slot = int(index) % self._variations
-        ex = self._base[base_idx]
-        rng = Random(self._seed + base_idx)
-        ex = augment_training_example(ex, rng, self._augment)
-        wrong_order = _shuffled_wrong_indices(ex, rng)
-        return train_row_for_variation(ex, slot, wrong_order=wrong_order)
-
-
-class ExpandedTrainStreamDataset(IterableDataset):
-    def __init__(
-        self,
-        cfg: DecisionConfig,
-        *,
-        split: str,
-        variations: int,
-        shuffle: bool = False,
-        seed: int = 0,
-        epoch: int = 0,
-    ) -> None:
-        self._inner = RaceDecisionStreamDataset(
-            cfg,
-            split=split,
-            shuffle=shuffle,
-            seed=seed,
-            epoch=epoch,
-        )
-        self._variations = max(1, variations)
-        self._rng = Random(seed + epoch)
-
-    @property
-    def epoch(self) -> int:
-        return self._inner.epoch
-
-    @epoch.setter
-    def epoch(self, value: int) -> None:
-        self._inner.epoch = value
-        self._rng = Random(self._inner.seed + value)
-
-    def __iter__(self) -> Iterator[TrainRow]:
-        augment = self._inner.cfg.data.train_augment
-        for ex in self._inner:
-            ex = augment_training_example(ex, self._rng, augment)
-            wrong_order = _shuffled_wrong_indices(ex, self._rng)
-            for slot in range(self._variations):
-                yield train_row_for_variation(ex, slot, wrong_order=wrong_order)
 
 
 def load_race_decision_dataset(cfg: DecisionConfig, *, split: str) -> Dataset:
@@ -485,13 +354,7 @@ def download_race_local(cfg: DecisionConfig, *, force: bool = False) -> Path:
 
 
 @dataclass
-class TrainBatch:
-    formatted: FormattedTrainBatch
-    labels: torch.Tensor
-
-
-@dataclass
-class EvalBatch:
+class DecisionBatch:
     formatted: FormattedBatch
     labels: torch.Tensor
 
@@ -500,23 +363,7 @@ class TrainCollator:
     def __init__(self, model: ModernBERTDecisionModel) -> None:
         self.model = model
 
-    def __call__(self, rows: list[TrainRow]) -> TrainBatch:
-        sequences = [(r.state, r.question, r.options, r.candidate) for r in rows]
-        formatted = format_train_batch(
-            sequences,
-            cfg=self.model.cfg,
-            tokenizer=self.model.tokenizer,
-            max_len=self.model.max_len,
-        )
-        labels = torch.tensor([r.label for r in rows], dtype=torch.float32)
-        return TrainBatch(formatted=formatted, labels=labels)
-
-
-class EvalCollator:
-    def __init__(self, model: ModernBERTDecisionModel) -> None:
-        self.model = model
-
-    def __call__(self, examples: list[DecisionExample]) -> EvalBatch:
+    def __call__(self, examples: list[DecisionExample]) -> DecisionBatch:
         requests = [example_to_request(ex) for ex in examples]
         formatted = format_batch(
             requests,
@@ -525,4 +372,20 @@ class EvalCollator:
             max_len=self.model.max_len,
         )
         labels = torch.tensor([ex.answer_index for ex in examples], dtype=torch.long)
-        return EvalBatch(formatted=formatted, labels=labels)
+        return DecisionBatch(formatted=formatted, labels=labels)
+
+
+class EvalCollator:
+    def __init__(self, model: ModernBERTDecisionModel) -> None:
+        self.model = model
+
+    def __call__(self, examples: list[DecisionExample]) -> DecisionBatch:
+        requests = [example_to_request(ex) for ex in examples]
+        formatted = format_batch(
+            requests,
+            cfg=self.model.cfg,
+            tokenizer=self.model.tokenizer,
+            max_len=self.model.max_len,
+        )
+        labels = torch.tensor([ex.answer_index for ex in examples], dtype=torch.long)
+        return DecisionBatch(formatted=formatted, labels=labels)

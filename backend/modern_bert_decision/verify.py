@@ -7,13 +7,12 @@ import tempfile
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
 
 from checkpoint import save_checkpoint, load_checkpoint
 from config import CONFIG_PATH, DecisionConfig, load_config
 from device import pick_device
-from formatting import build_candidate_sequence, format_batch, format_train_batch, resolve_segment_marker_ids
-from loss import margin_logit_loss
+from formatting import build_candidate_sequence, format_batch, resolve_sequence_boundary_ids
+from loss import soft_target_cross_entropy
 from model.decision_model import build_model
 
 
@@ -27,33 +26,14 @@ def run_checks(cfg: DecisionConfig) -> None:
     model = build_model(cfg)
     model.to(device)
     tokenizer = model.tokenizer
-    markers = resolve_segment_marker_ids(tokenizer)
-
-    train_rows = [
-        ("Alpha state.", "Pick one?", ["A", "B", "C"], "B"),
-        ("Beta state.", "Pick one?", ["X", "Y"], "X"),
-    ]
-    train_batch = format_train_batch(
-        train_rows,
-        cfg=cfg,
-        tokenizer=tokenizer,
-        max_len=model.max_len,
-        device=device,
-    )
-    train_labels = torch.tensor([1.0, 1.0], device=device)
-    if train_batch.input_ids.dim() != 2:
-        raise AssertionError(f"train batch must be [B, L], got {tuple(train_batch.input_ids.shape)}")
-
-    model.train()
-    gold_logits = model.score_gold(train_batch.input_ids, train_batch.attention_mask)
-    if gold_logits.shape != (2,):
-        raise AssertionError(f"gold logits shape {tuple(gold_logits.shape)}")
-    train_loss = margin_logit_loss(gold_logits, train_labels)
-    train_loss.backward()
-    if model.score_head.weight.grad is None or model.score_head.weight.grad.abs().sum().item() == 0.0:
-        raise AssertionError("score_head should receive gradients from margin loss")
-
-    model.zero_grad(set_to_none=True)
+    enc_limit = int(model.encoder.config.max_position_embeddings)
+    if model.max_len != enc_limit:
+        raise AssertionError(f"model.max_len {model.max_len} != encoder limit {enc_limit}")
+    if tokenizer.model_max_length != enc_limit:
+        raise AssertionError(
+            f"tokenizer.model_max_length {tokenizer.model_max_length} != encoder limit {enc_limit}"
+        )
+    boundaries = resolve_sequence_boundary_ids(tokenizer)
 
     requests = [
         {"state": "Alpha state.", "question": "Pick one?", "options": ["A", "B", "C"]},
@@ -66,6 +46,21 @@ def run_checks(cfg: DecisionConfig) -> None:
         max_len=model.max_len,
         device=device,
     )
+    answer_index = torch.tensor([0, 1], device=device, dtype=torch.long)
+    if batch.input_ids.dim() != 3:
+        raise AssertionError(f"train batch must be [B, K, L], got {tuple(batch.input_ids.shape)}")
+
+    model.train()
+    out = model(batch.input_ids, batch.attention_mask, batch.option_mask)
+    if out.logits.shape != (2, 3):
+        raise AssertionError(f"logits shape {tuple(out.logits.shape)}")
+    train_loss = soft_target_cross_entropy(out.logits, answer_index, batch.option_mask)
+    train_loss.backward()
+    if model.score_head.weight.grad is None or model.score_head.weight.grad.abs().sum().item() == 0.0:
+        raise AssertionError("score_head should receive gradients from soft-target CE")
+
+    model.zero_grad(set_to_none=True)
+
     model.eval()
     out = model(batch.input_ids, batch.attention_mask, batch.option_mask)
     if out.logits.shape != (2, 3):
@@ -82,8 +77,8 @@ def run_checks(cfg: DecisionConfig) -> None:
         raise AssertionError("padded option probabilities must be zero")
 
     model.train()
-    gold_logits = model.score_gold(train_batch.input_ids, train_batch.attention_mask)
-    loss = gold_logits.sum()
+    out_train = model(batch.input_ids, batch.attention_mask, batch.option_mask)
+    loss = out_train.logits.sum()
     loss.backward()
     embed = model.encoder.get_input_embeddings()
     if embed is not None and cfg.train.train_cls_embedding:
@@ -116,7 +111,10 @@ def run_checks(cfg: DecisionConfig) -> None:
                 raise AssertionError(f"disabled encoder layer {layer_idx} should not receive gradients")
         elif layer_has_grad:
             raise AssertionError(f"frozen encoder layer {layer_idx} should not receive gradients")
-    if n_ft and any(train_mask):
+    if model.lora_enabled:
+        if any("lora_" in n for n, _ in model.score_head.named_parameters()):
+            raise AssertionError("score_head must not use LoRA")
+    elif n_ft and any(train_mask):
         norm_has_grad = any(
             p.grad is not None and p.grad.abs().sum().item() > 0.0
             for p in model.encoder.final_norm.parameters()
@@ -136,16 +134,20 @@ def run_checks(cfg: DecisionConfig) -> None:
     try:
         build_candidate_sequence(
             tokenizer=tokenizer,
-            markers=markers,
+            boundaries=boundaries,
             state=huge,
             question="Q?",
-            options=["ok"],
             candidate="ok",
             max_len=model.max_len,
         )
         raise AssertionError("oversized input should be rejected")
     except ValueError:
         pass
+
+    long_word = "x " * (model.max_len + 32)
+    segment_ids = tokenizer.encode(long_word, add_special_tokens=False, truncation=False, max_length=None)
+    if len(segment_ids) <= model.max_len:
+        raise AssertionError("expected long segment to encode to more than max_len tokens (no truncation)")
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "ckpt"

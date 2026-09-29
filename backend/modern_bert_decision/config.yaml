@@ -1,10 +1,12 @@
-# ModernBERT multi-option decision model (CLS score; segment markers)
+# ModernBERT multi-option decision model (CLS score; [SEP] segment boundaries)
 
 hub:
   cache: ../hf_cache
   pretrained: answerdotai/ModernBERT-base
 
 model:
+  # Sequence length follows encoder max_position_embeddings (8192 for ModernBERT-base).
+  # Inputs are never truncated; sequences longer than the limit raise at format time.
   score_head:
     dropout: 0.1  # on CLS hidden before linear head (train only)
 
@@ -16,9 +18,6 @@ data:
   val_split: validation
   seed: 42
   num_workers: 0
-  train_augment:
-    shuffle_options: true
-    omit_wrong_options: true
 
 train:
   session_dir: training_session
@@ -29,36 +28,57 @@ train:
     save_steps: 500
 
   schedule:
-    epochs: 1
+    epochs: 4
     batch_size: 2
-    variations: 2  # 1 gold + (variations - 1) wrong rows per example
     grad_accum: 1
     warmup_ratio: 0.05
     weight_decay: 0.01
     max_grad_norm: 1.0
     bf16: false
 
+  # AdamW only (decoupled weight decay; pairs well with soft-target CE + warmup/cosine).
+  optimizer:
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+  # Quick training run on a fixed subset (not the full train split). First run writes
+  # {session_dir}/test_train_samples.jsonl; later runs reuse it. Change samples or
+  # resample with --test-refresh on the CLI.
   test_mode:
-    enabled: false
-    samples: 400
+    enabled: true
+    samples: 300  # e.g. 100 or 200
 
   eval:
-    samples: 100
+    samples: 20
     steps: 500
     seed: 42
 
-  learning_rates:
-    head: 2.0e-3
+  head:
+    lr: 2.0e-4  # CLS linear score head
+
+  lora:
+    enabled: true  # LoRA on encoder blocks only (never score_head)
+    all_layers: false  # true → every block 0..depth-1; mutually exclusive with `layers`
+    rank: 4
+    alpha: 8
+    dropout: 0.05
+    lr: 1.0e-4
+    layers: [19, 20, 21]
+    # Or list block indices (0..21 on ModernBERT-base). May overlap full-weight finetune blocks.
+    # Omit both `all_layers` and `layers` → blocks 0 .. (depth - train.encoder.last_n_layers - 1),
+    # or all blocks when train.encoder.last_n_layers is 0.
+    # layers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+    # target_modules: suffix names on ModernBERT-base blocks (layers.N.attn|mlp.<name>)
+    #   Wqkv — attn fused Q/K/V linear (default)
+    #   Wo   — attn output linear (default); also names mlp down-proj (same suffix)
+    #   Wi   — mlp up/gate linear (optional)
+    target_modules:
+      - Wqkv
+      - Wo
 
   cls_embedding:
     train: false
     lr: 1.0e-5
-
-  markers:
-    state:     { train: true, lr: 1.0e-4 }
-    question:  { train: true, lr: 1.0e-4 }
-    options:   { train: true, lr: 1.0e-4 }
-    candidate: { train: true, lr: 1.0e-4 }
 
   encoder:
     last_n_layers: 4  # 0 = frozen; N = last N blocks (+ final_norm when any train)
@@ -66,7 +86,7 @@ train:
       - { train: false, lr: 1.0e-5 }
       - { train: false, lr: 2.0e-5 }
       - { train: false, lr: 5.0e-5 }
-      - { train: true,  lr: 1.0e-4 }
+      - { train: false,  lr: 1.0e-4 }
 
 infer:
   checkpoint: training_session/last
