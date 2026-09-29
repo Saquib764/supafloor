@@ -115,7 +115,7 @@ def _print_training_samples(
             )
         gold = ex.options[ex.answer_index]
         print("  segment sketch (full state in model input; not repeated here):", flush=True)
-        print(f"    [CLS] <state passage>", flush=True)
+        print(f"    <state passage>", flush=True)
         print(f"    [SEP] {ex.question.strip()}", flush=True)
         print(f"    [SEP] {format_candidate_segment(gold)}", flush=True)
     print(f"\ntotal tokens (all option sequences, {len(examples)} examples): {total_tokens}", flush=True)
@@ -140,12 +140,13 @@ def print_model_summary(
     print("\n=== Architecture ===", flush=True)
     print(f"Backbone:   {cfg.pretrained_name} (encoder only, no MLM head)", flush=True)
     print(
-        "Sequence:   [CLS] state … [SEP] question … [SEP] candidate prompt … "
+        "Sequence:   state … [SEP] question … [SEP] candidate prompt … "
         "(one sequence per option; candidate = template + option text)",
         flush=True,
     )
     print(
-        "Scoring:    Linear on [CLS]; softmax over every option in the request (train/eval/infer)",
+        "Scoring:    Masked mean pool over non-padding tokens → linear head; "
+        "softmax over every option in the request (train/eval/infer)",
         flush=True,
     )
     print(f"Context:    max {model.max_len} tokens (no truncation)", flush=True)
@@ -185,7 +186,7 @@ def print_model_summary(
     print(f"├─ encoder   pretrained ModernBERT blocks", flush=True)
     print(
         f"└─ score_head  dropout={cfg.model.score_head_dropout}, lr={cfg.train.head_learning_rate}, "
-        "one CLS logit per forward",
+        "one logit per forward",
         flush=True,
     )
 
@@ -207,11 +208,6 @@ def print_model_summary(
         f"{'score_head:':<22} {_fmt_line(counts.score_head, head_b)}  (trainable)",
         flush=True,
     )
-    if counts.cls_embedding:
-        print(
-            f"{'CLS embedding:':<22} {_fmt_line(counts.cls_embedding, counts.cls_embedding * 4)}  (trainable row)",
-            flush=True,
-        )
     print(f"{'frozen:':<22} {_fmt_line(counts.frozen, counts.frozen * 4)}", flush=True)
     print(f"{'trainable total:':<22} {_fmt_line(counts.trainable, counts.trainable * 4)}", flush=True)
     print(f"{'total:':<22} {_fmt_line(counts.total, counts.total * 4)}", flush=True)

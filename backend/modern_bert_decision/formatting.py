@@ -1,4 +1,4 @@
-"""Build batched encoder inputs: CLS-scored sequences with [SEP] segment boundaries."""
+"""Build batched encoder inputs with [SEP] segment boundaries."""
 
 from __future__ import annotations
 
@@ -19,30 +19,25 @@ class FormattedBatch:
 
 @dataclass(frozen=True)
 class SequenceBoundaryIds:
-    cls_id: int
     sep_id: int
     pad_id: int
 
 
-def _require_boundary_tokens(tokenizer: PreTrainedTokenizerBase) -> tuple[int, int]:
-    cls_id = tokenizer.cls_token_id
-    if cls_id is None:
-        raise ValueError("tokenizer must define cls_token_id")
+def _pad_token_id(tokenizer: PreTrainedTokenizerBase) -> int:
     pad_id = tokenizer.pad_token_id
     if pad_id is None:
         sep_id = tokenizer.sep_token_id
         if sep_id is None:
             raise ValueError("tokenizer must define pad_token_id or sep_token_id")
         pad_id = sep_id
-    return cls_id, pad_id
+    return int(pad_id)
 
 
 def resolve_sequence_boundary_ids(tokenizer: PreTrainedTokenizerBase) -> SequenceBoundaryIds:
-    cls_id, pad_id = _require_boundary_tokens(tokenizer)
     sep_id = tokenizer.sep_token_id
     if sep_id is None:
         raise ValueError("tokenizer must define sep_token_id")
-    return SequenceBoundaryIds(cls_id=cls_id, sep_id=int(sep_id), pad_id=pad_id)
+    return SequenceBoundaryIds(sep_id=int(sep_id), pad_id=_pad_token_id(tokenizer))
 
 
 def max_sequence_length(tokenizer: PreTrainedTokenizerBase, encoder_config) -> int:
@@ -95,7 +90,6 @@ def format_candidate_sequence_text(
     """Human-readable layout matching ``build_candidate_sequence`` segment order."""
     return "\n".join(
         [
-            "[CLS]",
             state.strip(),
             f"[SEP] {question.strip()}",
             f"[SEP] {format_candidate_segment(candidate)}",
@@ -113,7 +107,7 @@ def build_candidate_sequence(
     max_len: int,
 ) -> list[int]:
     segments = [state, question, format_candidate_segment(candidate)]
-    input_ids: list[int] = [boundaries.cls_id]
+    input_ids: list[int] = []
     input_ids.extend(_encode_field(tokenizer, segments[0]))
     for text in segments[1:]:
         input_ids.append(boundaries.sep_id)

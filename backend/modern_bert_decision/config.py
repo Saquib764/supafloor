@@ -14,7 +14,8 @@ import yaml
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
-ARCHITECTURE_CLS_PER_CANDIDATE = "cls_per_candidate_v1"
+ARCHITECTURE_MEAN_POOL = "mean_pool_per_candidate_v1"
+ARCHITECTURE_CLS_PER_CANDIDATE = "cls_per_candidate_v1"  # legacy; refuse load
 # Legacy checkpoints with learnable [state]/[question]/[options]/[candidate] tokens.
 ARCHITECTURE_SEGMENT_MARKERS = "segment_markers_v1"
 
@@ -72,8 +73,6 @@ class TrainSettings:
     batch_size: int
     grad_accum: int
     head_learning_rate: float
-    train_cls_embedding: bool
-    cls_embedding_learning_rate: float
     encoder_layer_train: tuple[bool, ...]
     encoder_layer_learning_rates: tuple[float, ...]
     lora: LoraSettings
@@ -116,7 +115,7 @@ def _load_model_settings(
             "move finetune_last_n_layers and encoder layer LRs to train.encoder in config.yaml"
         )
     if raw.get("cls_embedding") or raw.get("train_cls_embedding") is not None:
-        raise ValueError("move cls_embedding settings to train.cls_embedding in config.yaml")
+        raise ValueError("train.cls_embedding was removed; scoring uses masked mean pooling")
     score_head = raw.get("score_head") or {}
     dropout = float(score_head.get("dropout", raw.get("score_head_dropout", 0.0)))
     if not 0.0 <= dropout < 1.0:
@@ -125,20 +124,6 @@ def _load_model_settings(
         finetune_last_n_layers=finetune_last_n_layers,
         score_head_dropout=dropout,
     )
-
-
-def _load_cls_embedding_settings(
-    train_raw: dict[str, Any],
-    lr_raw: dict[str, Any],
-) -> tuple[bool, float]:
-    cls = train_raw.get("cls_embedding") or {}
-    if isinstance(cls, dict) and cls:
-        train = bool(cls.get("train", False))
-        lr = float(cls.get("lr", lr_raw.get("cls_embedding", 1.0e-4)))
-        return train, lr
-    train = bool(train_raw.get("train_cls_embedding", False))
-    lr = float(lr_raw.get("cls_embedding", train_raw.get("cls_embedding_learning_rate", 1.0e-4)))
-    return train, lr
 
 
 def _load_head_learning_rate(train_raw: dict[str, Any]) -> float:
@@ -380,7 +365,8 @@ def load_config(path: Path | None = None) -> DecisionConfig:
     lr_raw = train_raw.get("learning_rates") or {}
     head_lr = _load_head_learning_rate(train_raw)
     lora = _load_lora_settings(train_raw)
-    train_cls, cls_lr = _load_cls_embedding_settings(train_raw, lr_raw)
+    if train_raw.get("cls_embedding") or train_raw.get("train_cls_embedding") is not None:
+        raise ValueError("train.cls_embedding was removed; scoring uses masked mean pooling")
     optimizer = _load_optimizer_settings(train_raw)
     return DecisionConfig(
         hf_cache=apply_hf_cache(_resolve(Path(hf_cache_path), base)),
@@ -407,8 +393,6 @@ def load_config(path: Path | None = None) -> DecisionConfig:
                 int(_train_get(train_raw, "schedule", "grad_accum", legacy_key="grad_accum", default=1)),
             ),
             head_learning_rate=head_lr,
-            train_cls_embedding=train_cls,
-            cls_embedding_learning_rate=cls_lr,
             encoder_layer_train=encoder_layer_train,
             encoder_layer_learning_rates=encoder_layer_lrs,
             lora=lora,

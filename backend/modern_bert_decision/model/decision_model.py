@@ -1,4 +1,4 @@
-"""ModernBERT encoder with a CLS linear score head (one forward pass per candidate)."""
+"""ModernBERT encoder with masked mean pooling and a linear score head (one forward per option)."""
 
 from __future__ import annotations
 
@@ -38,10 +38,7 @@ class ModernBERTDecisionModel(nn.Module):
         self.finetune_last_n_layers = 0
         self.encoder_layer_train: tuple[bool, ...] = ()
         self.encoder_finetune_lrs: tuple[float, ...] = ()
-        self.train_cls_embedding = False
         self.lora_enabled = False
-        self.cls_token_id: int | None = None
-        self._embedding_grad_hook = None
         hidden = int(encoder.config.hidden_size)
         self.score_head_dropout = nn.Dropout(p=float(cfg.model.score_head_dropout))
         self.score_head = nn.Linear(hidden, 1, bias=False)
@@ -62,11 +59,15 @@ class ModernBERTDecisionModel(nn.Module):
 
         return load_checkpoint(root, cfg)
 
-    def _cls_logits(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    def _pooled_logits(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        cls_hidden = outputs.last_hidden_state[:, 0, :]
-        cls_hidden = self.score_head_dropout(cls_hidden)
-        return self.score_head(cls_hidden).squeeze(-1)
+        hidden = outputs.last_hidden_state
+        mask = attention_mask.unsqueeze(-1).to(dtype=hidden.dtype)
+        summed = (hidden * mask).sum(dim=1)
+        counts = mask.sum(dim=1).clamp(min=1e-6)
+        pooled = summed / counts
+        pooled = self.score_head_dropout(pooled)
+        return self.score_head(pooled).squeeze(-1)
 
     def forward(
         self,
@@ -80,7 +81,7 @@ class ModernBERTDecisionModel(nn.Module):
         batch_size, k_max, seq_len = input_ids.shape
         flat_ids = input_ids.reshape(batch_size * k_max, seq_len)
         flat_mask = attention_mask.reshape(batch_size * k_max, seq_len)
-        flat_logits = self._cls_logits(flat_ids, flat_mask)
+        flat_logits = self._pooled_logits(flat_ids, flat_mask)
         logits = flat_logits.reshape(batch_size, k_max)
 
         logits = logits.masked_fill(~option_mask, float("-inf"))
@@ -173,5 +174,4 @@ def configure_for_training(model: ModernBERTDecisionModel, cfg: DecisionConfig) 
         finetune_last_n_layers=finetune_n,
         encoder_layer_train=layer_train,
         encoder_layer_learning_rates=layer_lrs,
-        train_cls_embedding=cfg.train.train_cls_embedding,
     )

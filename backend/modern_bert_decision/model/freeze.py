@@ -1,23 +1,12 @@
-"""Freeze pretrained encoder; optionally train last N layers, CLS row, and score head."""
+"""Freeze pretrained encoder; optionally train last N layers and score head."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 
-import torch
 import torch.nn as nn
 
 from model.decision_model import ModernBERTDecisionModel
-
-
-def _zero_non_cls_embedding_grad(grad: torch.Tensor, cls_token_id: int) -> torch.Tensor:
-    if grad is None:
-        return grad
-    out = grad.clone()
-    mask = torch.ones_like(out, dtype=torch.bool)
-    mask[cls_token_id] = False
-    out[mask] = 0
-    return out
 
 
 def _encoder_stack(model: ModernBERTDecisionModel) -> nn.Module:
@@ -75,13 +64,7 @@ def apply_encoder_trainability(
     finetune_last_n_layers: int,
     encoder_layer_train: Sequence[bool],
     encoder_layer_learning_rates: Sequence[float],
-    train_cls_embedding: bool,
 ) -> None:
-    hook = getattr(model, "_embedding_grad_hook", None)
-    if hook is not None:
-        hook.remove()
-        model._embedding_grad_hook = None
-
     stack = _encoder_stack(model)
     layers = stack.layers
     n = max(0, int(finetune_last_n_layers))
@@ -95,8 +78,6 @@ def apply_encoder_trainability(
     model.finetune_last_n_layers = n
     model.encoder_layer_train = train_mask
     model.encoder_finetune_lrs = finetune_lrs
-    model.train_cls_embedding = train_cls_embedding
-    model.cls_token_id = None
 
     for name, param in model.encoder.named_parameters():
         if "lora_" in name:
@@ -118,20 +99,3 @@ def apply_encoder_trainability(
         for name, param in model.encoder.named_parameters():
             if "lora_" in name:
                 param.requires_grad = True
-
-    if not train_cls_embedding:
-        return
-
-    cls_id = model.tokenizer.cls_token_id
-    if cls_id is None:
-        raise RuntimeError("tokenizer has no cls_token_id; cannot train CLS embedding")
-    embeddings = model.encoder.get_input_embeddings()
-    if embeddings is None:
-        raise RuntimeError("encoder has no input embeddings")
-    embeddings.weight.requires_grad = True
-    model.cls_token_id = int(cls_id)
-
-    def hook_fn(grad: torch.Tensor) -> torch.Tensor:
-        return _zero_non_cls_embedding_grad(grad, model.cls_token_id)  # type: ignore[arg-type]
-
-    model._embedding_grad_hook = embeddings.weight.register_hook(hook_fn)

@@ -80,20 +80,6 @@ def run_checks(cfg: DecisionConfig) -> None:
     out_train = model(batch.input_ids, batch.attention_mask, batch.option_mask)
     loss = out_train.logits.sum()
     loss.backward()
-    embed = model.encoder.get_input_embeddings()
-    if embed is not None and cfg.train.train_cls_embedding:
-        if model.cls_token_id is None:
-            raise AssertionError("cls_token_id must be set when train_cls_embedding is true")
-        emb_grad = embed.weight.grad
-        if emb_grad is None:
-            raise AssertionError("CLS embedding row should receive gradients")
-        cls_id = int(model.cls_token_id)
-        if float(emb_grad[cls_id].abs().sum().item()) == 0.0:
-            raise AssertionError("CLS embedding row should receive non-zero gradients")
-        mask = torch.ones(emb_grad.shape[0], dtype=torch.bool)
-        mask[cls_id] = False
-        if float(emb_grad[mask].abs().sum().item()) != 0.0:
-            raise AssertionError("non-CLS embedding rows should not receive gradients")
     n_ft = model.finetune_last_n_layers
     layers = model.encoder.layers
     start = len(layers) - n_ft if n_ft else len(layers)

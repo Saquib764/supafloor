@@ -98,10 +98,6 @@ def _optimizer_param_groups(
         groups.extend(lora_param_groups(model.encoder, learning_rate=cfg.train.lora.learning_rate))
     else:
         groups.extend(encoder_finetune_param_groups(model))
-    if model.train_cls_embedding:
-        embed = model.encoder.get_input_embeddings()
-        if embed is not None and embed.weight.requires_grad:
-            groups.append({"params": [embed.weight], "lr": cfg.train.cls_embedding_learning_rate})
     return groups
 
 
@@ -236,8 +232,6 @@ def _print_setup(
     print(f"optimizer:      AdamW (betas={cfg.train.optimizer.betas}, eps={cfg.train.optimizer.eps})")
     print(f"weight_decay:   {cfg.train.weight_decay}")
     print(f"head_lr:        {cfg.train.head_learning_rate}")
-    print(f"cls_embed_lr:   {cfg.train.cls_embedding_learning_rate}")
-    print(f"train_cls_emb:  {cfg.train.train_cls_embedding}")
     print(f"head_dropout:   {cfg.model.score_head_dropout}")
     lora = cfg.train.lora
     if model.lora_enabled:

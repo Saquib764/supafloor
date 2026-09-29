@@ -1,4 +1,4 @@
-# ModernBERT multi-option decision model (CLS score; [SEP] segment boundaries)
+# ModernBERT multi-option decision model (masked mean pool; [SEP] segment boundaries)
 
 hub:
   cache: ../hf_cache
@@ -8,7 +8,7 @@ model:
   # Sequence length follows encoder max_position_embeddings (8192 for ModernBERT-base).
   # Inputs are never truncated; sequences longer than the limit raise at format time.
   score_head:
-    dropout: 0.1  # on CLS hidden before linear head (train only)
+    dropout: 0.1  # on pooled hidden before linear head (train only)
 
 data:
   dataset: race
@@ -24,7 +24,7 @@ train:
 
   checkpoint:
     init: 
-    resume: true
+    resume: false
     save_steps: 500
 
   schedule:
@@ -54,7 +54,7 @@ train:
     seed: 42
 
   head:
-    lr: 2.0e-3  # CLS linear score head
+    lr: 2.0e-3  # linear score head
 
   lora:
     enabled: true  # LoRA on encoder blocks only (never score_head)
@@ -75,10 +75,6 @@ train:
     target_modules:
       - Wqkv
       - Wo
-
-  cls_embedding:
-    train: false
-    lr: 1.0e-5
 
   encoder:
     last_n_layers: 4  # 0 = frozen; N = last N blocks (+ final_norm when any train)

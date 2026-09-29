@@ -1,4 +1,4 @@
-"""Save and load decision-model checkpoints (encoder, tokenizer, CLS scorer)."""
+"""Save and load decision-model checkpoints (encoder, tokenizer, score head)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import torch
 
 from config import (
     ARCHITECTURE_CLS_PER_CANDIDATE,
+    ARCHITECTURE_MEAN_POOL,
     ARCHITECTURE_SEGMENT_MARKERS,
     DecisionConfig,
     hub_from_pretrained_kwargs,
@@ -22,7 +23,6 @@ CHECKPOINT_ENCODER_DIR = "encoder"
 CHECKPOINT_TOKENIZER_DIR = "tokenizer"
 CHECKPOINT_LORA_DIR = "lora_adapter"
 CHECKPOINT_SCORER = "scoring_head.pt"
-CHECKPOINT_CLS_EMBEDDING = "cls_embedding.pt"
 CHECKPOINT_META = "decision_meta.json"
 CHECKPOINT_KIND_FULL = "full"
 CHECKPOINT_KIND_LORA = "lora"
@@ -44,29 +44,6 @@ def encoder_checkpoint_present(root: Path) -> bool:
 
 def _meta_path(root: Path) -> Path:
     return root / CHECKPOINT_META
-
-
-def _cls_embedding_state(model: ModernBERTDecisionModel) -> dict[str, object] | None:
-    if model.cls_token_id is None:
-        return None
-    embed = model.encoder.get_input_embeddings()
-    if embed is None:
-        return None
-    token_id = int(model.cls_token_id)
-    return {"index": token_id, "weight": embed.weight.detach().cpu()[token_id]}
-
-
-def _apply_cls_embedding_state(model: ModernBERTDecisionModel, state: dict[str, object]) -> None:
-    embed = model.encoder.get_input_embeddings()
-    if embed is None:
-        raise RuntimeError("encoder has no input embeddings")
-    token_id = int(state["index"])  # type: ignore[arg-type]
-    row = state["weight"]  # type: ignore[assignment]
-    if not isinstance(row, torch.Tensor):
-        raise ValueError("cls_embedding weight must be a tensor")
-    device = embed.weight.device
-    dtype = embed.weight.dtype
-    embed.weight.data[token_id] = row.to(device=device, dtype=dtype)
 
 
 def _atomic_save_pretrained(module, dest_dir: Path) -> None:
@@ -113,9 +90,6 @@ def save_checkpoint(
 
     model.tokenizer.save_pretrained(tokenizer_dir)
     torch.save({"weight": model.score_head.weight.detach().cpu()}, root / CHECKPOINT_SCORER)
-    cls_state = _cls_embedding_state(model)
-    if cls_state is not None:
-        torch.save(cls_state, root / CHECKPOINT_CLS_EMBEDDING)
 
     if write_encoder:
         _atomic_save_encoder(model, encoder_dir)
@@ -131,7 +105,7 @@ def save_checkpoint(
     kind = CHECKPOINT_KIND_LORA if use_lora else CHECKPOINT_KIND_FULL
 
     meta = {
-        "architecture": ARCHITECTURE_CLS_PER_CANDIDATE,
+        "architecture": ARCHITECTURE_MEAN_POOL,
         "checkpoint_kind": kind,
         "pretrained_name": model.cfg.pretrained_name,
         "max_len": model.max_len,
@@ -140,7 +114,6 @@ def save_checkpoint(
         "finetune_last_n_layers": model.finetune_last_n_layers,
         "encoder_layer_train": list(model.encoder_layer_train),
         "encoder_layer_learning_rates": list(model.encoder_finetune_lrs),
-        "train_cls_embedding": model.train_cls_embedding,
         "lora_enabled": model.lora_enabled,
         "lora_rank": lora.rank if use_lora else None,
         "lora_alpha": lora.alpha if use_lora else None,
@@ -159,16 +132,20 @@ def _load_encoder_from_hub(cfg: DecisionConfig):
 
 def _reject_legacy_checkpoint(meta: dict[str, object]) -> None:
     arch = meta.get("architecture")
-    if arch == ARCHITECTURE_CLS_PER_CANDIDATE:
+    if arch == ARCHITECTURE_MEAN_POOL:
         return
+    if arch == ARCHITECTURE_CLS_PER_CANDIDATE:
+        raise ValueError(
+            "checkpoint uses CLS scoring (cls_per_candidate_v1); retrain with masked mean pooling"
+        )
     if arch == ARCHITECTURE_SEGMENT_MARKERS:
         raise ValueError(
-            "checkpoint uses learnable segment marker tokens; retrain from Hub base with CLS+[SEP] layout"
+            "checkpoint uses learnable segment marker tokens; retrain from Hub base"
         )
     if meta.get("marker_tokens") or meta.get("marker_ids") or meta.get("marker_embedding_train"):
         raise ValueError(
             "checkpoint uses an obsolete marker layout; retrain from Hub base "
-            f"(expected architecture {ARCHITECTURE_CLS_PER_CANDIDATE!r})"
+            f"(expected architecture {ARCHITECTURE_MEAN_POOL!r})"
         )
 
 
@@ -186,13 +163,12 @@ def _resolve_encoder_trainability(
     cfg: DecisionConfig,
     *,
     trainability_from_config: bool,
-) -> tuple[int, tuple[bool, ...], tuple[float, ...], bool]:
+) -> tuple[int, tuple[bool, ...], tuple[float, ...]]:
     if trainability_from_config or "finetune_last_n_layers" not in meta:
         return (
             cfg.model.finetune_last_n_layers,
             cfg.train.encoder_layer_train,
             cfg.train.encoder_layer_learning_rates,
-            cfg.train.train_cls_embedding,
         )
     _reject_legacy_full_finetune(meta)
     n = int(meta["finetune_last_n_layers"])
@@ -200,12 +176,7 @@ def _resolve_encoder_trainability(
     lrs = tuple(float(x) for x in meta["encoder_layer_learning_rates"])  # type: ignore[union-attr]
     if len(train) != n or len(lrs) != n:
         raise ValueError("checkpoint finetune meta lists length mismatch")
-    train_cls = (
-        bool(meta["train_cls_embedding"])
-        if "train_cls_embedding" in meta
-        else cfg.train.train_cls_embedding
-    )
-    return n, train, lrs, train_cls
+    return n, train, lrs
 
 
 def _finalize_trainability(
@@ -228,10 +199,9 @@ def _finalize_trainability(
             finetune_last_n_layers=0,
             encoder_layer_train=(),
             encoder_layer_learning_rates=(),
-            train_cls_embedding=bool(meta.get("train_cls_embedding", cfg.train.train_cls_embedding)),
         )
         return
-    finetune_n, layer_train, layer_lrs, train_cls = _resolve_encoder_trainability(
+    finetune_n, layer_train, layer_lrs = _resolve_encoder_trainability(
         meta,
         cfg,
         trainability_from_config=False,
@@ -243,7 +213,6 @@ def _finalize_trainability(
         finetune_last_n_layers=finetune_n,
         encoder_layer_train=layer_train,
         encoder_layer_learning_rates=layer_lrs,
-        train_cls_embedding=train_cls,
     )
 
 
@@ -335,10 +304,6 @@ def load_checkpoint(
         from model.lora import lora_trainable_parameter_count
 
         _log_lora(f"active ({lora_trainable_parameter_count(model.encoder):,} adapter params)")
-    cls_path = root / CHECKPOINT_CLS_EMBEDDING
-    if cls_path.is_file():
-        cls_state = torch.load(cls_path, map_location="cpu", weights_only=False)
-        _apply_cls_embedding_state(model, cls_state)
     _finalize_trainability(
         model,
         cfg,
