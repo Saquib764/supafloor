@@ -407,6 +407,8 @@ def run(cfg: DecisionConfig, *, test_refresh: bool = False) -> None:
     accum = cfg.train.grad_accum
     optimizer.zero_grad(set_to_none=True)
     micro = 0
+    train_acc_avg = 0.25
+    train_acc_count = 1
     progress = tqdm(
         total=total_steps,
         initial=step,
@@ -441,9 +443,18 @@ def run(cfg: DecisionConfig, *, test_refresh: bool = False) -> None:
             with torch.no_grad():
                 batch_correct, batch_n = _batch_correct(out.logits, labels, option_mask)
                 batch_acc = float(batch_correct) / float(batch_n) if batch_n else 0.0
+                train_acc_avg = (train_acc_avg * train_acc_count + batch_acc) / (
+                    train_acc_count + 1
+                )
+                train_acc_count += 1
 
             (loss / accum).backward()
             micro += 1
+            progress.set_postfix_str(
+                f"loss={loss.item():.4f}, acc={train_acc_avg:.4f}, "
+                f"lr={float(optimizer.param_groups[0]['lr']):.2e}, "
+                f"epoch={epoch + 1}/{cfg.train.epochs}"
+            )
             if micro % accum != 0:
                 continue
 
@@ -456,11 +467,6 @@ def run(cfg: DecisionConfig, *, test_refresh: bool = False) -> None:
             optimizer.zero_grad(set_to_none=True)
             step += 1
             progress.update(1)
-            progress.set_postfix_str(
-                f"loss={loss.item():.4f}, acc={batch_acc:.4f}, "
-                f"lr={float(optimizer.param_groups[0]['lr']):.2e}, "
-                f"epoch={epoch + 1}/{cfg.train.epochs}"
-            )
 
             if step % cfg.train.eval_steps == 0:
                 _run_eval(
