@@ -117,18 +117,18 @@ def run_checks(cfg: DecisionConfig) -> None:
     model.zero_grad(set_to_none=True)
 
     huge = "token " * (model.max_len * 4)
-    try:
-        build_candidate_sequence(
-            tokenizer=tokenizer,
-            boundaries=boundaries,
-            state=huge,
-            question="Q?",
-            candidate="ok",
-            max_len=model.max_len,
-        )
-        raise AssertionError("oversized input should be rejected")
-    except ValueError:
-        pass
+    truncated = build_candidate_sequence(
+        tokenizer=tokenizer,
+        boundaries=boundaries,
+        state=huge,
+        question="Q?",
+        candidate="ok",
+        max_len=model.max_len,
+    )
+    if len(truncated) > model.max_len:
+        raise AssertionError(f"truncated sequence length {len(truncated)} > max_len {model.max_len}")
+    if len(truncated) != model.max_len:
+        raise AssertionError("oversized context should truncate to exactly max_len")
 
     long_word = "x " * (model.max_len + 32)
     segment_ids = tokenizer.encode(long_word, add_special_tokens=False, truncation=False, max_length=None)

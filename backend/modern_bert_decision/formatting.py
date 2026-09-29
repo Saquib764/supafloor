@@ -127,17 +127,22 @@ def build_candidate_sequence(
         format_question_segment(question),
         format_candidate_segment(candidate),
     ]
-    input_ids: list[int] = []
-    input_ids.extend(_encode_field(tokenizer, segments[0]))
+    state_ids = _encode_field(tokenizer, segments[0])
+    suffix_ids: list[int] = []
     for text in segments[1:]:
-        input_ids.append(boundaries.sep_id)
-        input_ids.extend(_encode_field(tokenizer, text))
-    if len(input_ids) > max_len:
-        raise ValueError(
-            f"sequence length {len(input_ids)} exceeds encoder context limit {max_len}; "
-            "refusing to truncate"
-        )
-    return input_ids
+        suffix_ids.append(boundaries.sep_id)
+        suffix_ids.extend(_encode_field(tokenizer, text))
+
+    if len(state_ids) + len(suffix_ids) <= max_len:
+        return state_ids + suffix_ids
+
+    max_state = max_len - len(suffix_ids)
+    if max_state > 0:
+        state_ids = state_ids[:max_state]
+        combined = state_ids + suffix_ids
+        if len(combined) <= max_len:
+            return combined
+    return (state_ids + suffix_ids)[:max_len]
 
 
 def format_request(

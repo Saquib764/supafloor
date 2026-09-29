@@ -6,7 +6,7 @@ hub:
 
 model:
   # Sequence length follows encoder max_position_embeddings (8192 for ModernBERT-base).
-  # Inputs are never truncated; sequences longer than the limit raise at format time.
+  # Sequences longer than max_position_embeddings are truncated (context first, then head).
   score_head:
     dropout: 0.1  # on pooled hidden before linear head (train only)
 

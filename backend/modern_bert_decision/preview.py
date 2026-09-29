@@ -151,7 +151,7 @@ def print_model_summary(
         "softmax over every option in the request (train/eval/infer)",
         flush=True,
     )
-    print(f"Context:    max {model.max_len} tokens (no truncation)", flush=True)
+    print(f"Context:    max {model.max_len} tokens (truncate context first, then head)", flush=True)
     lora = cfg.train.lora
     if model.lora_enabled:
         from model.lora import resolve_lora_layer_indices
