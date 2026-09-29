@@ -85,12 +85,15 @@ def predict(
 
 
 def load_model(cfg: DecisionConfig, checkpoint: Path, device: torch.device) -> ModernBERTDecisionModel:
+    ckpt = checkpoint.resolve()
     meta = checkpoint / "decision_meta.json"
     if checkpoint.is_dir() and meta.is_file():
+        print(f"infer: loading checkpoint {ckpt}", flush=True)
         from checkpoint import load_checkpoint
 
         model = load_checkpoint(checkpoint, cfg)
     else:
+        print(f"infer: no checkpoint metadata at {ckpt}; building from config", flush=True)
         from model.decision_model import build_model
 
         model = build_model(cfg)

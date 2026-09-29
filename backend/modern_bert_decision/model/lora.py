@@ -95,6 +95,12 @@ def apply_encoder_lora(
     )
     peft_model = get_peft_model(encoder, config)
     init_lora_adapter_weights(peft_model)
+    blocks = ",".join(str(i) for i in layer_indices)
+    print(
+        f"LoRA: fresh adapters on blocks [{blocks}] "
+        f"(rank={lora.rank}, targets={list(targets)})",
+        flush=True,
+    )
     return peft_model
 
 

@@ -279,7 +279,8 @@ def _print_setup(
     if cfg.train.test_mode:
         print(f"test_samples:   {cfg.train.test_samples}")
     print(
-        f"checkpoint mode: {'LoRA adapter' if model.lora_enabled else 'full encoder'}"
+        f"checkpoint mode: {'LoRA adapter + full encoder' if model.lora_enabled else 'full encoder'}",
+        flush=True,
     )
     print()
 
@@ -331,6 +332,7 @@ def run(cfg: DecisionConfig, *, test_refresh: bool = False) -> None:
     training_state: dict[str, object] | None = None
 
     if cfg.train.resume and ckpt_dir.is_dir() and state_path.is_file():
+        print(f"train: resuming from {ckpt_dir.resolve()}", flush=True)
         model = load_checkpoint(ckpt_dir, cfg)
         training_state = torch.load(state_path, map_location="cpu", weights_only=False)
         step = int(training_state["step"])
@@ -338,11 +340,12 @@ def run(cfg: DecisionConfig, *, test_refresh: bool = False) -> None:
     elif cfg.train.init_checkpoint is not None:
         init_path = cfg.train.init_checkpoint
         if init_path.is_dir():
+            print(f"train: init weights from {init_path.resolve()}", flush=True)
             model = load_checkpoint(init_path, cfg, trainability_from_config=True)
-            tqdm.write(f"Initialized weights from {init_path}")
         else:
             raise FileNotFoundError(f"init_checkpoint not found: {init_path}")
     else:
+        print("train: building new model from hub (config LoRA if enabled)", flush=True)
         model = build_model(cfg)
 
     model.to(device)

@@ -28,6 +28,20 @@ CHECKPOINT_KIND_FULL = "full"
 CHECKPOINT_KIND_LORA = "lora"
 
 
+def _log_lora(message: str) -> None:
+    print(f"LoRA: {message}", flush=True)
+
+
+def lora_adapter_present(root: Path) -> bool:
+    lora_dir = root / CHECKPOINT_LORA_DIR
+    return lora_dir.is_dir() and (lora_dir / "adapter_config.json").is_file()
+
+
+def encoder_checkpoint_present(root: Path) -> bool:
+    encoder_dir = root / CHECKPOINT_ENCODER_DIR
+    return encoder_dir.is_dir() and (encoder_dir / "config.json").is_file()
+
+
 def _meta_path(root: Path) -> Path:
     return root / CHECKPOINT_META
 
@@ -55,27 +69,39 @@ def _apply_cls_embedding_state(model: ModernBERTDecisionModel, state: dict[str, 
     embed.weight.data[token_id] = row.to(device=device, dtype=dtype)
 
 
-def _atomic_save_encoder(model: ModernBERTDecisionModel, encoder_dir: Path) -> None:
-    encoder_dir = encoder_dir.resolve()
-    tmp_dir = encoder_dir.with_name(f"{encoder_dir.name}.tmp")
+def _atomic_save_pretrained(module, dest_dir: Path) -> None:
+    dest_dir = dest_dir.resolve()
+    tmp_dir = dest_dir.with_name(f"{dest_dir.name}.tmp")
     if tmp_dir.exists():
         shutil.rmtree(tmp_dir)
     try:
-        model.encoder.save_pretrained(tmp_dir)
-        if encoder_dir.exists():
-            shutil.rmtree(encoder_dir)
-        tmp_dir.rename(encoder_dir)
+        module.save_pretrained(tmp_dir)
+        if dest_dir.exists():
+            shutil.rmtree(dest_dir)
+        tmp_dir.rename(dest_dir)
     except Exception:
         if tmp_dir.exists():
             shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
 
 
+def _encoder_for_full_save(model: ModernBERTDecisionModel):
+    enc = model.encoder
+    get_base = getattr(enc, "get_base_model", None)
+    if get_base is not None:
+        return get_base()
+    return enc
+
+
+def _atomic_save_encoder(model: ModernBERTDecisionModel, encoder_dir: Path) -> None:
+    _atomic_save_pretrained(_encoder_for_full_save(model), encoder_dir)
+
+
 def save_checkpoint(
     model: ModernBERTDecisionModel,
     root: Path,
     *,
-    write_encoder: bool | None = None,
+    write_encoder: bool = True,
     at_end: bool = False,
 ) -> None:
     root = root.resolve()
@@ -84,8 +110,6 @@ def save_checkpoint(
     encoder_dir = root / CHECKPOINT_ENCODER_DIR
     lora = model.cfg.train.lora
     use_lora = model.lora_enabled and lora.enabled
-    if write_encoder is None:
-        write_encoder = not use_lora
 
     model.tokenizer.save_pretrained(tokenizer_dir)
     torch.save({"weight": model.score_head.weight.detach().cpu()}, root / CHECKPOINT_SCORER)
@@ -93,13 +117,18 @@ def save_checkpoint(
     if cls_state is not None:
         torch.save(cls_state, root / CHECKPOINT_CLS_EMBEDDING)
 
-    kind = CHECKPOINT_KIND_LORA if use_lora else CHECKPOINT_KIND_FULL
+    if write_encoder:
+        _atomic_save_encoder(model, encoder_dir)
+        print(f"checkpoint: saved full encoder → {encoder_dir}", flush=True)
+
     if use_lora:
         from model.lora import save_encoder_lora_adapter
 
-        save_encoder_lora_adapter(model.encoder, root / CHECKPOINT_LORA_DIR)
-    elif write_encoder:
-        _atomic_save_encoder(model, encoder_dir)
+        lora_dir = root / CHECKPOINT_LORA_DIR
+        save_encoder_lora_adapter(model.encoder, lora_dir)
+        print(f"checkpoint: saved LoRA adapter → {lora_dir}", flush=True)
+
+    kind = CHECKPOINT_KIND_LORA if use_lora else CHECKPOINT_KIND_FULL
 
     meta = {
         "architecture": ARCHITECTURE_CLS_PER_CANDIDATE,
@@ -254,26 +283,38 @@ def load_checkpoint(
         elif tokenizer.sep_token is not None:
             tokenizer.pad_token = tokenizer.sep_token
 
-    lora_in_ckpt = bool(meta.get("lora_enabled"))
-    kind = str(meta.get("checkpoint_kind") or CHECKPOINT_KIND_FULL)
-    use_local_encoder = (
-        not lora_in_ckpt
-        and kind == CHECKPOINT_KIND_FULL
-        and encoder_dir.is_dir()
-    )
-    if use_local_encoder:
+    lora_in_meta = bool(meta.get("lora_enabled"))
+    adapter_present = lora_adapter_present(root)
+    saved_encoder = encoder_checkpoint_present(root)
+    if saved_encoder:
         from transformers import AutoModel
 
         encoder = AutoModel.from_pretrained(encoder_dir)
+        print(f"checkpoint: loaded full encoder from {encoder_dir}", flush=True)
     else:
         encoder = _load_encoder_from_hub(cfg)
+        print(
+            f"checkpoint: loaded base encoder from hub ({cfg.pretrained_name})",
+            flush=True,
+        )
 
-    if lora_in_ckpt:
-        if not lora_dir.is_dir():
-            raise FileNotFoundError(f"missing LoRA adapter: {lora_dir}")
+    lora_loaded = False
+    if adapter_present:
+        from peft import PeftModel
+
         from model.lora import load_encoder_lora_adapter
 
+        if isinstance(encoder, PeftModel):
+            raise ValueError("encoder is already a PeftModel before loading adapter")
         encoder = load_encoder_lora_adapter(encoder, lora_dir)
+        lora_loaded = True
+        _log_lora(f"loaded adapter from {lora_dir}")
+        if not lora_in_meta:
+            _log_lora("adapter on disk but decision_meta lora_enabled=false (loaded anyway)")
+    elif lora_in_meta:
+        raise FileNotFoundError(f"missing LoRA adapter: {lora_dir}")
+    else:
+        _log_lora("no adapter in checkpoint directory")
 
     max_len = max_sequence_length(tokenizer, encoder.config)
     meta_len = meta.get("max_len")
@@ -287,9 +328,13 @@ def load_checkpoint(
         cfg=cfg,
         max_len=max_len,
     )
-    model.lora_enabled = lora_in_ckpt
+    model.lora_enabled = lora_loaded
     state = torch.load(scorer_path, map_location="cpu", weights_only=False)
     model.score_head.load_state_dict(state, strict=True)
+    if lora_loaded:
+        from model.lora import lora_trainable_parameter_count
+
+        _log_lora(f"active ({lora_trainable_parameter_count(model.encoder):,} adapter params)")
     cls_path = root / CHECKPOINT_CLS_EMBEDDING
     if cls_path.is_file():
         cls_state = torch.load(cls_path, map_location="cpu", weights_only=False)

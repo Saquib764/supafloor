@@ -157,6 +157,16 @@ def configure_for_training(model: ModernBERTDecisionModel, cfg: DecisionConfig) 
                 skip_last_n_layers=finetune_n,
             )
             model.lora_enabled = True
+        else:
+            from model.lora import lora_trainable_parameter_count
+
+            print(
+                f"LoRA: using adapter already on encoder "
+                f"({lora_trainable_parameter_count(model.encoder):,} params)",
+                flush=True,
+            )
+    elif model.lora_enabled:
+        print("LoRA: adapter loaded but train.lora.enabled=false in config", flush=True)
 
     apply_encoder_trainability(
         model,
