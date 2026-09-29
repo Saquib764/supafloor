@@ -15,9 +15,6 @@ import yaml
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 ARCHITECTURE_MEAN_POOL = "mean_pool_per_candidate_v1"
-ARCHITECTURE_CLS_PER_CANDIDATE = "cls_per_candidate_v1"  # legacy; refuse load
-# Legacy checkpoints with learnable [state]/[question]/[options]/[candidate] tokens.
-ARCHITECTURE_SEGMENT_MARKERS = "segment_markers_v1"
 
 
 def _project_dir() -> Path:

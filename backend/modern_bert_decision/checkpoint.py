@@ -9,9 +9,7 @@ from pathlib import Path
 import torch
 
 from config import (
-    ARCHITECTURE_CLS_PER_CANDIDATE,
     ARCHITECTURE_MEAN_POOL,
-    ARCHITECTURE_SEGMENT_MARKERS,
     DecisionConfig,
     hub_from_pretrained_kwargs,
     load_config,
@@ -130,34 +128,6 @@ def _load_encoder_from_hub(cfg: DecisionConfig):
     return AutoModel.from_pretrained(cfg.pretrained_name, **hub_from_pretrained_kwargs(cfg))
 
 
-def _reject_legacy_checkpoint(meta: dict[str, object]) -> None:
-    arch = meta.get("architecture")
-    if arch == ARCHITECTURE_MEAN_POOL:
-        return
-    if arch == ARCHITECTURE_CLS_PER_CANDIDATE:
-        raise ValueError(
-            "checkpoint uses CLS scoring (cls_per_candidate_v1); retrain with masked mean pooling"
-        )
-    if arch == ARCHITECTURE_SEGMENT_MARKERS:
-        raise ValueError(
-            "checkpoint uses learnable segment marker tokens; retrain from Hub base"
-        )
-    if meta.get("marker_tokens") or meta.get("marker_ids") or meta.get("marker_embedding_train"):
-        raise ValueError(
-            "checkpoint uses an obsolete marker layout; retrain from Hub base "
-            f"(expected architecture {ARCHITECTURE_MEAN_POOL!r})"
-        )
-
-
-def _reject_legacy_full_finetune(meta: dict[str, object]) -> None:
-    if bool(meta.get("train_pretrained_encoder", False)):
-        raise ValueError(
-            "checkpoint used removed full-encoder fine-tune (train_pretrained_encoder); retrain"
-        )
-    if meta.get("freeze_encoder") is False:
-        raise ValueError("checkpoint used removed full-encoder fine-tune (freeze_encoder: false)")
-
-
 def _resolve_encoder_trainability(
     meta: dict[str, object],
     cfg: DecisionConfig,
@@ -170,7 +140,6 @@ def _resolve_encoder_trainability(
             cfg.train.encoder_layer_train,
             cfg.train.encoder_layer_learning_rates,
         )
-    _reject_legacy_full_finetune(meta)
     n = int(meta["finetune_last_n_layers"])
     train = tuple(bool(x) for x in meta["encoder_layer_train"])  # type: ignore[union-attr]
     lrs = tuple(float(x) for x in meta["encoder_layer_learning_rates"])  # type: ignore[union-attr]
@@ -227,7 +196,6 @@ def load_checkpoint(
     if not meta_file.is_file():
         raise FileNotFoundError(f"missing checkpoint metadata: {meta_file}")
     meta = json.loads(meta_file.read_text(encoding="utf-8"))
-    _reject_legacy_checkpoint(meta)
     cfg = cfg or load_config()
     if meta.get("pretrained_name") and meta["pretrained_name"] != cfg.pretrained_name:
         raise ValueError(

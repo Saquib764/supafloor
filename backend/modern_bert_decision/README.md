@@ -49,4 +49,4 @@ Forward outputs: `logits`, `probabilities` `[B, K_max]`; `selected_indices` `[B]
 
 ## Checkpoints
 
-Metadata includes `architecture: mean_pool_per_candidate_v1`. Checkpoints from CLS scoring (`cls_per_candidate_v1`) or the old learnable segment-marker layout must be retrained.
+Metadata includes `architecture: mean_pool_per_candidate_v1` for new runs; older `architecture` values still load (encoder, head, LoRA when present).
