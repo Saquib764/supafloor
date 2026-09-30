@@ -9,35 +9,36 @@ from pathlib import Path
 import torch
 
 from config import (
+    ARCHITECTURE_MASK_DECISION,
+    ARCHITECTURE_MASK_TOKEN,
     ARCHITECTURE_MEAN_POOL,
+    CHECKPOINT_ARCHITECTURES,
     DecisionConfig,
     hub_from_pretrained_kwargs,
     load_config,
 )
-from formatting import max_sequence_length
+from formatting import resolve_sequence_length
 from model.decision_model import ModernBERTDecisionModel, configure_for_training
 
 CHECKPOINT_ENCODER_DIR = "encoder"
 CHECKPOINT_TOKENIZER_DIR = "tokenizer"
-CHECKPOINT_LORA_DIR = "lora_adapter"
 CHECKPOINT_SCORER = "scoring_head.pt"
+CHECKPOINT_DECISION_STACK = "decision_stack.pt"
 CHECKPOINT_META = "decision_meta.json"
 CHECKPOINT_KIND_FULL = "full"
-CHECKPOINT_KIND_LORA = "lora"
-
-
-def _log_lora(message: str) -> None:
-    print(f"LoRA: {message}", flush=True)
-
-
-def lora_adapter_present(root: Path) -> bool:
-    lora_dir = root / CHECKPOINT_LORA_DIR
-    return lora_dir.is_dir() and (lora_dir / "adapter_config.json").is_file()
+LEGACY_LORA_DIR = "lora_adapter"
 
 
 def encoder_checkpoint_present(root: Path) -> bool:
     encoder_dir = root / CHECKPOINT_ENCODER_DIR
     return encoder_dir.is_dir() and (encoder_dir / "config.json").is_file()
+
+
+def _legacy_lora_checkpoint(root: Path, meta: dict[str, object]) -> bool:
+    if bool(meta.get("lora_enabled")):
+        return True
+    lora_dir = root / LEGACY_LORA_DIR
+    return lora_dir.is_dir() and (lora_dir / "adapter_config.json").is_file()
 
 
 def _meta_path(root: Path) -> Path:
@@ -60,27 +61,6 @@ def _atomic_save_pretrained(module, dest_dir: Path) -> None:
         raise
 
 
-def _atomic_save_encoder(model: ModernBERTDecisionModel, encoder_dir: Path) -> None:
-    from peft import PeftModel
-    from transformers import AutoModel
-
-    from model.lora import native_encoder_state_dict
-
-    enc = model.encoder
-    if isinstance(enc, PeftModel):
-        native = native_encoder_state_dict(enc)
-        base_config = enc.get_base_model().config
-        clean = AutoModel.from_config(base_config)
-        missing, unexpected = clean.load_state_dict(native, strict=True)
-        if missing or unexpected:
-            raise RuntimeError(
-                f"encoder save: state dict mismatch missing={missing!r} unexpected={unexpected!r}"
-            )
-        _atomic_save_pretrained(clean, encoder_dir)
-    else:
-        _atomic_save_pretrained(enc, encoder_dir)
-
-
 def save_checkpoint(
     model: ModernBERTDecisionModel,
     root: Path,
@@ -92,39 +72,36 @@ def save_checkpoint(
     root.mkdir(parents=True, exist_ok=True)
     tokenizer_dir = root / CHECKPOINT_TOKENIZER_DIR
     encoder_dir = root / CHECKPOINT_ENCODER_DIR
-    lora = model.cfg.train.lora
-    use_lora = model.lora_enabled and lora.enabled
 
     model.tokenizer.save_pretrained(tokenizer_dir)
-    torch.save({"weight": model.score_head.weight.detach().cpu()}, root / CHECKPOINT_SCORER)
+    torch.save(model.score_head.state_dict(), root / CHECKPOINT_SCORER)
+    torch.save(model.decision_stack.state_dict(), root / CHECKPOINT_DECISION_STACK)
 
     if write_encoder:
-        _atomic_save_encoder(model, encoder_dir)
-        print(f"checkpoint: saved full encoder → {encoder_dir}", flush=True)
+        _atomic_save_pretrained(model.encoder, encoder_dir)
+        print(f"checkpoint: saved encoder → {encoder_dir}", flush=True)
 
-    if use_lora:
-        from model.lora import save_encoder_lora_adapter
-
-        lora_dir = root / CHECKPOINT_LORA_DIR
-        save_encoder_lora_adapter(model.encoder, lora_dir)
-        print(f"checkpoint: saved LoRA adapter → {lora_dir}", flush=True)
-
-    kind = CHECKPOINT_KIND_LORA if use_lora else CHECKPOINT_KIND_FULL
-
+    dl = model.cfg.model.decision_layers
     meta = {
-        "architecture": ARCHITECTURE_MEAN_POOL,
-        "checkpoint_kind": kind,
+        "architecture": ARCHITECTURE_MASK_DECISION,
+        "score_token": model.cfg.model.score_head.token,
+        "score_head_hidden_size": model.cfg.model.score_head.hidden_size,
+        "checkpoint_kind": CHECKPOINT_KIND_FULL,
         "pretrained_name": model.cfg.pretrained_name,
         "max_len": model.max_len,
         "hidden_size": model.hidden_size,
         "base_vocab_size": model.base_vocab_size,
+        "decision_layers": {
+            "count": dl.count,
+            "hidden_size": dl.hidden_size,
+            "num_attention_heads": dl.num_attention_heads,
+            "intermediate_size": dl.intermediate_size,
+            "pre_norm": dl.pre_norm,
+            "dropout": dl.dropout,
+        },
         "finetune_last_n_layers": model.finetune_last_n_layers,
         "encoder_layer_train": list(model.encoder_layer_train),
         "encoder_layer_learning_rates": list(model.encoder_finetune_lrs),
-        "lora_enabled": model.lora_enabled,
-        "lora_rank": lora.rank if use_lora else None,
-        "lora_alpha": lora.alpha if use_lora else None,
-        "lora_dropout": lora.dropout if use_lora else None,
     }
     meta_tmp = _meta_path(root).with_suffix(".json.tmp")
     meta_tmp.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
@@ -157,6 +134,40 @@ def _resolve_encoder_trainability(
     return n, train, lrs
 
 
+def _assert_decision_layers_match(meta_layers: object, cfg: DecisionConfig) -> None:
+    if meta_layers is None:
+        return
+    dl = cfg.model.decision_layers
+    if isinstance(meta_layers, int):
+        if meta_layers != dl.count:
+            raise ValueError(
+                f"checkpoint decision_layers count {meta_layers} != config {dl.count}"
+            )
+        return
+    if not isinstance(meta_layers, dict):
+        raise ValueError("checkpoint decision_layers meta must be a mapping or int")
+    checks: tuple[tuple[str, object], ...] = (
+        ("count", dl.count),
+        ("hidden_size", dl.hidden_size),
+        ("num_attention_heads", dl.num_attention_heads),
+        ("intermediate_size", dl.intermediate_size),
+        ("pre_norm", dl.pre_norm),
+        ("dropout", dl.dropout),
+    )
+    for key, expected in checks:
+        if key not in meta_layers:
+            continue
+        got = meta_layers[key]
+        if key == "dropout":
+            if abs(float(got) - float(expected)) > 1e-9:
+                raise ValueError(f"checkpoint decision_layers.{key} {got} != config {expected}")
+        elif key == "pre_norm":
+            if bool(got) != bool(expected):
+                raise ValueError(f"checkpoint decision_layers.{key} {got!r} != config {expected!r}")
+        elif int(got) != int(expected):
+            raise ValueError(f"checkpoint decision_layers.{key} {got!r} != config {expected!r}")
+
+
 def _finalize_trainability(
     model: ModernBERTDecisionModel,
     cfg: DecisionConfig,
@@ -166,18 +177,6 @@ def _finalize_trainability(
 ) -> None:
     if trainability_from_config:
         configure_for_training(model, cfg)
-        return
-    if bool(meta.get("lora_enabled")):
-        if not model.lora_enabled:
-            raise ValueError("checkpoint metadata expects LoRA but adapter was not loaded")
-        from model.freeze import apply_encoder_trainability
-
-        apply_encoder_trainability(
-            model,
-            finetune_last_n_layers=0,
-            encoder_layer_train=(),
-            encoder_layer_learning_rates=(),
-        )
         return
     finetune_n, layer_train, layer_lrs = _resolve_encoder_trainability(
         meta,
@@ -205,7 +204,38 @@ def load_checkpoint(
     if not meta_file.is_file():
         raise FileNotFoundError(f"missing checkpoint metadata: {meta_file}")
     meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    if _legacy_lora_checkpoint(root, meta):
+        raise ValueError(
+            "checkpoint uses LoRA adapters, which are no longer supported; "
+            "retrain with full encoder fine-tuning or export merged weights"
+        )
+    arch = str(meta.get("architecture") or ARCHITECTURE_MEAN_POOL)
+    if arch == ARCHITECTURE_MEAN_POOL:
+        raise ValueError(
+            f"checkpoint uses legacy architecture {arch!r}; retrain with "
+            f"{ARCHITECTURE_MASK_TOKEN!r} (mask-token score head)"
+        )
+    if arch not in CHECKPOINT_ARCHITECTURES:
+        raise ValueError(f"unsupported checkpoint architecture {arch!r}")
+    if arch == ARCHITECTURE_MASK_TOKEN:
+        raise ValueError(
+            f"checkpoint uses legacy architecture {arch!r}; retrain with "
+            f"{ARCHITECTURE_MASK_DECISION!r} (decision stack over option hiddens)"
+        )
     cfg = cfg or load_config()
+    _assert_decision_layers_match(meta.get("decision_layers"), cfg)
+    meta_score = meta.get("score_token")
+    if meta_score is not None and str(meta_score) != cfg.model.score_head.token:
+        raise ValueError(
+            f"checkpoint score_token {meta_score!r} != config model.score_head.token "
+            f"{cfg.model.score_head.token!r}"
+        )
+    meta_sh = meta.get("score_head_hidden_size")
+    if meta_sh is not None and int(meta_sh) != cfg.model.score_head.hidden_size:
+        raise ValueError(
+            f"checkpoint score_head_hidden_size {meta_sh} != config "
+            f"{cfg.model.score_head.hidden_size}"
+        )
     if meta.get("pretrained_name") and meta["pretrained_name"] != cfg.pretrained_name:
         raise ValueError(
             f"checkpoint pretrained_name {meta['pretrained_name']!r} "
@@ -215,12 +245,14 @@ def load_checkpoint(
 
     encoder_dir = root / CHECKPOINT_ENCODER_DIR
     tokenizer_dir = root / CHECKPOINT_TOKENIZER_DIR
-    lora_dir = root / CHECKPOINT_LORA_DIR
     scorer_path = root / CHECKPOINT_SCORER
+    decision_path = root / CHECKPOINT_DECISION_STACK
     if not tokenizer_dir.is_dir():
         raise FileNotFoundError(f"missing tokenizer: {tokenizer_dir}")
     if not scorer_path.is_file():
         raise FileNotFoundError(f"missing scoring head: {scorer_path}")
+    if not decision_path.is_file():
+        raise FileNotFoundError(f"missing decision stack: {decision_path}")
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir, use_fast=True)
     if tokenizer.pad_token_id is None:
@@ -229,14 +261,12 @@ def load_checkpoint(
         elif tokenizer.sep_token is not None:
             tokenizer.pad_token = tokenizer.sep_token
 
-    lora_in_meta = bool(meta.get("lora_enabled"))
-    adapter_present = lora_adapter_present(root)
     saved_encoder = encoder_checkpoint_present(root)
     if saved_encoder:
         from transformers import AutoModel
 
         encoder = AutoModel.from_pretrained(encoder_dir)
-        print(f"checkpoint: loaded full encoder from {encoder_dir}", flush=True)
+        print(f"checkpoint: loaded encoder from {encoder_dir}", flush=True)
     else:
         encoder = _load_encoder_from_hub(cfg)
         print(
@@ -244,29 +274,11 @@ def load_checkpoint(
             flush=True,
         )
 
-    lora_loaded = False
-    if adapter_present:
-        from peft import PeftModel
-
-        from model.lora import load_encoder_lora_adapter
-
-        if isinstance(encoder, PeftModel):
-            raise ValueError("encoder is already a PeftModel before loading adapter")
-        encoder = load_encoder_lora_adapter(encoder, lora_dir)
-        lora_loaded = True
-        _log_lora(f"loaded adapter from {lora_dir}")
-        if not lora_in_meta:
-            _log_lora("adapter on disk but decision_meta lora_enabled=false (loaded anyway)")
-    elif lora_in_meta:
-        raise FileNotFoundError(f"missing LoRA adapter: {lora_dir}")
-    else:
-        _log_lora("no adapter in checkpoint directory")
-
-    max_len = max_sequence_length(tokenizer, encoder.config)
+    max_len = resolve_sequence_length(tokenizer, encoder.config, cap=cfg.model.max_len)
     meta_len = meta.get("max_len")
     if meta_len is not None and int(meta_len) != max_len:
         raise ValueError(
-            f"checkpoint max_len {meta_len} != encoder context {max_len}; refusing to load"
+            f"checkpoint max_len {meta_len} != config model.max_len {max_len}; refusing to load"
         )
     model = ModernBERTDecisionModel(
         encoder,
@@ -274,13 +286,14 @@ def load_checkpoint(
         cfg=cfg,
         max_len=max_len,
     )
-    model.lora_enabled = lora_loaded
     state = torch.load(scorer_path, map_location="cpu", weights_only=False)
+    if isinstance(state, dict) and state.keys() == {"weight"}:
+        raise ValueError(
+            "checkpoint scoring_head.pt uses legacy single Linear weights; retrain with MLP score head"
+        )
     model.score_head.load_state_dict(state, strict=True)
-    if lora_loaded:
-        from model.lora import lora_trainable_parameter_count
-
-        _log_lora(f"active ({lora_trainable_parameter_count(model.encoder):,} adapter params)")
+    stack_state = torch.load(decision_path, map_location="cpu", weights_only=False)
+    model.decision_stack.load_state_dict(stack_state, strict=True)
     _finalize_trainability(
         model,
         cfg,

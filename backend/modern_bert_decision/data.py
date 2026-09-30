@@ -1,4 +1,4 @@
-"""Load RACE via dataset_manager; stream from local JSONL when available."""
+"""Load decision datasets via dataset_manager; stream from local JSONL when available."""
 
 from __future__ import annotations
 
@@ -26,16 +26,16 @@ class DecisionExample:
     answer_index: int
 
 
-def race_row_to_example(row: dict[str, Any]) -> DecisionExample:
+def registry_row_to_example(row: dict[str, Any]) -> DecisionExample:
     state = str(row["state"]).strip()
     question = str(row["question"]).strip()
     options = [str(o).strip() for o in row["options"]]
     if not state or not question:
-        raise ValueError("RACE row missing state or question")
+        raise ValueError("row missing state or question")
     if len(options) < 2:
-        raise ValueError("RACE row must have at least two options")
+        raise ValueError("row must have at least two options")
     if any(not opt for opt in options):
-        raise ValueError("RACE row has blank option text")
+        raise ValueError("row has blank option text")
     answer_index = int(row["answer_index"])
     if not 0 <= answer_index < len(options):
         raise ValueError(f"answer_index {answer_index} out of range for {len(options)} options")
@@ -55,7 +55,7 @@ def example_to_request(example: DecisionExample) -> dict[str, object]:
     }
 
 
-def use_local_race(cfg: DecisionConfig) -> bool:
+def use_local_dataset(cfg: DecisionConfig) -> bool:
     if cfg.data.source == "hub":
         return False
     if cfg.data.source == "local":
@@ -68,19 +68,19 @@ def use_local_race(cfg: DecisionConfig) -> bool:
     return local_dataset_available(cfg.data.dataset)
 
 
-def race_local_root(cfg: DecisionConfig):
+def dataset_local_root(cfg: DecisionConfig) -> Path:
     root = local_dataset_root(cfg.data.dataset)
     if root is None:
         raise FileNotFoundError(f"dataset {cfg.data.dataset!r} has no local_root in metadata")
     return root
 
 
-def race_split_row_count(cfg: DecisionConfig, split: str) -> int:
+def dataset_split_row_count(cfg: DecisionConfig, split: str) -> int:
     schema = _schema(cfg.data.dataset)
-    return schema.count_split_rows(race_local_root(cfg), split)
+    return schema.count_split_rows(dataset_local_root(cfg), split)
 
 
-def iter_race_local_examples(
+def iter_local_examples(
     cfg: DecisionConfig,
     split: str,
     *,
@@ -88,16 +88,23 @@ def iter_race_local_examples(
     seed: int = 0,
 ) -> Iterator[DecisionExample]:
     schema = _schema(cfg.data.dataset)
-    root = race_local_root(cfg)
+    root = dataset_local_root(cfg)
     if shuffle:
         rows = schema.iter_split_rows_shuffled(root, split, seed=seed)
     else:
         rows = schema.iter_split_rows(root, split)
     for row in rows:
-        yield race_row_to_example(row)
+        yield registry_row_to_example(row)
 
 
-def load_race_hub_split(cfg: DecisionConfig, *, split: str) -> Dataset:
+def _hub_load_extra(cfg: DecisionConfig, meta: dict[str, object]) -> dict[str, object]:
+    hub_config = meta.get("hub_config")
+    if hub_config:
+        return {"hub_config": str(hub_config)}
+    return {"subset": cfg.data.race_subset}
+
+
+def load_hub_split(cfg: DecisionConfig, *, split: str) -> Dataset:
     meta = _metadata(cfg.data.dataset)
     schema = _schema(cfg.data.dataset)
     rev = meta.get("revision")
@@ -106,17 +113,26 @@ def load_race_hub_split(cfg: DecisionConfig, *, split: str) -> Dataset:
         revision=rev,
         cache_dir=datasets_cache_dir(cfg),
         split=split,
-        subset=cfg.data.race_subset,
+        **_hub_load_extra(cfg, meta),
     )
 
 
 def _examples_from_hub_split(cfg: DecisionConfig, split: str) -> list[DecisionExample]:
-    """Rows from ``load_race_hub_split`` are already registry FEATURES (state, answer_index)."""
-    rows = load_race_hub_split(cfg, split=split)
-    return [race_row_to_example(dict(rows[int(i)])) for i in range(len(rows))]
+    rows = load_hub_split(cfg, split=split)
+    return [registry_row_to_example(dict(rows[int(i)])) for i in range(len(rows))]
 
 
-def load_race_split_examples(
+def _hf_hub_kwargs(cfg: DecisionConfig) -> tuple[dict[str, object], Any, Any]:
+    meta = _metadata(cfg.data.dataset)
+    schema = _schema(cfg.data.dataset)
+    kwargs: dict[str, object] = {"cache_dir": str(datasets_cache_dir(cfg))}
+    rev = meta.get("revision")
+    if rev and str(rev).lower() not in ("null", "none", ""):
+        kwargs["revision"] = rev
+    return kwargs, meta, schema
+
+
+def load_split_examples(
     cfg: DecisionConfig,
     *,
     split: str,
@@ -124,9 +140,9 @@ def load_race_split_examples(
 ) -> list[DecisionExample]:
     if count < 1:
         return []
-    if use_local_race(cfg):
+    if use_local_dataset(cfg):
         out: list[DecisionExample] = []
-        for ex in iter_race_local_examples(
+        for ex in iter_local_examples(
             cfg,
             split,
             shuffle=False,
@@ -136,26 +152,33 @@ def load_race_split_examples(
             if len(out) >= count:
                 break
         return out
-    meta = _metadata(cfg.data.dataset)
-    schema = _schema(cfg.data.dataset)
-    cache = datasets_cache_dir(cfg)
+    kwargs, meta, schema = _hf_hub_kwargs(cfg)
     from datasets import load_dataset as hf_load_dataset
 
-    rev = meta.get("revision")
-    kwargs: dict[str, object] = {"cache_dir": str(cache)}
-    if rev and str(rev).lower() not in ("null", "none", ""):
-        kwargs["revision"] = rev
-    split_slice = f"{split}[:{count}]"
-    raw = hf_load_dataset(meta["hf_repo"], cfg.data.race_subset, split=split_slice, **kwargs)
+    hub_config = meta.get("hub_config")
+    if hub_config:
+        raw = hf_load_dataset(
+            meta["hf_repo"],
+            str(hub_config),
+            split=f"{split}[:{count}]",
+            **kwargs,
+        )
+    else:
+        raw = hf_load_dataset(
+            meta["hf_repo"],
+            cfg.data.race_subset,
+            split=f"{split}[:{count}]",
+            **kwargs,
+        )
     out: list[DecisionExample] = []
     for index in range(len(raw)):
-        ex = race_row_to_example(schema.row_from_hf(dict(raw[int(index)])))
+        ex = registry_row_to_example(schema.row_from_hf(dict(raw[int(index)])))
         out.append(ex)
     return out
 
 
-def load_race_preview_examples(cfg: DecisionConfig, count: int = 2) -> list[DecisionExample]:
-    return load_race_split_examples(cfg, split=cfg.data.train_split, count=count)
+def load_preview_examples(cfg: DecisionConfig, count: int = 2) -> list[DecisionExample]:
+    return load_split_examples(cfg, split=cfg.data.train_split, count=count)
 
 
 EVAL_SAMPLES_FILENAME = "eval_samples.jsonl"
@@ -172,7 +195,7 @@ def example_to_json(ex: DecisionExample) -> dict[str, object]:
 
 
 def example_from_json(row: dict[str, object]) -> DecisionExample:
-    return race_row_to_example(row)
+    return registry_row_to_example(row)
 
 
 def write_eval_examples(path: Path, examples: list[DecisionExample]) -> None:
@@ -193,9 +216,9 @@ def read_eval_examples(path: Path) -> list[DecisionExample]:
 
 
 def _validation_example_pool(cfg: DecisionConfig) -> list[DecisionExample]:
-    if use_local_race(cfg):
+    if use_local_dataset(cfg):
         return list(
-            iter_race_local_examples(
+            iter_local_examples(
                 cfg,
                 cfg.data.val_split,
                 shuffle=False,
@@ -227,13 +250,28 @@ def pick_train_examples(
     count: int,
     seed: int,
 ) -> list[DecisionExample]:
+    return pick_random_examples(
+        cfg,
+        split=cfg.data.train_split,
+        count=count,
+        seed=seed,
+    )
+
+
+def pick_random_examples(
+    cfg: DecisionConfig,
+    *,
+    split: str,
+    count: int,
+    seed: int,
+) -> list[DecisionExample]:
     if count < 1:
         return []
-    if use_local_race(cfg):
+    if use_local_dataset(cfg):
         out: list[DecisionExample] = []
-        for ex in iter_race_local_examples(
+        for ex in iter_local_examples(
             cfg,
-            cfg.data.train_split,
+            split,
             shuffle=True,
             seed=seed,
         ):
@@ -241,7 +279,7 @@ def pick_train_examples(
             if len(out) >= count:
                 break
         return out
-    pool = _examples_from_hub_split(cfg, cfg.data.train_split)
+    pool = _examples_from_hub_split(cfg, split)
     if not pool:
         return []
     rng = random.Random(seed)
@@ -299,13 +337,13 @@ class ListDecisionDataset(TorchDataset):
         return self._examples[int(index)]
 
 
-def load_race_decision_dataset(cfg: DecisionConfig, *, split: str) -> Dataset:
-    if use_local_race(cfg):
-        raise RuntimeError("use RaceDecisionStreamDataset for local RACE (streaming JSONL)")
-    return load_race_hub_split(cfg, split=split)
+def load_decision_hub_dataset(cfg: DecisionConfig, *, split: str) -> Dataset:
+    if use_local_dataset(cfg):
+        raise RuntimeError("use DecisionStreamDataset for local JSONL (streaming)")
+    return load_hub_split(cfg, split=split)
 
 
-class RaceDecisionDataset(TorchDataset):
+class RegistryDecisionDataset(TorchDataset):
     def __init__(self, rows: Dataset, cfg: DecisionConfig) -> None:
         self._rows = rows
         self.cfg = cfg
@@ -314,10 +352,10 @@ class RaceDecisionDataset(TorchDataset):
         return len(self._rows)
 
     def __getitem__(self, index: int) -> DecisionExample:
-        return race_row_to_example(self._rows[int(index)])
+        return registry_row_to_example(self._rows[int(index)])
 
 
-class RaceDecisionStreamDataset(IterableDataset):
+class DecisionStreamDataset(IterableDataset):
     def __init__(
         self,
         cfg: DecisionConfig,
@@ -335,7 +373,7 @@ class RaceDecisionStreamDataset(IterableDataset):
 
     def __iter__(self) -> Iterator[DecisionExample]:
         epoch_seed = self.seed + self.epoch
-        yield from iter_race_local_examples(
+        yield from iter_local_examples(
             self.cfg,
             self.split,
             shuffle=self.shuffle,
@@ -343,7 +381,7 @@ class RaceDecisionStreamDataset(IterableDataset):
         )
 
 
-def download_race_local(cfg: DecisionConfig, *, force: bool = False) -> Path:
+def download_dataset_local(cfg: DecisionConfig, *, force: bool = False) -> Path:
     from registry import download
 
     return download(

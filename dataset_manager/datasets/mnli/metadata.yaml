@@ -1,0 +1,7 @@
+name: mnli
+# GLUE Multi-Genre Natural Language Inference
+hf_repo: nyu-mll/glue
+hub_config: mnli
+revision: null
+private: false
+local_root: mnli-data

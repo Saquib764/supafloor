@@ -15,6 +15,20 @@ import yaml
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 ARCHITECTURE_MEAN_POOL = "mean_pool_per_candidate_v1"
+ARCHITECTURE_MASK_TOKEN = "mask_token_single_sequence_v1"
+ARCHITECTURE_MASK_DECISION = "mask_token_decision_stack_v1"
+CHECKPOINT_ARCHITECTURES = (ARCHITECTURE_MASK_TOKEN, ARCHITECTURE_MASK_DECISION)
+
+SCORE_TOKEN_MASK = "mask"
+SCORE_TOKEN_CLS = "cls"
+SCORE_TOKENS = (SCORE_TOKEN_MASK, SCORE_TOKEN_CLS)
+
+
+def normalize_score_token(value: str) -> str:
+    token = str(value).strip().lower()
+    if token in SCORE_TOKENS:
+        return token
+    raise ValueError(f"model.score_head.token must be one of {SCORE_TOKENS!r}, got {value!r}")
 
 
 def _project_dir() -> Path:
@@ -32,18 +46,6 @@ CONFIG_PATH = _project_dir() / "config.yaml"
 @dataclass(frozen=True)
 class InferSettings:
     checkpoint: Path
-
-
-@dataclass(frozen=True)
-class LoraSettings:
-    enabled: bool
-    rank: int
-    alpha: int
-    dropout: float
-    learning_rate: float
-    target_modules: tuple[str, ...]
-    layer_indices: tuple[int, ...]  # empty + all_layers false → auto (see resolve_lora_layer_indices)
-    all_layers: bool
 
 
 @dataclass(frozen=True)
@@ -72,7 +74,6 @@ class TrainSettings:
     head_learning_rate: float
     encoder_layer_train: tuple[bool, ...]
     encoder_layer_learning_rates: tuple[float, ...]
-    lora: LoraSettings
     warmup_ratio: float
     weight_decay: float
     bf16: bool
@@ -89,9 +90,28 @@ class TrainSettings:
 
 
 @dataclass(frozen=True)
+class ScoreHeadSettings:
+    token: str
+    dropout: float
+    hidden_size: int
+
+
+@dataclass(frozen=True)
+class DecisionLayersSettings:
+    count: int
+    hidden_size: int
+    num_attention_heads: int
+    intermediate_size: int
+    pre_norm: bool
+    dropout: float
+
+
+@dataclass(frozen=True)
 class ModelSettings:
+    max_len: int
+    score_head: ScoreHeadSettings
+    decision_layers: DecisionLayersSettings
     finetune_last_n_layers: int = 0
-    score_head_dropout: float = 0.0
 
 
 def _load_model_settings(
@@ -112,14 +132,65 @@ def _load_model_settings(
             "move finetune_last_n_layers and encoder layer LRs to train.encoder in config.yaml"
         )
     if raw.get("cls_embedding") or raw.get("train_cls_embedding") is not None:
-        raise ValueError("train.cls_embedding was removed; scoring uses masked mean pooling")
-    score_head = raw.get("score_head") or {}
-    dropout = float(score_head.get("dropout", raw.get("score_head_dropout", 0.0)))
+        raise ValueError("train.cls_embedding was removed; set model.score_head.token to mask or cls")
+    max_len = int(raw.get("max_len", 640))
+    if max_len < 1:
+        raise ValueError("model.max_len must be >= 1")
+    score_head_raw = raw.get("score_head") or {}
+    if not isinstance(score_head_raw, dict):
+        raise ValueError("model.score_head must be a mapping")
+    dropout = float(score_head_raw.get("dropout", raw.get("score_head_dropout", 0.0)))
     if not 0.0 <= dropout < 1.0:
         raise ValueError("model.score_head.dropout must be in [0.0, 1.0)")
+    score_token = normalize_score_token(str(score_head_raw.get("token", SCORE_TOKEN_MASK)))
+    score_hidden = int(score_head_raw.get("hidden_size", 1024))
+    if score_hidden < 1:
+        raise ValueError("model.score_head.hidden_size must be >= 1")
+    decision_raw = raw.get("decision_layers") or {}
+    if not isinstance(decision_raw, dict):
+        raise ValueError("model.decision_layers must be a mapping")
+    layer_count = int(decision_raw.get("count", 2))
+    hidden_size = int(decision_raw.get("hidden_size", 1024))
+    num_heads = int(decision_raw.get("num_attention_heads", 16))
+    intermediate_size = int(decision_raw.get("intermediate_size", 4096))
+    pre_norm = bool(decision_raw.get("pre_norm", True))
+    decision_dropout = float(decision_raw.get("dropout", 0.1))
+    if layer_count < 1:
+        raise ValueError("model.decision_layers.count must be >= 1")
+    if hidden_size < 1:
+        raise ValueError("model.decision_layers.hidden_size must be >= 1")
+    if num_heads < 1:
+        raise ValueError("model.decision_layers.num_attention_heads must be >= 1")
+    if hidden_size % num_heads != 0:
+        raise ValueError("model.decision_layers.hidden_size must divide num_attention_heads")
+    if intermediate_size < 1:
+        raise ValueError("model.decision_layers.intermediate_size must be >= 1")
+    if not pre_norm:
+        raise ValueError("model.decision_layers.pre_norm must be true (post-norm not supported)")
+    if not 0.0 <= decision_dropout < 1.0:
+        raise ValueError("model.decision_layers.dropout must be in [0.0, 1.0)")
+    if score_hidden != hidden_size:
+        raise ValueError(
+            f"model.score_head.hidden_size {score_hidden} must match "
+            f"model.decision_layers.hidden_size {hidden_size}"
+        )
+    decision_layers = DecisionLayersSettings(
+        count=layer_count,
+        hidden_size=hidden_size,
+        num_attention_heads=num_heads,
+        intermediate_size=intermediate_size,
+        pre_norm=pre_norm,
+        dropout=decision_dropout,
+    )
     return ModelSettings(
+        max_len=max_len,
+        score_head=ScoreHeadSettings(
+            token=score_token,
+            dropout=dropout,
+            hidden_size=score_hidden,
+        ),
+        decision_layers=decision_layers,
         finetune_last_n_layers=finetune_last_n_layers,
-        score_head_dropout=dropout,
     )
 
 
@@ -133,53 +204,6 @@ def _load_head_learning_rate(train_raw: dict[str, Any]) -> float:
     if train_raw.get("head_learning_rate") is not None:
         return float(train_raw["head_learning_rate"])
     return 2.0e-5
-
-
-def _load_lora_settings(train_raw: dict[str, Any]) -> LoraSettings:
-    lora = train_raw.get("lora") or {}
-    if not isinstance(lora, dict):
-        raise ValueError("train.lora must be a mapping")
-    enabled = bool(lora.get("enabled", False))
-    rank = int(lora.get("rank", 8))
-    alpha = int(lora.get("alpha", 16))
-    dropout = float(lora.get("dropout", 0.05))
-    lr_raw = train_raw.get("learning_rates") or {}
-    lr = float(lora.get("lr", lr_raw.get("lora", 1.0e-4)))
-    raw_targets = lora.get("target_modules")
-    if raw_targets is None:
-        target_modules: tuple[str, ...] = ("Wqkv", "Wo")
-    elif not isinstance(raw_targets, list) or not raw_targets:
-        raise ValueError("train.lora.target_modules must be a non-empty list of module name strings")
-    else:
-        target_modules = tuple(str(x).strip() for x in raw_targets if str(x).strip())
-        if not target_modules:
-            raise ValueError("train.lora.target_modules must not be empty")
-    raw_layer_indices = lora.get("layers")
-    if raw_layer_indices is None:
-        layer_indices: tuple[int, ...] = ()
-    elif not isinstance(raw_layer_indices, list) or not raw_layer_indices:
-        raise ValueError("train.lora.layers must be a non-empty list of encoder block indices")
-    else:
-        layer_indices = tuple(int(x) for x in raw_layer_indices)
-    all_layers = bool(lora.get("all_layers", False))
-    if all_layers and layer_indices:
-        raise ValueError("set train.lora.all_layers or train.lora.layers, not both")
-    if rank < 1:
-        raise ValueError("train.lora.rank must be >= 1")
-    if alpha < 1:
-        raise ValueError("train.lora.alpha must be >= 1")
-    if not 0.0 <= dropout < 1.0:
-        raise ValueError("train.lora.dropout must be in [0.0, 1.0)")
-    return LoraSettings(
-        enabled=enabled,
-        rank=rank,
-        alpha=alpha,
-        dropout=dropout,
-        learning_rate=lr,
-        target_modules=target_modules,
-        layer_indices=layer_indices,
-        all_layers=all_layers,
-    )
 
 
 def _load_optimizer_settings(train_raw: dict[str, Any]) -> OptimizerSettings:
@@ -314,7 +338,10 @@ def datasets_cache_dir(cfg: DecisionConfig) -> Path:
     return path
 
 
-def assert_hub_has_space(cfg: DecisionConfig, *, needed_bytes: int = 650_000_000) -> None:
+def assert_hub_has_space(cfg: DecisionConfig, *, needed_bytes: int | None = None) -> None:
+    if needed_bytes is None:
+        name = cfg.pretrained_name.lower()
+        needed_bytes = 1_800_000_000 if "large" in name else 650_000_000
     import shutil
 
     hub = hub_cache_dir(cfg)
@@ -328,6 +355,21 @@ def assert_hub_has_space(cfg: DecisionConfig, *, needed_bytes: int = 650_000_000
             f"({free_mb:.0f} MiB free, need ~{need_mb:.0f} MiB for encoder weights). "
             "Free space on this volume or set hf_cache in config.yaml to a path with room."
         )
+
+
+def _resolve_data_splits(
+    dataset: str,
+    train_split: str,
+    val_split: str,
+) -> tuple[str, str]:
+    train = train_split.strip() or "train"
+    val = val_split.strip() or "validation"
+    if dataset == "mnli":
+        if val == "validation":
+            val = "validation_matched"
+        if train == "validation":
+            train = "validation_matched"
+    return train, val
 
 
 def load_config(path: Path | None = None) -> DecisionConfig:
@@ -361,10 +403,16 @@ def load_config(path: Path | None = None) -> DecisionConfig:
     )
     lr_raw = train_raw.get("learning_rates") or {}
     head_lr = _load_head_learning_rate(train_raw)
-    lora = _load_lora_settings(train_raw)
+    if train_raw.get("lora") is not None:
+        raise ValueError("train.lora was removed; use train.encoder for encoder fine-tuning")
     if train_raw.get("cls_embedding") or train_raw.get("train_cls_embedding") is not None:
         raise ValueError("train.cls_embedding was removed; scoring uses masked mean pooling")
     optimizer = _load_optimizer_settings(train_raw)
+    train_split, val_split = _resolve_data_splits(
+        dataset,
+        str(data_raw.get("train_split") or "train"),
+        str(data_raw.get("val_split") or "validation"),
+    )
     return DecisionConfig(
         hf_cache=apply_hf_cache(_resolve(Path(hf_cache_path), base)),
         pretrained_name=pretrained,
@@ -373,8 +421,8 @@ def load_config(path: Path | None = None) -> DecisionConfig:
             dataset=dataset,
             source=source,
             race_subset=race_subset,
-            train_split=str(data_raw.get("train_split") or "train"),
-            val_split=str(data_raw.get("val_split") or "validation"),
+            train_split=train_split,
+            val_split=val_split,
             seed=int(data_raw.get("seed", 42)),
             num_workers=int(data_raw.get("num_workers", 0)),
         ),
@@ -392,7 +440,6 @@ def load_config(path: Path | None = None) -> DecisionConfig:
             head_learning_rate=head_lr,
             encoder_layer_train=encoder_layer_train,
             encoder_layer_learning_rates=encoder_layer_lrs,
-            lora=lora,
             warmup_ratio=float(
                 _train_get(train_raw, "schedule", "warmup_ratio", legacy_key="warmup_ratio", default=0.05)
             ),

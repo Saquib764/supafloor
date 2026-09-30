@@ -1,14 +1,12 @@
 # ModernBERT decision model
 
-Multi-option scoring with a pretrained **ModernBERT** encoder and a linear score head. For each candidate option the model runs a separate forward pass on:
+Multi-option scoring with a pretrained **ModernBERT** encoder and a shared MLP score head (LayerNorm → Linear → GELU → Linear). Each question is **one sequence**: context, question, instruction, then each option as `{option} : [MASK]` with `[SEP]` boundaries and `[CLS]` after `[SEP]` on option segments (see `formatting.py`).
 
-`Context:\n` state … [SEP] `Question:\n` question … [SEP] Is the correct answer to the question is: {option} …` (one forward per option)
-
-It returns one logit per option (softmax over candidates). It does **not** generate text.
+The model gathers the hidden state at each option’s configured token (`model.score_head.token`: `mask` or `cls`), runs **`model.decision_layers.count`** small transformer layers over those option hiddens (self-attention across options), then applies the MLP score head and softmaxes over options. It does **not** generate text.
 
 The score head **must be trained** before predictions are useful.
 
-Segments are delimited with the tokenizer’s existing `[SEP]` token (no leading `[CLS]`; no extra vocab tokens). Context length is the encoder’s **8192** positions (`max_position_embeddings`); sequences longer than that are **truncated** (context tokens dropped from the end first, then the sequence head if needed). Scoring uses **masked mean pooling** over all non-padding token hidden states, then a linear head. Encoder adaptation: optional **LoRA** on encoder blocks (`train.lora.all_layers`, `train.lora.layers`, or auto), plus optional full-weight fine-tune on the last `train.encoder.last_n_layers` blocks. Score head is always a separate linear head (no LoRA). LoRA LR: `train.lora.lr`. Score head LR: `train.head.lr`. Checkpoints always save `encoder/` (full base weights), `scoring_head.pt`, and tokenizer; when LoRA is trained, also `lora_adapter/`. Hub paths: `hub.cache`, `hub.pretrained`. Optimizer: AdamW via `train.optimizer` (`betas`, `eps`; weight decay from `train.schedule.weight_decay`). See `config.yaml` for the full nested layout (legacy flat keys under `train` still load).
+Sequence length is capped by **`model.max_len`** (≤ encoder `max_position_embeddings`); longer inputs are **truncated** (context first). All option `[MASK]` tokens must remain in the sequence. Encoder adaptation: optional full-weight fine-tune on the last `train.encoder.last_n_layers` blocks. Decision stack and score head train from scratch. Checkpoints save `encoder/`, `decision_stack.pt`, `scoring_head.pt`, and tokenizer. Architecture metadata: `mask_token_decision_stack_v1`.
 
 ## Setup
 
@@ -16,8 +14,6 @@ Segments are delimited with the tokenizer’s existing `[SEP]` token (no leading
 cd backend/modern_bert_decision
 uv sync
 ```
-
-Hub cache defaults to `../hf_cache` (see `config.yaml`).
 
 ## Commands
 
@@ -27,26 +23,23 @@ uv run modern-bert-decision verify
 uv run modern-bert-decision download-data
 uv run modern-bert-decision train
 uv run modern-bert-decision infer
+uv run modern-bert-decision masked-infer   # vanilla MLM baseline (untrained head)
 ```
 
 ## Data and training
 
-- RACE rows are used as-is (no augmentation). Softmax uses every option in each row.
-- Train: one row per question; encoder forward per option; **soft-target cross-entropy** on logits (one-hot at `answer_index`).
-- **Test mode** — train on a fixed subset instead of the full split: set `train.test_mode.enabled: true` and `train.test_mode.samples` (e.g. 100 or 200), or run `uv run modern-bert-decision train --test-mode --test-samples 200`. The chosen rows are saved as `{session_dir}/test_train_samples.jsonl` and reused; pass `--test-refresh` to draw a new subset.
-- Eval/infer: same multi-option forward; **softmax** over options; pick `argmax`.
-- Checkpoints: `{session_dir}/last/` — full encoder, tokenizer, score head, optional LoRA adapter when trained, and finetune toggles/LRs in meta (used on **resume**; **init_checkpoint** keeps weights but applies train settings from config).
+- Registry datasets (`race`, `mnli`, …) → `state` / `question` / `options` / `answer_index`.
+- Train: **one encoder forward** per question; **soft-target cross-entropy** on option logits (one-hot at `answer_index`).
+- **Test mode** — `train.test_mode.enabled` or `--test-mode --test-samples N`.
+- Checkpoints: `{session_dir}/last/`. Legacy `mean_pool_per_candidate_v1` checkpoints must be retrained.
 
 ## Tensor contract
 
 | Tensor | Shape | Meaning |
 |--------|--------|---------|
-| `input_ids` | `[B, K_max, L]` | Padded token ids (one sequence per candidate) |
-| `attention_mask` | `[B, K_max, L]` | 1 for real tokens |
+| `input_ids` | `[B, L]` | One masked sequence per question |
+| `attention_mask` | `[B, L]` | 1 for real tokens |
+| `score_index` | `[B, K_max]` | Index of each option’s score token (`mask` or `cls`) |
 | `option_mask` | `[B, K_max]` | True for real options |
 
 Forward outputs: `logits`, `probabilities` `[B, K_max]`; `selected_indices` `[B]`.
-
-## Checkpoints
-
-Metadata includes `architecture: mean_pool_per_candidate_v1` for new runs; older `architecture` values still load (encoder, head, LoRA when present).

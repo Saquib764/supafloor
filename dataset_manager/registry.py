@@ -311,16 +311,22 @@ def download(
         return target
 
     enable_download_progress()
-    subset = str(meta.get("race_subset") or "all")
     if hasattr(schema, "materialize_local"):
-        print(f"Downloading {name!r} → {target} (subset={subset})", flush=True)
-        written = schema.materialize_local(
-            target,
-            repo=meta["hf_repo"],
-            subset=subset,
-            cache_dir=cache_dir,
-            revision=rev,
-        )
+        mat_kwargs: dict[str, object] = {
+            "target": target,
+            "repo": meta["hf_repo"],
+            "cache_dir": cache_dir,
+            "revision": rev,
+        }
+        hub_config = meta.get("hub_config")
+        if hub_config:
+            mat_kwargs["hub_config"] = str(hub_config)
+            print(f"Downloading {name!r} → {target} (config={hub_config})", flush=True)
+        else:
+            subset = str(meta.get("race_subset") or "all")
+            mat_kwargs["subset"] = subset
+            print(f"Downloading {name!r} → {target} (subset={subset})", flush=True)
+        written = schema.materialize_local(**mat_kwargs)
     elif hasattr(schema, "write_local_folders"):
         dataset = schema.load_from_hub(meta["hf_repo"], revision=rev, cache_dir=cache_dir)
         written = schema.write_local_folders(dataset, target)

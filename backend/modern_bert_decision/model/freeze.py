@@ -10,11 +10,7 @@ from model.decision_model import ModernBERTDecisionModel
 
 
 def _encoder_stack(model: ModernBERTDecisionModel) -> nn.Module:
-    enc = model.encoder
-    get_base = getattr(enc, "get_base_model", None)
-    if get_base is not None:
-        return get_base()
-    return enc
+    return model.encoder
 
 
 def _deepest_trained_slot(train_mask: Sequence[bool]) -> int | None:
@@ -79,10 +75,10 @@ def apply_encoder_trainability(
     model.encoder_layer_train = train_mask
     model.encoder_finetune_lrs = finetune_lrs
 
-    for name, param in model.encoder.named_parameters():
-        if "lora_" in name:
-            continue
+    for param in model.encoder.parameters():
         param.requires_grad = False
+    for param in model.decision_stack.parameters():
+        param.requires_grad = True
     for param in model.score_head.parameters():
         param.requires_grad = True
 
@@ -94,8 +90,3 @@ def apply_encoder_trainability(
     if _deepest_trained_slot(train_mask) is not None:
         for param in stack.final_norm.parameters():
             param.requires_grad = True
-
-    if model.lora_enabled:
-        for name, param in model.encoder.named_parameters():
-            if "lora_" in name:
-                param.requires_grad = True

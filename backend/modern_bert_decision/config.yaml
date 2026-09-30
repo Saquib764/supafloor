@@ -2,20 +2,28 @@
 
 hub:
   cache: ../hf_cache
-  pretrained: answerdotai/ModernBERT-base
+  pretrained: answerdotai/ModernBERT-large
 
 model:
-  # Sequence length follows encoder max_position_embeddings (8192 for ModernBERT-base).
-  # Sequences longer than max_position_embeddings are truncated (context first, then head).
+  max_len: 1640  # cap <= encoder max_position_embeddings; truncate context first, then head
   score_head:
-    dropout: 0.1  # on pooled hidden before linear head (train only)
+    token: mask  # mask | cls — gather encoder hidden at this token per option
+    dropout: 0.0  # on gathered hiddens before decision stack (train only)
+    hidden_size: 1024  # LayerNorm → Linear → GELU → Linear → 1 per option
+  decision_layers:
+    count: 2  # transformer layers over option hiddens [B, K, H]
+    hidden_size: 1024
+    num_attention_heads: 16
+    intermediate_size: 4096  # FFN width
+    pre_norm: true
+    dropout: 0.1
 
 data:
-  dataset: race
+  dataset: race  # race | mnli (dataset_manager registry)
   source: local  # auto | local | hub
-  race_subset: all  # all | middle | high
+  race_subset: all  # RACE only: all | middle | high
   train_split: train
-  val_split: validation
+  val_split: validation_matched  # mnli: validation_matched | validation_mismatched; race: validation
   seed: 42
   num_workers: 0
 
@@ -24,15 +32,15 @@ train:
 
   checkpoint:
     init: 
-    resume: false
+    resume: true
     save_steps: 500
 
   schedule:
-    epochs: 8
+    epochs: 10
     batch_size: 2
     grad_accum: 1
     warmup_ratio: 0.05
-    weight_decay: 0.01
+    weight_decay: 0.0
     max_grad_norm: 1.0
     bf16: false
 
@@ -46,7 +54,7 @@ train:
   # resample with --test-refresh on the CLI.
   test_mode:
     enabled: true
-    samples: 300  # e.g. 100 or 200
+    samples: 30  # e.g. 100 or 200
 
   eval:
     samples: 20
@@ -55,26 +63,6 @@ train:
 
   head:
     lr: 2.0e-3  # linear score head
-
-  lora:
-    enabled: true  # LoRA on encoder blocks only (never score_head)
-    all_layers: false  # true → every block 0..depth-1; mutually exclusive with `layers`
-    rank: 4
-    alpha: 8
-    dropout: 0.05
-    lr: 1.0e-4
-    layers: [19, 20, 21]
-    # Or list block indices (0..21 on ModernBERT-base). May overlap full-weight finetune blocks.
-    # Omit both `all_layers` and `layers` → blocks 0 .. (depth - train.encoder.last_n_layers - 1),
-    # or all blocks when train.encoder.last_n_layers is 0.
-    # layers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
-    # target_modules: suffix names on ModernBERT-base blocks (layers.N.attn|mlp.<name>)
-    #   Wqkv — attn fused Q/K/V linear (default)
-    #   Wo   — attn output linear (default); also names mlp down-proj (same suffix)
-    #   Wi   — mlp up/gate linear (optional)
-    target_modules:
-      - Wqkv
-      - Wo
 
   encoder:
     last_n_layers: 4  # 0 = frozen; N = last N blocks (+ final_norm when any train)

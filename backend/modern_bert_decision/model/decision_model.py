@@ -1,4 +1,4 @@
-"""ModernBERT encoder with masked mean pooling and a linear score head (one forward per option)."""
+"""ModernBERT encoder + option decision stack + MLP score head."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import torch.nn as nn
 from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase
 
 from config import DecisionConfig, assert_hub_has_space, hub_from_pretrained_kwargs
+from model.decision_stack import OptionDecisionStack
+from model.score_head import OptionScoreHead
 
 
 @dataclass
@@ -38,11 +40,26 @@ class ModernBERTDecisionModel(nn.Module):
         self.finetune_last_n_layers = 0
         self.encoder_layer_train: tuple[bool, ...] = ()
         self.encoder_finetune_lrs: tuple[float, ...] = ()
-        self.lora_enabled = False
-        hidden = int(encoder.config.hidden_size)
-        self.score_head_dropout = nn.Dropout(p=float(cfg.model.score_head_dropout))
-        self.score_head = nn.Linear(hidden, 1, bias=False)
-        nn.init.zeros_(self.score_head.weight)
+        enc_hidden = int(encoder.config.hidden_size)
+        dl = cfg.model.decision_layers
+        sh = cfg.model.score_head
+        if dl.hidden_size != enc_hidden:
+            raise ValueError(
+                f"model.decision_layers.hidden_size {dl.hidden_size} must match "
+                f"encoder hidden_size {enc_hidden}"
+            )
+        if sh.hidden_size != dl.hidden_size:
+            raise ValueError("model.score_head.hidden_size must match model.decision_layers.hidden_size")
+        self.option_dropout = nn.Dropout(p=float(sh.dropout))
+        self.decision_stack = OptionDecisionStack(
+            hidden_size=dl.hidden_size,
+            num_attention_heads=dl.num_attention_heads,
+            intermediate_size=dl.intermediate_size,
+            num_layers=dl.count,
+            dropout=dl.dropout,
+            pre_norm=dl.pre_norm,
+        )
+        self.score_head = OptionScoreHead(sh.hidden_size)
 
     @property
     def hidden_size(self) -> int:
@@ -59,30 +76,32 @@ class ModernBERTDecisionModel(nn.Module):
 
         return load_checkpoint(root, cfg)
 
-    def _pooled_logits(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        hidden = outputs.last_hidden_state
-        mask = attention_mask.unsqueeze(-1).to(dtype=hidden.dtype)
-        summed = (hidden * mask).sum(dim=1)
-        counts = mask.sum(dim=1).clamp(min=1e-6)
-        pooled = summed / counts
-        pooled = self.score_head_dropout(pooled)
-        return self.score_head(pooled).squeeze(-1)
-
     def forward(
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
+        score_index: torch.Tensor,
         option_mask: torch.Tensor,
     ) -> DecisionForwardOutput:
-        """One logit per option; softmax over valid options for train/eval/infer."""
-        if input_ids.dim() != 3:
-            raise ValueError(f"forward expects [B, K, L], got shape {tuple(input_ids.shape)}")
-        batch_size, k_max, seq_len = input_ids.shape
-        flat_ids = input_ids.reshape(batch_size * k_max, seq_len)
-        flat_mask = attention_mask.reshape(batch_size * k_max, seq_len)
-        flat_logits = self._pooled_logits(flat_ids, flat_mask)
-        logits = flat_logits.reshape(batch_size, k_max)
+        """Gather score-token hiddens, run decision stack over options, then MLP score head."""
+        if input_ids.dim() != 2:
+            raise ValueError(f"forward expects [B, L], got shape {tuple(input_ids.shape)}")
+        if score_index.shape != option_mask.shape:
+            raise ValueError(
+                f"score_index shape {tuple(score_index.shape)} != option_mask {tuple(option_mask.shape)}"
+            )
+        batch_size, k_max = score_index.shape
+        if option_mask.shape[0] != batch_size:
+            raise ValueError("batch size mismatch between input_ids and option_mask")
+
+        outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        hidden = outputs.last_hidden_state
+        batch_idx = torch.arange(batch_size, device=hidden.device).unsqueeze(1).expand(-1, k_max)
+        idx = score_index.clamp(min=0).long()
+        gathered = hidden[batch_idx, idx]
+        gathered = self.option_dropout(gathered)
+        refined = self.decision_stack(gathered, option_mask)
+        logits = self.score_head(refined)
 
         logits = logits.masked_fill(~option_mask, float("-inf"))
         probs = torch.softmax(logits.float(), dim=-1)
@@ -104,7 +123,7 @@ def _raise_load_failure(cfg: DecisionConfig, kind: str, exc: BaseException) -> N
         msg += (
             ". Disk full — free ~650 MiB on that volume or point hf_cache in config.yaml "
             "to a directory with space. Remove stale partial downloads under "
-            f"{hub}/models--answerdotai--ModernBERT-base if a prior download failed."
+            f"{hub}/models--{cfg.pretrained_name.replace('/', '--')} if a prior download failed."
         )
     raise RuntimeError(msg) from exc
 
@@ -129,9 +148,9 @@ def build_model(cfg: DecisionConfig) -> ModernBERTDecisionModel:
         if "No space" in str(exc) or "disk" in str(exc).lower():
             _raise_load_failure(cfg, "encoder", exc)
         raise
-    from formatting import max_sequence_length
+    from formatting import resolve_sequence_length
 
-    max_len = max_sequence_length(tokenizer, encoder.config)
+    max_len = resolve_sequence_length(tokenizer, encoder.config, cap=cfg.model.max_len)
     model = ModernBERTDecisionModel(
         encoder,
         tokenizer,
@@ -144,34 +163,10 @@ def build_model(cfg: DecisionConfig) -> ModernBERTDecisionModel:
 
 def configure_for_training(model: ModernBERTDecisionModel, cfg: DecisionConfig) -> None:
     from model.freeze import apply_encoder_trainability
-    from model.lora import apply_encoder_lora
-
-    lora = cfg.train.lora
-    finetune_n = cfg.model.finetune_last_n_layers
-    layer_train = cfg.train.encoder_layer_train
-    layer_lrs = cfg.train.encoder_layer_learning_rates
-    if lora.enabled:
-        if not model.lora_enabled:
-            model.encoder = apply_encoder_lora(
-                model.encoder,
-                lora,
-                skip_last_n_layers=finetune_n,
-            )
-            model.lora_enabled = True
-        else:
-            from model.lora import lora_trainable_parameter_count
-
-            print(
-                f"LoRA: using adapter already on encoder "
-                f"({lora_trainable_parameter_count(model.encoder):,} params)",
-                flush=True,
-            )
-    elif model.lora_enabled:
-        print("LoRA: adapter loaded but train.lora.enabled=false in config", flush=True)
 
     apply_encoder_trainability(
         model,
-        finetune_last_n_layers=finetune_n,
-        encoder_layer_train=layer_train,
-        encoder_layer_learning_rates=layer_lrs,
+        finetune_last_n_layers=cfg.model.finetune_last_n_layers,
+        encoder_layer_train=cfg.train.encoder_layer_train,
+        encoder_layer_learning_rates=cfg.train.encoder_layer_learning_rates,
     )

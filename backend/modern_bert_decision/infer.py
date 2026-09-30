@@ -27,9 +27,10 @@ def forward_batch(
     *,
     input_ids: torch.Tensor,
     attention_mask: torch.Tensor,
+    score_index: torch.Tensor,
     option_mask: torch.Tensor,
 ) -> DecisionForwardOutput:
-    return model(input_ids, attention_mask, option_mask)
+    return model(input_ids, attention_mask, score_index, option_mask)
 
 
 @torch.inference_mode()
@@ -53,6 +54,7 @@ def predict(
             model,
             input_ids=batch.input_ids,
             attention_mask=batch.attention_mask,
+            score_index=batch.score_index,
             option_mask=batch.option_mask,
         )
         results: list[PredictionItem] = []
@@ -111,12 +113,14 @@ def parse_request_file(path: Path) -> list[dict[str, object]]:
     raise ValueError('request JSON must be {"state","question","options"} or {"requests":[...]}')
 
 
-def request_from_race_example(cfg: DecisionConfig) -> list[dict[str, object]]:
-    from data import example_to_request, load_race_preview_examples
+def request_from_dataset_example(cfg: DecisionConfig) -> list[dict[str, object]]:
+    from data import example_to_request, load_preview_examples
 
-    examples = load_race_preview_examples(cfg, count=1)
+    examples = load_preview_examples(cfg, count=1)
     if not examples:
-        raise RuntimeError("no RACE rows available for --from-race")
+        raise RuntimeError(
+            f"no rows available for dataset {cfg.data.dataset!r} (--from-dataset)"
+        )
     return [example_to_request(examples[0])]
 
 
@@ -155,14 +159,14 @@ def run_infer(
     *,
     checkpoint: Path,
     request_path: Path | None = None,
-    from_race: bool = False,
+    from_dataset: bool = False,
     device: torch.device | None = None,
 ) -> list[PredictionItem]:
     device = device or pick_device()
     used_trained = (checkpoint / "decision_meta.json").is_file()
     model = load_model(cfg, checkpoint, device)
-    if from_race:
-        requests = request_from_race_example(cfg)
+    if from_dataset:
+        requests = request_from_dataset_example(cfg)
     elif request_path is not None:
         requests = parse_request_file(request_path)
     else:
@@ -191,9 +195,14 @@ def main(argv: list[str] | None = None) -> None:
         help="JSON request file (default: example_request.json)",
     )
     parser.add_argument(
+        "--from-dataset",
+        action="store_true",
+        help="Score one row from the configured train split instead of a JSON file",
+    )
+    parser.add_argument(
         "--from-race",
         action="store_true",
-        help="Score one raw RACE validation example instead of a JSON file",
+        help=argparse.SUPPRESS,
     )
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
@@ -202,7 +211,7 @@ def main(argv: list[str] | None = None) -> None:
         cfg,
         checkpoint=checkpoint,
         request_path=args.request,
-        from_race=args.from_race,
+        from_dataset=bool(args.from_dataset or args.from_race),
     )
 
 

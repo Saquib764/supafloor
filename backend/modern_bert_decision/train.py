@@ -1,4 +1,4 @@
-"""Train ModernBERT decision model on RACE (soft-target CE over option logits)."""
+"""Train ModernBERT decision model (soft-target CE over option logits)."""
 
 from __future__ import annotations
 
@@ -8,22 +8,22 @@ from pathlib import Path
 import torch
 from config import DecisionConfig, datasets_cache_dir, load_config
 from data import (
+    DecisionStreamDataset,
     EvalCollator,
     ListDecisionDataset,
+    RegistryDecisionDataset,
     TrainCollator,
-    RaceDecisionDataset,
-    RaceDecisionStreamDataset,
-    load_race_decision_dataset,
+    dataset_local_root,
+    dataset_split_row_count,
     ensure_eval_examples,
     ensure_test_train_examples,
-    race_split_row_count,
-    use_local_race,
+    load_decision_hub_dataset,
+    use_local_dataset,
 )
 from device import pick_device
 from loss import soft_target_cross_entropy
 from model.decision_model import ModernBERTDecisionModel, build_model
 from model.freeze import encoder_finetune_param_groups
-from model.lora import lora_param_groups
 from model.params import parameter_breakdown
 from registry import load_dotenv
 from torch.optim import AdamW, Optimizer
@@ -88,16 +88,14 @@ def _optimizer_param_groups(
     model: ModernBERTDecisionModel,
     cfg: DecisionConfig,
 ) -> list[dict[str, object]]:
+    head_params = list(model.decision_stack.parameters()) + list(model.score_head.parameters())
     groups: list[dict[str, object]] = [
         {
-            "params": list(model.score_head.parameters()),
+            "params": head_params,
             "lr": cfg.train.head_learning_rate,
         },
     ]
-    if model.lora_enabled:
-        groups.extend(lora_param_groups(model.encoder, learning_rate=cfg.train.lora.learning_rate))
-    else:
-        groups.extend(encoder_finetune_param_groups(model))
+    groups.extend(encoder_finetune_param_groups(model))
     return groups
 
 
@@ -153,9 +151,10 @@ def evaluate(
         labels = batch.labels.to(device)
         input_ids = formatted.input_ids.to(device)
         attention_mask = formatted.attention_mask.to(device)
+        score_index = formatted.score_index.to(device)
         option_mask = formatted.option_mask.to(device)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-            out = model(input_ids, attention_mask, option_mask)
+            out = model(input_ids, attention_mask, score_index, option_mask)
             loss = soft_target_cross_entropy(out.logits, labels, option_mask)
         batch_n = int(labels.size(0))
         total_loss += float(loss.item()) * batch_n
@@ -213,7 +212,8 @@ def _print_setup(
     print("\n=== Dataset ===")
     print(f"dataset:        {cfg.data.dataset}")
     print(f"source:         {cfg.data.source}")
-    print(f"race_subset:    {cfg.data.race_subset}")
+    if cfg.data.dataset == "race":
+        print(f"race_subset:    {cfg.data.race_subset}")
     print(f"train_split:    {cfg.data.train_split}")
     print(f"val_split:      {cfg.data.val_split}")
     print(f"cache_dir:      {datasets_cache_dir(cfg)}")
@@ -232,38 +232,20 @@ def _print_setup(
     print(f"optimizer:      AdamW (betas={cfg.train.optimizer.betas}, eps={cfg.train.optimizer.eps})")
     print(f"weight_decay:   {cfg.train.weight_decay}")
     print(f"head_lr:        {cfg.train.head_learning_rate}")
-    print(f"head_dropout:   {cfg.model.score_head_dropout}")
-    lora = cfg.train.lora
-    if model.lora_enabled:
-        from model.lora import lora_trainable_parameter_count, resolve_lora_layer_indices
-
-        n_ft = model.finetune_last_n_layers
-        n_layers = len(model.encoder.layers)
-        lora_blocks = resolve_lora_layer_indices(
-            n_layers,
-            lora,
-            skip_last_n_layers=n_ft,
-        )
-        print(
-            f"lora:           enabled (rank {lora.rank}, alpha {lora.alpha}, "
-            f"lr {lora.learning_rate}, targets {list(lora.target_modules)}, "
-            f"blocks {lora_blocks})"
-        )
-        print(f"lora_dropout:   {lora.dropout}")
-        print(f"lora_params:    {lora_trainable_parameter_count(model.encoder):,}")
-        if n_ft:
-            print(f"encoder_ft:     last {n_ft} block(s) optional full-weight (independent of LoRA blocks)")
+    print(f"max_len:        {cfg.model.max_len}")
+    print(f"head_dropout:   {cfg.model.score_head.dropout}")
+    print(f"score_token:    {cfg.model.score_head.token}")
+    print(f"score_head_H:   {cfg.model.score_head.hidden_size}")
+    dl = cfg.model.decision_layers
+    print(f"decision_layers:{dl.count} (H={dl.hidden_size}, heads={dl.num_attention_heads}, "
+          f"FFN={dl.intermediate_size}, pre_norm={dl.pre_norm}, dropout={dl.dropout})")
+    n_ft = model.finetune_last_n_layers
+    if n_ft:
+        print(f"encoder_ft:     last {n_ft} block(s) (per-layer train toggles)")
         print(f"encoder_train:  {list(model.encoder_layer_train)}")
         print(f"encoder_lrs:    {list(model.encoder_finetune_lrs)}")
     else:
-        print("lora:           disabled")
-        n_ft = model.finetune_last_n_layers
-        if n_ft:
-            print(f"encoder_ft:     last {n_ft} block(s) (per-layer train toggles)")
-            print(f"encoder_train:  {list(model.encoder_layer_train)}")
-            print(f"encoder_lrs:    {list(model.encoder_finetune_lrs)}")
-        else:
-            print("encoder_ft:     frozen")
+        print("encoder_ft:     frozen")
     print(f"resume:         {cfg.train.resume}")
     print(f"save_steps:     {cfg.train.save_steps}")
     print(f"eval_samples:   {cfg.train.eval_samples}")
@@ -272,10 +254,7 @@ def _print_setup(
     print(f"test_mode:      {cfg.train.test_mode}")
     if cfg.train.test_mode:
         print(f"test_samples:   {cfg.train.test_samples}")
-    print(
-        f"checkpoint mode: {'LoRA adapter + full encoder' if model.lora_enabled else 'full encoder'}",
-        flush=True,
-    )
+    print("checkpoint mode: full encoder", flush=True)
     print()
 
 
@@ -292,23 +271,23 @@ def run(cfg: DecisionConfig, *, test_refresh: bool = False) -> None:
             )
         train_ds = ListDecisionDataset(train_examples)
         train_len = len(train_ds)
-        if use_local_race(cfg):
-            val_len = race_split_row_count(cfg, cfg.data.val_split)
+        if use_local_dataset(cfg):
+            val_len = dataset_split_row_count(cfg, cfg.data.val_split)
         else:
-            val_len = len(load_race_decision_dataset(cfg, split=cfg.data.val_split))
-    elif use_local_race(cfg):
-        train_ds = RaceDecisionStreamDataset(
+            val_len = len(load_decision_hub_dataset(cfg, split=cfg.data.val_split))
+    elif use_local_dataset(cfg):
+        train_ds = DecisionStreamDataset(
             cfg,
             split=cfg.data.train_split,
             shuffle=True,
             seed=cfg.data.seed,
         )
-        train_len = race_split_row_count(cfg, cfg.data.train_split)
-        val_len = race_split_row_count(cfg, cfg.data.val_split)
+        train_len = dataset_split_row_count(cfg, cfg.data.train_split)
+        val_len = dataset_split_row_count(cfg, cfg.data.val_split)
     else:
-        train_hf = load_race_decision_dataset(cfg, split=cfg.data.train_split)
-        val_hf = load_race_decision_dataset(cfg, split=cfg.data.val_split)
-        train_ds = RaceDecisionDataset(train_hf, cfg)
+        train_hf = load_decision_hub_dataset(cfg, split=cfg.data.train_split)
+        val_hf = load_decision_hub_dataset(cfg, split=cfg.data.val_split)
+        train_ds = RegistryDecisionDataset(train_hf, cfg)
         train_len = len(train_ds)
         val_len = len(val_hf)
 
@@ -339,14 +318,14 @@ def run(cfg: DecisionConfig, *, test_refresh: bool = False) -> None:
         else:
             raise FileNotFoundError(f"init_checkpoint not found: {init_path}")
     else:
-        print("train: building new model from hub (config LoRA if enabled)", flush=True)
+        print("train: building new model from hub", flush=True)
         model = build_model(cfg)
 
     model.to(device)
 
     train_collator = TrainCollator(model)
     eval_collator = EvalCollator(model)
-    train_shuffle = cfg.train.test_mode or not use_local_race(cfg)
+    train_shuffle = cfg.train.test_mode or not use_local_dataset(cfg)
 
     def make_train_loader() -> DataLoader:
         shuffle = train_shuffle
@@ -397,10 +376,8 @@ def run(cfg: DecisionConfig, *, test_refresh: bool = False) -> None:
     print(f"eval_fixture:   {eval_fixture_path} ({eval_n} fixed rows)", flush=True)
     if test_train_fixture is not None:
         print(f"test_train:     {test_train_fixture} ({train_len} fixed rows)", flush=True)
-    if use_local_race(cfg):
-        from data import race_local_root
-
-        print(f"local_root:     {race_local_root(cfg)} (streaming JSONL)", flush=True)
+    if use_local_dataset(cfg):
+        print(f"local_root:     {dataset_local_root(cfg)} (streaming JSONL)", flush=True)
     cfg.train.session_dir.mkdir(parents=True, exist_ok=True)
     model.train()
     amp = use_bf16(cfg)
@@ -423,7 +400,7 @@ def run(cfg: DecisionConfig, *, test_refresh: bool = False) -> None:
     for epoch in range(start_epoch, cfg.train.epochs):
         if step >= total_steps:
             break
-        if isinstance(train_ds, RaceDecisionStreamDataset):
+        if isinstance(train_ds, DecisionStreamDataset):
             train_ds.epoch = epoch
         micro = 0
         epoch_loader = make_train_loader()
@@ -434,10 +411,11 @@ def run(cfg: DecisionConfig, *, test_refresh: bool = False) -> None:
             labels = batch.labels.to(device, non_blocking=True)
             input_ids = formatted.input_ids.to(device, non_blocking=True)
             attention_mask = formatted.attention_mask.to(device, non_blocking=True)
+            score_index = formatted.score_index.to(device, non_blocking=True)
             option_mask = formatted.option_mask.to(device, non_blocking=True)
 
             with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-                out = model(input_ids, attention_mask, option_mask)
+                out = model(input_ids, attention_mask, score_index, option_mask)
                 loss = soft_target_cross_entropy(out.logits, labels, option_mask)
 
             with torch.no_grad():

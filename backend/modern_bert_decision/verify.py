@@ -11,7 +11,7 @@ import torch
 from checkpoint import save_checkpoint, load_checkpoint
 from config import CONFIG_PATH, DecisionConfig, load_config
 from device import pick_device
-from formatting import build_candidate_sequence, format_batch, resolve_sequence_boundary_ids
+from formatting import build_masked_sequence, format_batch, resolve_sequence_boundary_ids
 from loss import soft_target_cross_entropy
 from model.decision_model import build_model
 
@@ -26,12 +26,12 @@ def run_checks(cfg: DecisionConfig) -> None:
     model = build_model(cfg)
     model.to(device)
     tokenizer = model.tokenizer
-    enc_limit = int(model.encoder.config.max_position_embeddings)
-    if model.max_len != enc_limit:
-        raise AssertionError(f"model.max_len {model.max_len} != encoder limit {enc_limit}")
-    if tokenizer.model_max_length != enc_limit:
+    if model.max_len != cfg.model.max_len:
+        raise AssertionError(f"model.max_len {model.max_len} != config {cfg.model.max_len}")
+    if tokenizer.model_max_length != cfg.model.max_len:
         raise AssertionError(
-            f"tokenizer.model_max_length {tokenizer.model_max_length} != encoder limit {enc_limit}"
+            f"tokenizer.model_max_length {tokenizer.model_max_length} != config max_len "
+            f"{cfg.model.max_len}"
         )
     boundaries = resolve_sequence_boundary_ids(tokenizer)
 
@@ -47,22 +47,34 @@ def run_checks(cfg: DecisionConfig) -> None:
         device=device,
     )
     answer_index = torch.tensor([0, 1], device=device, dtype=torch.long)
-    if batch.input_ids.dim() != 3:
-        raise AssertionError(f"train batch must be [B, K, L], got {tuple(batch.input_ids.shape)}")
+    if batch.input_ids.dim() != 2:
+        raise AssertionError(f"train batch must be [B, L], got {tuple(batch.input_ids.shape)}")
+    if batch.score_index.shape != batch.option_mask.shape:
+        raise AssertionError("score_index and option_mask must match shape")
 
     model.train()
-    out = model(batch.input_ids, batch.attention_mask, batch.option_mask)
+    out = model(batch.input_ids, batch.attention_mask, batch.score_index, batch.option_mask)
     if out.logits.shape != (2, 3):
         raise AssertionError(f"logits shape {tuple(out.logits.shape)}")
     train_loss = soft_target_cross_entropy(out.logits, answer_index, batch.option_mask)
     train_loss.backward()
-    if model.score_head.weight.grad is None or model.score_head.weight.grad.abs().sum().item() == 0.0:
+    stack_grad = any(
+        p.grad is not None and p.grad.abs().sum().item() > 0.0
+        for p in model.decision_stack.parameters()
+    )
+    if not stack_grad:
+        raise AssertionError("decision_stack should receive gradients from soft-target CE")
+    head_grad = any(
+        p.grad is not None and p.grad.abs().sum().item() > 0.0
+        for p in model.score_head.parameters()
+    )
+    if not head_grad:
         raise AssertionError("score_head should receive gradients from soft-target CE")
 
     model.zero_grad(set_to_none=True)
 
     model.eval()
-    out = model(batch.input_ids, batch.attention_mask, batch.option_mask)
+    out = model(batch.input_ids, batch.attention_mask, batch.score_index, batch.option_mask)
     if out.logits.shape != (2, 3):
         raise AssertionError(f"logits shape {tuple(out.logits.shape)}")
     if out.probabilities.shape != (2, 3):
@@ -77,7 +89,7 @@ def run_checks(cfg: DecisionConfig) -> None:
         raise AssertionError("padded option probabilities must be zero")
 
     model.train()
-    out_train = model(batch.input_ids, batch.attention_mask, batch.option_mask)
+    out_train = model(batch.input_ids, batch.attention_mask, batch.score_index, batch.option_mask)
     loss = out_train.logits.sum()
     loss.backward()
     n_ft = model.finetune_last_n_layers
@@ -97,10 +109,7 @@ def run_checks(cfg: DecisionConfig) -> None:
                 raise AssertionError(f"disabled encoder layer {layer_idx} should not receive gradients")
         elif layer_has_grad:
             raise AssertionError(f"frozen encoder layer {layer_idx} should not receive gradients")
-    if model.lora_enabled:
-        if any("lora_" in n for n, _ in model.score_head.named_parameters()):
-            raise AssertionError("score_head must not use LoRA")
-    elif n_ft and any(train_mask):
+    if n_ft and any(train_mask):
         norm_has_grad = any(
             p.grad is not None and p.grad.abs().sum().item() > 0.0
             for p in model.encoder.final_norm.parameters()
@@ -117,18 +126,16 @@ def run_checks(cfg: DecisionConfig) -> None:
     model.zero_grad(set_to_none=True)
 
     huge = "token " * (model.max_len * 4)
-    truncated = build_candidate_sequence(
+    truncated = build_masked_sequence(
         tokenizer=tokenizer,
         boundaries=boundaries,
         state=huge,
         question="Q?",
-        candidate="ok",
+        options=["ok"],
         max_len=model.max_len,
     )
     if len(truncated) > model.max_len:
         raise AssertionError(f"truncated sequence length {len(truncated)} > max_len {model.max_len}")
-    if len(truncated) != model.max_len:
-        raise AssertionError("oversized context should truncate to exactly max_len")
 
     long_word = "x " * (model.max_len + 32)
     segment_ids = tokenizer.encode(long_word, add_special_tokens=False, truncation=False, max_length=None)
@@ -143,8 +150,8 @@ def run_checks(cfg: DecisionConfig) -> None:
         reloaded.to(device)
         reloaded.eval()
         with torch.inference_mode():
-            before = model(batch.input_ids, batch.attention_mask, batch.option_mask)
-            after = reloaded(batch.input_ids, batch.attention_mask, batch.option_mask)
+            before = model(batch.input_ids, batch.attention_mask, batch.score_index, batch.option_mask)
+            after = reloaded(batch.input_ids, batch.attention_mask, batch.score_index, batch.option_mask)
         if not torch.allclose(before.logits, after.logits, atol=1e-5, rtol=1e-5):
             raise AssertionError("forward logits differ after checkpoint reload")
 

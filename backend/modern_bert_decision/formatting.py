@@ -1,4 +1,4 @@
-"""Build batched encoder inputs with [SEP] segment boundaries."""
+"""Build batched encoder inputs: one masked sequence per question ([SEP], [CLS] on options)."""
 
 from __future__ import annotations
 
@@ -7,13 +7,21 @@ from dataclasses import dataclass
 import torch
 from transformers import PreTrainedTokenizerBase
 
-from config import DecisionConfig
+from config import (
+    SCORE_TOKEN_CLS,
+    SCORE_TOKEN_MASK,
+    DecisionConfig,
+    normalize_score_token,
+)
+
+INSTRUCTION_SEGMENT = "Label the following options as true or false to justify the question based on the context."
 
 
 @dataclass(frozen=True)
 class FormattedBatch:
     input_ids: torch.Tensor
     attention_mask: torch.Tensor
+    score_index: torch.Tensor
     option_mask: torch.Tensor
 
 
@@ -40,23 +48,44 @@ def resolve_sequence_boundary_ids(tokenizer: PreTrainedTokenizerBase) -> Sequenc
     return SequenceBoundaryIds(sep_id=int(sep_id), pad_id=_pad_token_id(tokenizer))
 
 
-def max_sequence_length(tokenizer: PreTrainedTokenizerBase, encoder_config) -> int:
-    """Encoder context size (e.g. 8192 for ModernBERT-base); syncs tokenizer ``model_max_length``."""
+def encoder_context_limit(tokenizer: PreTrainedTokenizerBase, encoder_config) -> int:
     mpe = getattr(encoder_config, "max_position_embeddings", None)
     if mpe is None:
         model_max = getattr(tokenizer, "model_max_length", None)
         if model_max is not None and model_max < 1_000_000:
-            max_len = int(model_max)
+            limit = int(model_max)
         else:
             raise ValueError(
                 "encoder config must define max_position_embeddings (or tokenizer model_max_length)"
             )
     else:
-        max_len = int(mpe)
-    if max_len < 1:
-        raise ValueError(f"invalid encoder context limit {max_len}")
-    tokenizer.model_max_length = max_len
-    return max_len
+        limit = int(mpe)
+    if limit < 1:
+        raise ValueError(f"invalid encoder context limit {limit}")
+    return limit
+
+
+def resolve_sequence_length(
+    tokenizer: PreTrainedTokenizerBase,
+    encoder_config,
+    *,
+    cap: int,
+) -> int:
+    """Apply ``model.max_len`` cap (must not exceed encoder ``max_position_embeddings``)."""
+    enc_limit = encoder_context_limit(tokenizer, encoder_config)
+    if cap < 1:
+        raise ValueError("model.max_len must be >= 1")
+    if cap > enc_limit:
+        raise ValueError(f"model.max_len {cap} exceeds encoder context {enc_limit}")
+    tokenizer.model_max_length = cap
+    return cap
+
+
+def max_sequence_length(tokenizer: PreTrainedTokenizerBase, encoder_config) -> int:
+    """Encoder max context; prefer ``resolve_sequence_length`` with config cap."""
+    limit = encoder_context_limit(tokenizer, encoder_config)
+    tokenizer.model_max_length = limit
+    return limit
 
 
 def _encode_field(tokenizer: PreTrainedTokenizerBase, text: str) -> list[int]:
@@ -71,7 +100,6 @@ def _encode_field(tokenizer: PreTrainedTokenizerBase, text: str) -> list[int]:
     )
 
 
-CANDIDATE_SEGMENT_TEMPLATE = "Is the correct answer to the question is: {candidate}"
 STATE_SEGMENT_PREFIX = "Context:\n"
 QUESTION_SEGMENT_PREFIX = "Question:\n"
 
@@ -90,48 +118,114 @@ def format_question_segment(question: str) -> str:
     return f"{QUESTION_SEGMENT_PREFIX}{text}"
 
 
-def format_candidate_segment(candidate: str) -> str:
-    text = candidate.strip()
+def format_option_segment(option: str, *, mask_token: str) -> str:
+    text = option.strip()
     if not text:
-        raise ValueError("candidate must be non-blank after stripping")
-    return CANDIDATE_SEGMENT_TEMPLATE.format(candidate=text)
+        raise ValueError("option must be non-blank after stripping")
+    return f"{text} is {mask_token}"
 
 
-def format_candidate_sequence_text(
+def format_masked_input_text(
     *,
     state: str,
     question: str,
-    candidate: str,
+    options: list[str],
+    mask_token: str,
+    sep_token: str,
+    cls_token: str,
 ) -> str:
-    """Human-readable layout matching ``build_candidate_sequence`` segment order."""
-    return "\n".join(
-        [
-            format_state_segment(state),
-            f"[SEP] {format_question_segment(question)}",
-            f"[SEP] {format_candidate_segment(candidate)}",
-        ]
+    """Human-readable layout matching ``build_masked_sequence`` segment order."""
+    tail: list[tuple[bool, str]] = [
+        (False, format_question_segment(question)),
+        (False, INSTRUCTION_SEGMENT),
+        *[(True, format_option_segment(opt, mask_token=mask_token)) for opt in options],
+    ]
+    lines = [format_state_segment(state)]
+    for cls_after_sep, text in tail:
+        lines.append("")
+        if cls_after_sep:
+            lines.append(f"{sep_token} {cls_token} {text}")
+        else:
+            lines.append(f"{sep_token} {text}")
+    return "\n".join(lines)
+
+
+def masked_sequence_segments(
+    *,
+    state: str,
+    question: str,
+    options: list[str],
+    mask_token: str,
+) -> list[str]:
+    segments = [
+        format_state_segment(state),
+        format_question_segment(question),
+        INSTRUCTION_SEGMENT,
+    ]
+    for opt in options:
+        segments.append(format_option_segment(opt, mask_token=mask_token))
+    return segments
+
+
+def _cls_token_id(tokenizer: PreTrainedTokenizerBase) -> int:
+    cls_id = tokenizer.cls_token_id
+    if cls_id is None:
+        raise ValueError("tokenizer must define cls_token_id for option segments")
+    return int(cls_id)
+
+
+def mask_token_id(tokenizer: PreTrainedTokenizerBase) -> int:
+    mask_id = tokenizer.mask_token_id
+    if mask_id is None:
+        raise ValueError("tokenizer must define mask_token_id")
+    return int(mask_id)
+
+
+def _append_sep_segment(
+    suffix_ids: list[int],
+    *,
+    tokenizer: PreTrainedTokenizerBase,
+    boundaries: SequenceBoundaryIds,
+    text: str,
+    cls_after_sep: bool = False,
+) -> None:
+    suffix_ids.extend(
+        tokenizer.encode("\n", add_special_tokens=False, truncation=False, max_length=None)
     )
+    suffix_ids.append(boundaries.sep_id)
+    if cls_after_sep:
+        suffix_ids.append(_cls_token_id(tokenizer))
+    suffix_ids.extend(_encode_field(tokenizer, text))
 
 
-def build_candidate_sequence(
+def build_masked_sequence(
     *,
     tokenizer: PreTrainedTokenizerBase,
     boundaries: SequenceBoundaryIds,
     state: str,
     question: str,
-    candidate: str,
+    options: list[str],
     max_len: int,
 ) -> list[int]:
-    segments = [
-        format_state_segment(state),
-        format_question_segment(question),
-        format_candidate_segment(candidate),
-    ]
+    mask_token = tokenizer.mask_token
+    if not mask_token:
+        raise ValueError("tokenizer must define mask_token")
+    segments = masked_sequence_segments(
+        state=state,
+        question=question,
+        options=options,
+        mask_token=mask_token,
+    )
     state_ids = _encode_field(tokenizer, segments[0])
     suffix_ids: list[int] = []
-    for text in segments[1:]:
-        suffix_ids.append(boundaries.sep_id)
-        suffix_ids.extend(_encode_field(tokenizer, text))
+    for offset, text in enumerate(segments[1:], start=1):
+        _append_sep_segment(
+            suffix_ids,
+            tokenizer=tokenizer,
+            boundaries=boundaries,
+            text=text,
+            cls_after_sep=offset >= 3,
+        )
 
     if len(state_ids) + len(suffix_ids) <= max_len:
         return state_ids + suffix_ids
@@ -143,6 +237,115 @@ def build_candidate_sequence(
         if len(combined) <= max_len:
             return combined
     return (state_ids + suffix_ids)[:max_len]
+
+
+def mask_positions(input_ids: list[int], mask_id: int) -> list[int]:
+    return [i for i, tid in enumerate(input_ids) if tid == mask_id]
+
+
+def cls_positions(input_ids: list[int], cls_id: int) -> list[int]:
+    return [i for i, tid in enumerate(input_ids) if tid == cls_id]
+
+
+def _option_score_positions(
+    seq: list[int],
+    *,
+    score_token: str,
+    mask_id: int,
+    cls_id: int,
+    n_options: int,
+) -> list[int]:
+    if score_token == SCORE_TOKEN_MASK:
+        positions = mask_positions(seq, mask_id)
+        label = "[MASK]"
+    elif score_token == SCORE_TOKEN_CLS:
+        positions = cls_positions(seq, cls_id)
+        label = "[CLS]"
+    else:
+        raise ValueError(f"unsupported score_token {score_token!r}")
+    if len(positions) != n_options:
+        raise ValueError(
+            f"expected {n_options} {label} tokens in sequence, found {len(positions)} "
+            "(context too long after truncation?)"
+        )
+    return positions
+
+
+def format_masked_batch(
+    requests: list[dict[str, object]],
+    *,
+    tokenizer: PreTrainedTokenizerBase,
+    max_len: int,
+    score_token: str = SCORE_TOKEN_MASK,
+    device: torch.device | None = None,
+) -> FormattedBatch:
+    if not requests:
+        raise ValueError("requests must be non-empty")
+    score_token = normalize_score_token(score_token)
+    boundaries = resolve_sequence_boundary_ids(tokenizer)
+    mask_id = mask_token_id(tokenizer)
+    cls_id = tokenizer.cls_token_id
+    if score_token == SCORE_TOKEN_CLS and cls_id is None:
+        raise ValueError("model.score_head.token is cls but tokenizer has no cls_token_id")
+
+    sequences: list[list[int]] = []
+    score_indices: list[list[int]] = []
+    k_max = 0
+    for req in requests:
+        state = str(req.get("state", ""))
+        question = str(req.get("question", ""))
+        raw_options = req.get("options")
+        if not isinstance(raw_options, list):
+            raise ValueError("each request must include an options list")
+        options = [str(o) for o in raw_options]
+        seq = build_masked_sequence(
+            tokenizer=tokenizer,
+            boundaries=boundaries,
+            state=state,
+            question=question,
+            options=options,
+            max_len=max_len,
+        )
+        positions = _option_score_positions(
+            seq,
+            score_token=score_token,
+            mask_id=mask_id,
+            cls_id=int(cls_id) if cls_id is not None else -1,
+            n_options=len(options),
+        )
+        sequences.append(seq)
+        score_indices.append(positions)
+        k_max = max(k_max, len(options))
+
+    batch_size = len(sequences)
+    max_seq = max(len(seq) for seq in sequences)
+
+    input_ids = torch.full((batch_size, max_seq), boundaries.pad_id, dtype=torch.long)
+    attention_mask = torch.zeros((batch_size, max_seq), dtype=torch.long)
+    score_index = torch.zeros((batch_size, k_max), dtype=torch.long)
+    option_mask = torch.zeros((batch_size, k_max), dtype=torch.bool)
+
+    for row, seq in enumerate(sequences):
+        attention_mask[row, : len(seq)] = 1
+        input_ids[row, : len(seq)] = torch.tensor(seq, dtype=torch.long)
+        for col, pos in enumerate(score_indices[row]):
+            score_index[row, col] = pos
+            option_mask[row, col] = True
+
+    out = FormattedBatch(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        score_index=score_index,
+        option_mask=option_mask,
+    )
+    if device is not None:
+        return FormattedBatch(
+            input_ids=out.input_ids.to(device),
+            attention_mask=out.attention_mask.to(device),
+            score_index=out.score_index.to(device),
+            option_mask=out.option_mask.to(device),
+        )
+    return out
 
 
 def format_request(
@@ -172,56 +375,10 @@ def format_batch(
     max_len: int,
     device: torch.device | None = None,
 ) -> FormattedBatch:
-    if not requests:
-        raise ValueError("requests must be non-empty")
-    boundaries = resolve_sequence_boundary_ids(tokenizer)
-
-    per_question: list[list[list[int]]] = []
-    k_max = 0
-    for req in requests:
-        state = str(req.get("state", ""))
-        question = str(req.get("question", ""))
-        raw_options = req.get("options")
-        if not isinstance(raw_options, list):
-            raise ValueError("each request must include an options list")
-        options = [str(o) for o in raw_options]
-        sequences: list[list[int]] = []
-        for candidate in options:
-            sequences.append(
-                build_candidate_sequence(
-                    tokenizer=tokenizer,
-                    boundaries=boundaries,
-                    state=state,
-                    question=question,
-                    candidate=candidate,
-                    max_len=max_len,
-                )
-            )
-        per_question.append(sequences)
-        k_max = max(k_max, len(sequences))
-
-    batch_size = len(per_question)
-    max_seq = max(len(seq) for seqs in per_question for seq in seqs)
-
-    input_ids = torch.full((batch_size, k_max, max_seq), boundaries.pad_id, dtype=torch.long)
-    attention_mask = torch.zeros((batch_size, k_max, max_seq), dtype=torch.long)
-    option_mask = torch.zeros((batch_size, k_max), dtype=torch.bool)
-
-    for row, sequences in enumerate(per_question):
-        for col, seq in enumerate(sequences):
-            attention_mask[row, col, : len(seq)] = 1
-            input_ids[row, col, : len(seq)] = torch.tensor(seq, dtype=torch.long)
-            option_mask[row, col] = True
-
-    out = FormattedBatch(
-        input_ids=input_ids,
-        attention_mask=attention_mask,
-        option_mask=option_mask,
+    return format_masked_batch(
+        requests,
+        tokenizer=tokenizer,
+        max_len=max_len,
+        score_token=cfg.model.score_head.token,
+        device=device,
     )
-    if device is not None:
-        return FormattedBatch(
-            input_ids=out.input_ids.to(device),
-            attention_mask=out.attention_mask.to(device),
-            option_mask=out.option_mask.to(device),
-        )
-    return out

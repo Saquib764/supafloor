@@ -23,10 +23,11 @@ def _add_infer_args(parser: argparse.ArgumentParser) -> None:
         help="JSON request file (default: example_request.json)",
     )
     parser.add_argument(
-        "--from-race",
+        "--from-dataset",
         action="store_true",
-        help="Use one raw RACE row instead of a JSON request file",
+        help="Use one row from the configured dataset instead of a JSON request file",
     )
+    parser.add_argument("--from-race", action="store_true", help=argparse.SUPPRESS)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -40,14 +41,14 @@ def main(argv: list[str] | None = None) -> None:
     p_inspect.add_argument(
         "--no-samples",
         action="store_true",
-        help="Skip printing sample RACE training rows",
+        help="Skip printing sample training rows from the configured dataset",
     )
     p_inspect.add_argument("--sample-count", type=int, default=2)
 
     p_verify = sub.add_parser("verify", help="Run hand-written architecture checks")
     p_verify.add_argument("--config", type=Path, default=CONFIG_PATH)
 
-    p_train = sub.add_parser("train", help="Train on RACE (dataset_manager race)")
+    p_train = sub.add_parser("train", help="Train on data.dataset (dataset_manager registry)")
     p_train.add_argument("--config", type=Path, default=CONFIG_PATH)
     p_train.add_argument(
         "--test-mode",
@@ -69,7 +70,7 @@ def main(argv: list[str] | None = None) -> None:
 
     p_dl = sub.add_parser(
         "download-data",
-        help="Download RACE from Hub into repo race-data/ as JSONL splits",
+        help="Download configured dataset from Hub into its local_root JSONL splits",
     )
     p_dl.add_argument("--config", type=Path, default=CONFIG_PATH)
     p_dl.add_argument("--force", action="store_true", help="Re-download even if marker exists")
@@ -82,6 +83,26 @@ def main(argv: list[str] | None = None) -> None:
 
     p_predict = sub.add_parser("predict", help="Alias for infer")
     _add_infer_args(p_predict)
+
+    p_masked = sub.add_parser(
+        "masked-infer",
+        help="Vanilla ModernBERT MLM: random N rows from configured dataset",
+    )
+    p_masked.add_argument("--config", type=Path, default=CONFIG_PATH)
+    p_masked.add_argument(
+        "--samples",
+        type=int,
+        default=20,
+        help="Random row count (default: 20)",
+    )
+    p_masked.add_argument(
+        "--split",
+        type=str,
+        default=None,
+        help="Split name (default: data.val_split)",
+    )
+    p_masked.add_argument("--seed", type=int, default=None, help="Row selection seed")
+    p_masked.add_argument("--quiet", action="store_true", help="Accuracy summary only")
 
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
@@ -120,10 +141,22 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.cmd == "download-data":
-        from data import download_race_local
+        from data import download_dataset_local
 
-        path = download_race_local(cfg, force=args.force)
-        print(f"RACE local data → {path}")
+        path = download_dataset_local(cfg, force=args.force)
+        print(f"{cfg.data.dataset} local data → {path}")
+        return
+
+    if args.cmd == "masked-infer":
+        from masked_infer import run_masked_infer
+
+        run_masked_infer(
+            cfg,
+            samples=max(1, args.samples),
+            split=args.split,
+            seed=args.seed,
+            verbose=not args.quiet,
+        )
         return
 
     from infer import run_infer
@@ -133,7 +166,7 @@ def main(argv: list[str] | None = None) -> None:
         cfg,
         checkpoint=checkpoint,
         request_path=args.request,
-        from_race=args.from_race,
+        from_dataset=bool(getattr(args, "from_dataset", False) or getattr(args, "from_race", False)),
     )
 
 

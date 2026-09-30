@@ -11,7 +11,6 @@ dependencies = [
   "dataset-manager",
   "datasets>=3.0.0",
   "huggingface_hub>=0.26.0",
-  "peft>=0.21.0",
   "pyyaml>=6.0.2",
   "safetensors>=0.4.0",
   "torch>=2.4.0",
@@ -39,6 +38,7 @@ dev-mode-dirs = ["."]
 "formatting.py" = "formatting.py"
 "checkpoint.py" = "checkpoint.py"
 "infer.py" = "infer.py"
+"masked_infer.py" = "masked_infer.py"
 "preview.py" = "preview.py"
 "verify.py" = "verify.py"
 "data.py" = "data.py"
