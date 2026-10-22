@@ -1,0 +1,51 @@
+# Name That LLM — Gemma 3 270M blocks (low lr), learnable probe, multi-layer head.
+
+model_id: google/gemma-3-270m
+hf_cache: ../hf_cache
+max_len: 512
+num_probes: 10  # learnable tokens appended after passage (fixed order)
+# 1-indexed blocks. Gemma 3 270M has 18; 6, 12, and 18 are the full-attention blocks.
+tap_layers: [2, 4, 6, 10, 12, 16, 18]
+
+data:
+  root: data
+  train_csv: train.csv
+  test_fraction: 0.1  # 0 trains on every complete prompt
+  seed: 42
+  num_workers: 0
+
+train:
+  freeze_blocks: true  # true: frozen Gemma blocks
+  freeze_probes: false  # true: probe embeddings fixed (init only)
+  freeze_head: false  # true: pool LayerNorms + linear classifier fixed
+  freeze_embeddings: true
+  # init: weights only, step 0, fresh optimizer (new session_dir).
+  # resume: true continues session_dir/last.pt and training_state.pt when present.
+  checkpoint:
+    init:
+    resume: true
+  session_dir: training_session
+  epochs: 100
+  prompt_count: 10  # prompt_ids per batch; each contributes the same batch_size/prompt_count models
+  batch_size: 180  # models_per_prompt = 54 / prompt_count = 18, one random draw shared by every prompt
+  micro_batch: true  # false: one forward for the whole batch
+  micro_batch_size: 2  # chunk size when micro_batch is true
+  block_lr: 1.0e-6  # transformer blocks (when freeze_blocks is false)
+  probe_lr: 5.0e-4  # learnable probe token embeddings
+  head_lr: 2.0e-4  # pool LayerNorms + linear classifier
+  weight_decay: 0.01
+  head_dropout: 0.1
+  contrastive_weight: 0.3  # supervised contrastive on contrast_head output; 0 disables
+  contrastive_temperature: 0.7  # softmax temperature; same author positive, other authors negative
+  contrast_head:
+    hidden_dim: 24
+    out_dim: 32
+    freeze: false
+    lr: 1.0e-4
+  warmup_ratio: 0.05
+  max_grad_norm: 1.0
+  max_steps: 0  # 0 runs the full schedule
+  save_steps: 50  # also saves when an epoch finishes
+  optimizer:
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
