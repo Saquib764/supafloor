@@ -10,6 +10,7 @@ import argparse
 from pathlib import Path
 
 from config import CONFIG_PATH, load_config
+from device import get_device
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -40,23 +41,24 @@ def main(argv: list[str] | None = None) -> None:
     p_run.add_argument("--checkpoint", type=Path, default=None)
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
+    device = get_device(announce=True)
 
     if args.cmd == "preview":
         from preview import run as run_preview
 
-        run_preview(cfg, build_from_hub=not args.config_only)
+        run_preview(cfg, device=device, build_from_hub=not args.config_only)
         return
 
     if args.cmd == "train":
         from train import run
 
-        run(cfg, max_steps=args.max_steps)
+        run(cfg, device=device, max_steps=args.max_steps)
         return
 
     if args.cmd == "run-test":
         from run_test import run_test
 
-        run_test(cfg, checkpoint=args.checkpoint)
+        run_test(cfg, device=device, checkpoint=args.checkpoint)
 
 
 if __name__ == "__main__":

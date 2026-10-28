@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 
 from config import Config, load_config
-from device import pick_device
+from device import get_device
 from labels import MODEL_NAMES, NUM_CLASSES
 from lora import lora_params_for_block
 from model import ProbeClassifier, build_model
@@ -32,9 +32,14 @@ def _describe_head(cfg: Config) -> list[str]:
     ]
 
 
-def run(cfg: Config | None = None, *, build_from_hub: bool = True) -> ProbeClassifier | None:
+def run(
+    cfg: Config | None = None,
+    *,
+    device: torch.device | None = None,
+    build_from_hub: bool = True,
+) -> ProbeClassifier | None:
     cfg = cfg or load_config()
-    device = pick_device()
+    device = device or get_device(announce=True)
     train = cfg.train
     n_taps = len(cfg.tap_layers)
 

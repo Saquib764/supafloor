@@ -23,7 +23,7 @@ from data import (
     PromptBatchSampler,
     load_train_test_split,
 )
-from device import pick_device
+from device import get_device
 from loss import cross_entropy_loss, supervised_contrastive_loss
 from lora import adapter_param, is_lora_param, lora_params_for_block, lora_trainable_count
 from model import ProbeClassifier, _text_stack, build_model, init_contrast_head
@@ -336,9 +336,14 @@ def _assert_step_grads(
         raise RuntimeError(f"frozen backbone parameter {name} received a gradient")
 
 
-def run(cfg: Config | None = None, *, max_steps: int | None = None) -> None:
+def run(
+    cfg: Config | None = None,
+    *,
+    device: torch.device | None = None,
+    max_steps: int | None = None,
+) -> None:
     cfg = cfg or load_config()
-    device = pick_device()
+    device = device or get_device(announce=True)
     train_ex, test_ex = load_train_test_split(cfg)
     print(f"train: loading {cfg.model_id}", flush=True)
     model = build_model(cfg)

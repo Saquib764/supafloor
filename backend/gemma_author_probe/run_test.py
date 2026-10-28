@@ -16,7 +16,7 @@ from tqdm.auto import tqdm
 
 from config import CONFIG_PATH, Config, load_config
 from data import PassageCollator, PassageExample, load_train_test_split
-from device import pick_device
+from device import get_device
 from labels import (
     MODEL_FAMILIES,
     MODEL_NAMES,
@@ -328,7 +328,12 @@ def evaluate_model(
     model.train(was_training)
 
 
-def run_test(cfg: Config, *, checkpoint: Path | None = None) -> None:
+def run_test(
+    cfg: Config,
+    *,
+    device: torch.device | None = None,
+    checkpoint: Path | None = None,
+) -> None:
     _train_ex, test_ex = load_train_test_split(cfg)
     if not test_ex:
         raise ValueError("test split is empty; set data.test_fraction > 0 to evaluate a holdout")
@@ -339,7 +344,7 @@ def run_test(cfg: Config, *, checkpoint: Path | None = None) -> None:
         flush=True,
     )
     print(f"checkpoint: {path}", flush=True)
-    device = pick_device()
+    device = device or get_device(announce=True)
     model = _load_checkpoint(cfg, path)
     model.to(device)
     evaluate_model(model, test_ex, device, cfg.train.batch_size)
