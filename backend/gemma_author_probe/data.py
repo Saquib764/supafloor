@@ -1,4 +1,4 @@
-"""Load train.csv; split by prompt_id; batch the same models across prompt_count prompts."""
+"""Load train.csv; split by prompt_id; batch the same authors across many prompts."""
 
 from __future__ import annotations
 
@@ -135,38 +135,41 @@ def iter_prompt_batches(
     examples: list[PassageExample],
     *,
     batch_size: int,
-    prompt_count: int,
+    number_of_authors: int,
     seed: int,
     epoch: int = 0,
 ) -> Iterator[list[int]]:
-    """Each batch is prompt_count prompt_ids and one shared random model sample.
+    """Each batch uses one random author set on prompts_per_batch prompt ids.
 
-    models_per_prompt = batch_size / prompt_count. That sample is drawn once
-    and used for every prompt in the batch. Prompt groups are shuffled each
-    epoch. A trailing group smaller than prompt_count is dropped.
+    prompts_per_batch = batch_size / number_of_authors. The author sample is
+    drawn once and reused on every prompt in the batch. Prompt groups are
+    shuffled each epoch. A trailing group smaller than prompts_per_batch is
+    dropped.
     """
-    if prompt_count < 1:
-        raise ValueError("prompt_count must be >= 1")
-    if batch_size < 1 or batch_size % prompt_count != 0:
-        raise ValueError("batch_size must be a positive multiple of prompt_count")
-    models_per_prompt = batch_size // prompt_count
-    if models_per_prompt > MODELS_PER_PROMPT:
+    if number_of_authors < 1:
+        raise ValueError("number_of_authors must be >= 1")
+    if batch_size < 1 or batch_size % number_of_authors != 0:
+        raise ValueError("batch_size must be a positive multiple of number_of_authors")
+    prompts_per_batch = batch_size // number_of_authors
+    if number_of_authors > MODELS_PER_PROMPT:
         raise ValueError(
-            f"batch_size / prompt_count is {models_per_prompt}; "
+            f"number_of_authors is {number_of_authors}; "
             f"each prompt has {MODELS_PER_PROMPT} models"
         )
     by_prompt = build_prompt_label_index(examples)
     prompt_ids = sorted(by_prompt.keys())
-    if len(prompt_ids) < prompt_count:
+    if len(prompt_ids) < prompts_per_batch:
         return
     rng = random.Random(seed + int(epoch) * 1_000_003)
     rng.shuffle(prompt_ids)
-    n_groups = len(prompt_ids) // prompt_count
-    prompt_ids = prompt_ids[: n_groups * prompt_count]
+    n_groups = len(prompt_ids) // prompts_per_batch
+    prompt_ids = prompt_ids[: n_groups * prompts_per_batch]
     all_models = list(range(MODELS_PER_PROMPT))
     for group_i in range(n_groups):
-        group = prompt_ids[group_i * prompt_count : (group_i + 1) * prompt_count]
-        models = rng.sample(all_models, models_per_prompt)
+        group = prompt_ids[
+            group_i * prompts_per_batch : (group_i + 1) * prompts_per_batch
+        ]
+        models = rng.sample(all_models, number_of_authors)
         rows: list[int] = []
         for pid in group:
             for label in models:
@@ -174,34 +177,42 @@ def iter_prompt_batches(
         yield rows
 
 
-def count_prompt_batches(examples: list[PassageExample], prompt_count: int) -> int:
+def count_prompt_batches(
+    examples: list[PassageExample], *, batch_size: int, number_of_authors: int
+) -> int:
+    if batch_size % number_of_authors != 0:
+        raise ValueError("batch_size must be a positive multiple of number_of_authors")
+    prompts_per_batch = batch_size // number_of_authors
     n_prompts = len(build_prompt_label_index(examples))
-    return n_prompts // prompt_count
+    return n_prompts // prompts_per_batch
 
 
 class PromptBatchSampler(torch.utils.data.Sampler[list[int]]):
-    """prompt_count prompt_ids per batch, with the same models on each prompt."""
+    """Same author sample on each of batch_size / number_of_authors prompts."""
 
     def __init__(
         self,
         examples: list[PassageExample],
         *,
         batch_size: int,
-        prompt_count: int,
+        number_of_authors: int,
         seed: int,
     ) -> None:
-        if prompt_count < 1:
-            raise ValueError("prompt_count must be >= 1")
-        if batch_size < 1 or batch_size % prompt_count != 0:
-            raise ValueError("batch_size must be a positive multiple of prompt_count")
+        if number_of_authors < 1:
+            raise ValueError("number_of_authors must be >= 1")
+        if batch_size < 1 or batch_size % number_of_authors != 0:
+            raise ValueError("batch_size must be a positive multiple of number_of_authors")
         self._examples = examples
         self._batch_size = batch_size
-        self._prompt_count = prompt_count
+        self._number_of_authors = number_of_authors
         self._seed = seed
-        self._num_batches = count_prompt_batches(examples, prompt_count)
+        self._prompts_per_batch = batch_size // number_of_authors
+        self._num_batches = count_prompt_batches(
+            examples, batch_size=batch_size, number_of_authors=number_of_authors
+        )
         if self._num_batches < 1:
             raise ValueError(
-                f"need at least {prompt_count} complete prompts; "
+                f"need at least {self._prompts_per_batch} complete prompts; "
                 f"found {len(examples) // MODELS_PER_PROMPT}"
             )
         self._batches: list[list[int]] = []
@@ -215,7 +226,7 @@ class PromptBatchSampler(torch.utils.data.Sampler[list[int]]):
             iter_prompt_batches(
                 self._examples,
                 batch_size=self._batch_size,
-                prompt_count=self._prompt_count,
+                number_of_authors=self._number_of_authors,
                 seed=self._seed,
                 epoch=int(epoch),
             )

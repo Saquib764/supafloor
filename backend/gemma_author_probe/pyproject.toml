@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "gemma-author-probe"
 version = "0.1.22"
-description = "Frozen Gemma 3 270M + learnable probe token, 18-class authorship head"
+description = "Frozen Qwen3-0.6B-Base + learnable probe tokens, 18-class authorship head"
 requires-python = ">=3.11"
 dependencies = [
   "huggingface_hub>=0.26.0",
   "pyyaml>=6.0.2",
-  "sentencepiece>=0.2.0",
+  "peft>=0.14.0",
   "torch>=2.4.0",
   "tqdm>=4.66.0",
   "transformers>=4.55.0",
@@ -32,6 +32,7 @@ dev-mode-dirs = ["."]
 "labels.py" = "labels.py"
 "data.py" = "data.py"
 "model.py" = "model.py"
+"lora.py" = "lora.py"
 "loss.py" = "loss.py"
 "device.py" = "device.py"
 "env.py" = "env.py"

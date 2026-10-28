@@ -1,4 +1,4 @@
-"""Load config.yaml for the frozen-Gemma probe authorship classifier."""
+"""Load config.yaml for the frozen-Qwen3 probe authorship classifier."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from env import hf_hub_token
 from labels import NUM_CLASSES
 
 BATCH_SIZE = 18
+LORA_BLOCK_NAMES = ("lora_1", "lora_2", "lora_3", "lora_4")
 
 
 def project_root() -> Path:
@@ -55,11 +56,43 @@ class OptimizerSettings:
 
 
 @dataclass(frozen=True)
-class ContrastHeadSettings:
+class ProbeSettings:
+    probe_count: int
+    freeze: bool
+    lr: float
+
+
+@dataclass(frozen=True)
+class HeadSettings:
+    freeze: bool
+    lr: float
+    dropout: float
+
+
+@dataclass(frozen=True)
+class ContrastSettings:
+    weight: float
+    temperature: float
     hidden_dim: int
     out_dim: int
     freeze: bool
     lr: float
+
+
+@dataclass(frozen=True)
+class LoraBlockSettings:
+    name: str
+    enabled: bool
+    layers: tuple[int, ...]
+    r: int
+    alpha: int
+    dropout: float
+    lr: float
+
+
+@dataclass(frozen=True)
+class LoraSettings:
+    blocks: tuple[LoraBlockSettings, ...]
 
 
 @dataclass(frozen=True)
@@ -68,26 +101,12 @@ class TrainSettings:
     init_checkpoint: Path | None
     resume: bool
     epochs: int
-    prompt_count: int
     batch_size: int
-    micro_batch: bool
-    micro_batch_size: int
-    freeze_blocks: bool
-    freeze_probes: bool
-    freeze_head: bool
-    block_lr: float
-    probe_lr: float
-    head_lr: float
-    head_dropout: float
-    freeze_embeddings: bool
     warmup_ratio: float
     weight_decay: float
     max_grad_norm: float
     max_steps: int
     save_steps: int
-    contrastive_weight: float
-    contrastive_temperature: float
-    contrast_head: ContrastHeadSettings
     optimizer: OptimizerSettings
 
 
@@ -96,8 +115,12 @@ class Config:
     model_id: str
     hf_cache: Path
     max_len: int
-    num_probes: int
+    number_of_authors: int
     tap_layers: tuple[int, ...]
+    probe: ProbeSettings
+    head: HeadSettings
+    contrast: ContrastSettings
+    lora: LoraSettings
     data: DataSettings
     train: TrainSettings
 
@@ -131,21 +154,95 @@ def hub_from_pretrained_kwargs(cfg: Config) -> dict[str, str]:
     return kw
 
 
-def _load_contrast_head(train_raw: dict[str, Any]) -> ContrastHeadSettings:
-    raw = train_raw.get("contrast_head") or {}
+def _load_probe(raw: dict[str, Any]) -> ProbeSettings:
     if not isinstance(raw, dict):
-        raise ValueError("train.contrast_head must be a mapping")
-    hidden_dim = int(raw.get("hidden_dim", 64))
-    out_dim = int(raw.get("out_dim", 32))
-    if hidden_dim < 1:
-        raise ValueError("train.contrast_head.hidden_dim must be >= 1")
-    if out_dim < 1:
-        raise ValueError("train.contrast_head.out_dim must be >= 1")
+        raise ValueError("probe must be a mapping")
+    probe_count = int(raw.get("probe_count", 10))
+    if probe_count < 1:
+        raise ValueError("probe.probe_count must be >= 1")
     freeze = bool(raw.get("freeze", False))
     lr = float(raw.get("lr", 1.0e-4))
     if not freeze and lr <= 0.0:
-        raise ValueError("train.contrast_head.lr must be > 0 when freeze is false")
-    return ContrastHeadSettings(hidden_dim=hidden_dim, out_dim=out_dim, freeze=freeze, lr=lr)
+        raise ValueError("probe.lr must be > 0 when probe.freeze is false")
+    return ProbeSettings(probe_count=probe_count, freeze=freeze, lr=lr)
+
+
+def _load_head(raw: dict[str, Any]) -> HeadSettings:
+    if not isinstance(raw, dict):
+        raise ValueError("head must be a mapping")
+    freeze = bool(raw.get("freeze", False))
+    lr = float(raw.get("lr", 1.0e-4))
+    if not freeze and lr <= 0.0:
+        raise ValueError("head.lr must be > 0 when head.freeze is false")
+    dropout = float(raw.get("dropout", 0.1))
+    if not 0.0 <= dropout < 1.0:
+        raise ValueError("head.dropout must be in [0, 1)")
+    return HeadSettings(freeze=freeze, lr=lr, dropout=dropout)
+
+
+def _load_contrast(raw: dict[str, Any]) -> ContrastSettings:
+    if not isinstance(raw, dict):
+        raise ValueError("contrast must be a mapping")
+    weight = float(raw.get("weight", 0.0))
+    if weight < 0.0:
+        raise ValueError("contrast.weight must be >= 0")
+    temperature = float(raw.get("temperature", 0.1))
+    hidden_dim = int(raw.get("hidden_dim", 64))
+    out_dim = int(raw.get("out_dim", 32))
+    if hidden_dim < 1:
+        raise ValueError("contrast.hidden_dim must be >= 1")
+    if out_dim < 1:
+        raise ValueError("contrast.out_dim must be >= 1")
+    freeze = bool(raw.get("freeze", False))
+    lr = float(raw.get("lr", 1.0e-4))
+    if not freeze and lr <= 0.0:
+        raise ValueError("contrast.lr must be > 0 when contrast.freeze is false")
+    if weight > 0.0 and temperature <= 0.0:
+        raise ValueError("contrast.temperature must be > 0 when contrast.weight > 0")
+    return ContrastSettings(
+        weight=weight,
+        temperature=temperature,
+        hidden_dim=hidden_dim,
+        out_dim=out_dim,
+        freeze=freeze,
+        lr=lr,
+    )
+
+
+def _load_lora_block(name: str, raw: dict[str, Any]) -> LoraBlockSettings:
+    if not isinstance(raw, dict):
+        raise ValueError(f"lora.{name} must be a mapping")
+    enabled = bool(raw.get("enabled", False))
+    layers_raw = raw.get("layers") or []
+    if not isinstance(layers_raw, list):
+        raise ValueError(f"lora.{name}.layers must be a list")
+    layers = tuple(int(x) for x in layers_raw)
+    r = int(raw.get("r", 8))
+    alpha = int(raw.get("alpha", 16))
+    dropout = float(raw.get("dropout", 0.05))
+    lr = float(raw.get("lr", 1.0e-6))
+    if enabled and not layers:
+        raise ValueError(f"lora.{name} is enabled but layers is empty")
+    if enabled and lr <= 0.0:
+        raise ValueError(f"lora.{name}.lr must be > 0 when enabled")
+    if dropout < 0.0 or dropout >= 1.0:
+        raise ValueError(f"lora.{name}.dropout must be in [0, 1)")
+    return LoraBlockSettings(
+        name=name,
+        enabled=enabled,
+        layers=layers,
+        r=r,
+        alpha=alpha,
+        dropout=dropout,
+        lr=lr,
+    )
+
+
+def _load_lora(raw: dict[str, Any]) -> LoraSettings:
+    if not isinstance(raw, dict):
+        raise ValueError("lora must be a mapping")
+    blocks = [_load_lora_block(name, raw.get(name) or {}) for name in LORA_BLOCK_NAMES]
+    return LoraSettings(blocks=tuple(blocks))
 
 
 def _load_optimizer(train_raw: dict[str, Any]) -> OptimizerSettings:
@@ -187,11 +284,14 @@ def load_config(path: Path | None = None) -> Config:
     max_len = int(raw.get("max_len", 512))
     if max_len < 2:
         raise ValueError("max_len must be >= 2")
-    num_probes = int(raw.get("num_probes", 10))
-    if num_probes < 1:
-        raise ValueError("num_probes must be >= 1")
-    if max_len <= num_probes:
-        raise ValueError("max_len must be greater than num_probes")
+
+    probe = _load_probe(raw.get("probe") or {})
+    if max_len <= probe.probe_count:
+        raise ValueError("max_len must be greater than probe.probe_count")
+
+    head = _load_head(raw.get("head") or {})
+    contrast = _load_contrast(raw.get("contrast") or {})
+    lora = _load_lora(raw.get("lora") or {})
 
     data_raw = raw.get("data") or {}
     train_raw = raw.get("train") or {}
@@ -205,43 +305,28 @@ def load_config(path: Path | None = None) -> Config:
     if not 0.0 <= test_fraction < 1.0:
         raise ValueError("data.test_fraction must be in [0, 1)")
 
+    number_of_authors = int(raw.get("number_of_authors", 0))
+    if number_of_authors < 1:
+        raise ValueError("number_of_authors must be >= 1")
+    if number_of_authors > NUM_CLASSES:
+        raise ValueError(
+            f"number_of_authors is {number_of_authors}; each prompt has {NUM_CLASSES} models"
+        )
+
     batch_size = int(train_raw.get("batch_size", BATCH_SIZE))
     if batch_size < 1:
         raise ValueError("train.batch_size must be >= 1")
-    prompt_count = int(train_raw.get("prompt_count", 2))
-    if prompt_count < 1:
-        raise ValueError("train.prompt_count must be >= 1")
-    if batch_size % prompt_count != 0:
-        raise ValueError("train.batch_size must be divisible by train.prompt_count")
-    models_per_prompt = batch_size // prompt_count
-    if models_per_prompt > NUM_CLASSES:
-        raise ValueError(
-            f"train.batch_size / train.prompt_count is {models_per_prompt}; "
-            f"each prompt has {NUM_CLASSES} models"
-        )
-    micro_batch = bool(train_raw.get("micro_batch", True))
-    micro_batch_size = int(train_raw.get("micro_batch_size", 2))
-    if micro_batch and not 1 <= micro_batch_size <= batch_size:
-        raise ValueError(
-            f"train.micro_batch_size must be in [1, {batch_size}]"
-        )
-    if not micro_batch:
-        micro_batch_size = batch_size
-    freeze_blocks = bool(train_raw.get("freeze_blocks", False))
-    block_lr = float(train_raw.get("block_lr", 2.0e-6))
-    probe_lr = float(train_raw.get("probe_lr", 1.0e-4))
-    head_lr = float(train_raw.get("head_lr", 1.0e-4))
-    freeze_probes = bool(train_raw.get("freeze_probes", False))
-    freeze_head = bool(train_raw.get("freeze_head", False))
-    if not freeze_head and head_lr <= 0.0:
-        raise ValueError("train.head_lr must be > 0 when freeze_head is false")
-    if not freeze_probes and probe_lr <= 0.0:
-        raise ValueError("train.probe_lr must be > 0 when freeze_probes is false")
-    if not freeze_blocks and block_lr <= 0.0:
-        raise ValueError("train.block_lr must be > 0 when freeze_blocks is false")
-    head_dropout = float(train_raw.get("head_dropout", 0.1))
-    if not 0.0 <= head_dropout < 1.0:
-        raise ValueError("train.head_dropout must be in [0, 1)")
+    if batch_size % number_of_authors != 0:
+        raise ValueError("train.batch_size must be divisible by number_of_authors")
+    prompts_per_batch = batch_size // number_of_authors
+    if contrast.weight > 0.0:
+        if number_of_authors < 2:
+            raise ValueError("contrast.weight > 0 requires number_of_authors >= 2")
+        if prompts_per_batch < 2:
+            raise ValueError(
+                "contrast.weight > 0 requires train.batch_size / number_of_authors >= 2"
+            )
+
     epochs = int(train_raw.get("epochs", 3))
     if epochs < 1:
         raise ValueError("train.epochs must be >= 1")
@@ -251,35 +336,24 @@ def load_config(path: Path | None = None) -> Config:
     save_steps = int(train_raw.get("save_steps", 100))
     if save_steps < 1:
         raise ValueError("train.save_steps must be >= 1")
-    contrastive_weight = float(train_raw.get("contrastive_weight", 0.0))
-    if contrastive_weight < 0.0:
-        raise ValueError("train.contrastive_weight must be >= 0")
-    contrastive_temperature = float(train_raw.get("contrastive_temperature", 0.1))
-    contrast_head = _load_contrast_head(train_raw)
-    if contrastive_weight > 0.0 and contrastive_temperature <= 0.0:
-        raise ValueError("train.contrastive_temperature must be > 0")
-    if contrastive_weight > 0.0:
-        if prompt_count < 2:
-            raise ValueError(
-                "train.contrastive_weight > 0 requires train.prompt_count >= 2"
-            )
-        if models_per_prompt < 2:
-            raise ValueError(
-                "train.contrastive_weight > 0 requires "
-                "train.batch_size / train.prompt_count >= 2"
-            )
+
     checkpoint_raw = train_raw.get("checkpoint") or {}
     if not isinstance(checkpoint_raw, dict):
         raise ValueError("train.checkpoint must be a mapping")
     init_raw = checkpoint_raw.get("init")
     init_checkpoint = _resolve(Path(str(init_raw)), base) if init_raw else None
     resume = bool(checkpoint_raw.get("resume", False))
+
     return Config(
         model_id=model_id,
         hf_cache=apply_hf_cache(_resolve(Path(raw.get("hf_cache") or "../hf_cache"), base)),
         max_len=max_len,
-        num_probes=num_probes,
+        number_of_authors=number_of_authors,
         tap_layers=_load_tap_layers(raw),
+        probe=probe,
+        head=head,
+        contrast=contrast,
+        lora=lora,
         data=DataSettings(
             root=_resolve(Path(str(root_raw)), base),
             train_csv=str(data_raw.get("train_csv") or "train.csv"),
@@ -292,26 +366,12 @@ def load_config(path: Path | None = None) -> Config:
             init_checkpoint=init_checkpoint,
             resume=resume,
             epochs=epochs,
-            prompt_count=prompt_count,
             batch_size=batch_size,
-            micro_batch=micro_batch,
-            micro_batch_size=micro_batch_size,
-            freeze_blocks=freeze_blocks,
-            freeze_probes=freeze_probes,
-            freeze_head=freeze_head,
-            block_lr=block_lr,
-            probe_lr=probe_lr,
-            head_lr=head_lr,
-            head_dropout=head_dropout,
-            freeze_embeddings=bool(train_raw.get("freeze_embeddings", True)),
             warmup_ratio=float(train_raw.get("warmup_ratio", 0.05)),
             weight_decay=float(train_raw.get("weight_decay", 0.01)),
             max_grad_norm=float(train_raw.get("max_grad_norm", 1.0)),
             max_steps=max_steps,
             save_steps=save_steps,
-            contrastive_weight=contrastive_weight,
-            contrastive_temperature=contrastive_temperature,
-            contrast_head=contrast_head,
             optimizer=_load_optimizer(train_raw),
         ),
     )

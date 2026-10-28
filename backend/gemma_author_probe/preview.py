@@ -1,4 +1,4 @@
-"""Print model summary: frozen Gemma, probe token, multi-layer head."""
+"""Print model summary: frozen Qwen3, probe tokens, multi-layer head."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import torch
 from config import Config, load_config
 from device import pick_device
 from labels import MODEL_NAMES, NUM_CLASSES
+from lora import lora_params_for_block
 from model import ProbeClassifier, build_model
 
 
@@ -20,14 +21,14 @@ def _describe_head(cfg: Config) -> list[str]:
     return [
         "type:           LayerNorm per block, concat, dropout, Linear",
         f"tap_layers:     {list(cfg.tap_layers)}",
-        f"dropout:        {cfg.train.head_dropout:g}",
+        f"dropout:        {cfg.head.dropout:g}",
         f"num_classes:    {NUM_CLASSES}",
-        f"probe tokens:   {cfg.num_probes} (fixed order, concat hiddens per tap)",
+        f"probe tokens:   {cfg.probe.probe_count} (fixed order, concat hiddens per tap)",
         "forward:        all probe hiddens at each tap → LN → concat taps → dropout → Linear",
         "probe init:     each probe = mean token embed of one structure question (low→semantic)",
-        "loss:           cross entropy (+ optional contrastive on contrast_head)",
-        f"contrast_head:  Linear→ReLU→Linear→L2 "
-        f"({cfg.train.contrast_head.hidden_dim}→{cfg.train.contrast_head.out_dim})",
+        "loss:           cross entropy (+ optional contrastive on contrast head)",
+        f"contrast head:  Linear→ReLU→Linear→L2 "
+        f"({cfg.contrast.hidden_dim}→{cfg.contrast.out_dim})",
     ]
 
 
@@ -37,16 +38,19 @@ def run(cfg: Config | None = None, *, build_from_hub: bool = True) -> ProbeClass
     train = cfg.train
     n_taps = len(cfg.tap_layers)
 
-    print("\n=== Name That LLM (Gemma blocks + probe + 18-class head) ===\n")
+    print("\n=== Name That LLM (Qwen3 blocks + probe + 18-class head) ===\n")
     print(f"model_id:       {cfg.model_id}")
     print(
         f"max_len:        {cfg.max_len}  "
-        f"(tokenize to {cfg.max_len - cfg.num_probes}, append {cfg.num_probes} probes)"
+        f"(tokenize to {cfg.max_len - cfg.probe.probe_count}, append {cfg.probe.probe_count} probes)"
     )
-    print(f"num_probes:     {cfg.num_probes}")
+    print(f"probe.probe_count: {cfg.probe.probe_count}")
+    prompts_per_batch = train.batch_size // cfg.number_of_authors
+    print(f"number_of_authors: {cfg.number_of_authors}  (rows per prompt in batch)")
+    print(f"prompts per batch: {prompts_per_batch}  (batch_size / number_of_authors)")
     print(f"tap_layers:     {list(cfg.tap_layers)}  (1-indexed blocks)")
     print(
-        f"input:          passage + {cfg.num_probes} probes; "
+        f"input:          passage + {cfg.probe.probe_count} probes; "
         f"concat probe hiddens at {n_taps} taps"
     )
     print(f"output:         logits [{NUM_CLASSES}]")
@@ -60,32 +64,29 @@ def run(cfg: Config | None = None, *, build_from_hub: bool = True) -> ProbeClass
         print(f"  {i:2d}  {name}")
 
     print("\n=== Training (config) ===\n")
-    print(f"freeze_blocks:    {train.freeze_blocks}")
-    print(f"freeze_probes:    {train.freeze_probes}")
-    print(f"freeze_head:      {train.freeze_head}")
-    print(f"freeze_contrast:  {train.contrast_head.freeze}")
-    print(f"embeddings:       {'frozen' if train.freeze_embeddings else 'trainable'}")
-    if not train.freeze_blocks:
-        print(f"block lr:         {train.block_lr:g}")
-    else:
-        print("block lr:         n/a (blocks frozen)")
-    if not train.freeze_probes:
-        print(f"probe lr:         {train.probe_lr:g}")
-    else:
-        print("probe lr:         n/a (probes frozen)")
-    if not train.freeze_head:
-        print(f"head lr:          {train.head_lr:g}  (pool norms + linear)")
-    else:
-        print("head lr:          n/a (head frozen)")
-    if not train.contrast_head.freeze:
-        print(f"contrast_head lr: {train.contrast_head.lr:g}")
-    else:
-        print("contrast_head lr: n/a (contrast head frozen)")
+    print("embeddings:       frozen")
+    for block in cfg.lora.blocks:
+        if block.enabled:
+            print(
+                f"{block.name}:         layers={list(block.layers)}  "
+                f"r={block.r} lr={block.lr:g}"
+            )
+        else:
+            print(f"{block.name}:         off")
+    print(f"probe freeze:     {cfg.probe.freeze}")
+    if not cfg.probe.freeze:
+        print(f"probe lr:         {cfg.probe.lr:g}")
+    print(f"head freeze:      {cfg.head.freeze}")
+    if not cfg.head.freeze:
+        print(f"head lr:          {cfg.head.lr:g}  (pool norms + linear)")
+    print(f"contrast freeze:  {cfg.contrast.freeze}")
+    if not cfg.contrast.freeze:
+        print(f"contrast lr:      {cfg.contrast.lr:g}")
+    print(f"contrast weight:  {cfg.contrast.weight:g}")
     print(
         f"loss:             cross entropy "
-        f"(batch={train.batch_size}: {train.prompt_count} prompts × "
-        f"{train.batch_size // train.prompt_count} models, "
-        f"micro={'off' if not train.micro_batch else train.micro_batch_size})"
+        f"(batch={train.batch_size}: {prompts_per_batch} prompts × "
+        f"{cfg.number_of_authors} authors)"
     )
 
     if not build_from_hub:
@@ -112,6 +113,11 @@ def run(cfg: Config | None = None, *, build_from_hub: bool = True) -> ProbeClass
     print(f"total trainable:      {all_train:>12,}")
     tap_in = model.num_probes * model.hidden_size
     print(f"\nhead in: {tap_in} × {n_taps} taps → {model.classifier.in_features}")
+    for block in cfg.lora.blocks:
+        if not block.enabled:
+            continue
+        n = sum(int(p.numel()) for p in lora_params_for_block(model.backbone, block))
+        print(f"{block.name} params:       {n:>12,}")
 
     model.to(device)
     model.eval()

@@ -14,7 +14,7 @@ from config import CONFIG_PATH, load_config
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Frozen Gemma 3 270M + probe token authorship classifier (18 classes)"
+        description="Frozen Qwen3 + probe token authorship classifier (18 classes)"
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> None:
         help="Skip hub download; print config/head summary only",
     )
 
-    p_train = sub.add_parser("train", help="Train probe, head, and Gemma blocks on train.csv")
+    p_train = sub.add_parser("train", help="Train probe, head, and Qwen3 blocks on train.csv")
     p_train.add_argument("--config", type=Path, default=CONFIG_PATH)
     p_train.add_argument(
         "--max-steps",

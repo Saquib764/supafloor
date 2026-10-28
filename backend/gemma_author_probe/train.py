@@ -1,4 +1,4 @@
-"""Train probe, head, and Gemma blocks (low lr); token embeddings optional."""
+"""Train probe, head, contrast head, and optional tiered Qwen3 LoRA."""
 
 from __future__ import annotations
 
@@ -25,7 +25,8 @@ from data import (
 )
 from device import pick_device
 from loss import cross_entropy_loss, supervised_contrastive_loss
-from model import ProbeClassifier, build_model, init_contrast_head
+from lora import adapter_param, is_lora_param, lora_params_for_block, lora_trainable_count
+from model import ProbeClassifier, _text_stack, build_model, init_contrast_head
 
 CHECKPOINT_NAME = "last.pt"
 CHECKPOINT_BACKUP_NAME = "last_good.pt"
@@ -50,9 +51,9 @@ def _checkpoint_weights(model: ProbeClassifier) -> dict[str, torch.Tensor]:
 
 
 def _optional_missing_key(name: str, cfg: Config) -> bool:
-    if name.startswith("backbone.") and cfg.train.freeze_blocks:
-        return True
-    return False
+    if not name.startswith("backbone."):
+        return False
+    return not is_lora_param(name)
 
 
 def _compatible_checkpoint_weights(
@@ -193,7 +194,7 @@ def _save_and_test(
         tqdm.write(message)
     else:
         print(message, flush=True)
-    evaluate_model(model, test_ex, device, cfg.train.micro_batch_size, step=step)
+    evaluate_model(model, test_ex, device, cfg.train.batch_size, step=step)
     if progress is not None:
         progress.refresh()
 
@@ -230,43 +231,61 @@ def _lr_lambda(*, warmup_steps: int, total_steps: int):
     return fn
 
 
-def _optimizer_groups(model: ProbeClassifier, cfg: Config) -> list[dict[str, object]]:
+def _lora_block_optimizer_groups(
+    model: ProbeClassifier,
+    cfg: Config,
+    block_name: str,
+    *,
+    lr: float,
+    weight_decay: float,
+) -> list[dict[str, object]]:
     decay: list[torch.nn.Parameter] = []
     no_decay: list[torch.nn.Parameter] = []
     for name, param in model.backbone.named_parameters():
-        if not param.requires_grad:
+        if not param.requires_grad or not adapter_param(
+            name, block_name, lora=cfg.lora
+        ):
             continue
         if param.ndim == 1 or name.endswith(".bias"):
             no_decay.append(param)
         else:
             decay.append(param)
+    groups: list[dict[str, object]] = []
+    if decay:
+        groups.append({"params": decay, "lr": lr, "weight_decay": weight_decay})
+    if no_decay:
+        groups.append({"params": no_decay, "lr": lr, "weight_decay": 0.0})
+    return groups
+
+
+def _optimizer_groups(model: ProbeClassifier, cfg: Config) -> list[dict[str, object]]:
+    groups: list[dict[str, object]] = []
+    for block in cfg.lora.blocks:
+        if not block.enabled:
+            continue
+        groups.extend(
+            _lora_block_optimizer_groups(
+                model,
+                cfg,
+                block.name,
+                lr=block.lr,
+                weight_decay=cfg.train.weight_decay,
+            )
+        )
     head: list[torch.nn.Parameter] = []
     head.extend(param for param in model.pool_norms.parameters() if param.requires_grad)
     head.extend(param for param in model.classifier.parameters() if param.requires_grad)
-    groups: list[dict[str, object]] = []
-    if decay:
-        groups.append(
-            {"params": decay, "lr": cfg.train.block_lr, "weight_decay": cfg.train.weight_decay}
-        )
-    if no_decay:
-        groups.append({"params": no_decay, "lr": cfg.train.block_lr, "weight_decay": 0.0})
     if model.probes.requires_grad:
-        groups.append({"params": [model.probes], "lr": cfg.train.probe_lr, "weight_decay": 0.0})
+        groups.append({"params": [model.probes], "lr": cfg.probe.lr, "weight_decay": 0.0})
     if head:
-        groups.append({"params": head, "lr": cfg.train.head_lr, "weight_decay": 0.0})
-    contrast = [
-        param for param in model.contrast_head.parameters() if param.requires_grad
-    ]
+        groups.append({"params": head, "lr": cfg.head.lr, "weight_decay": 0.0})
+    contrast = [param for param in model.contrast_head.parameters() if param.requires_grad]
     if contrast:
-        groups.append(
-            {
-                "params": contrast,
-                "lr": cfg.train.contrast_head.lr,
-                "weight_decay": 0.0,
-            }
-        )
+        groups.append({"params": contrast, "lr": cfg.contrast.lr, "weight_decay": 0.0})
     if not groups:
-        raise RuntimeError("nothing to train; set at least one freeze_* flag to false")
+        raise RuntimeError(
+            "nothing to train; enable a lora block or unfreeze probe, head, or contrast"
+        )
     return groups
 
 
@@ -276,20 +295,16 @@ def _count(params) -> int:
 
 def _assert_step_grads(
     model: ProbeClassifier,
+    cfg: Config,
     *,
-    freeze_blocks: bool,
-    freeze_probes: bool,
-    freeze_head: bool,
-    freeze_embeddings: bool,
-    freeze_contrast_head: bool,
     use_contrastive: bool,
 ) -> None:
-    if freeze_probes:
+    if cfg.probe.freeze:
         if model.probes.grad is not None:
             raise RuntimeError("probes are frozen but received a gradient")
     elif model.probes.grad is None:
         raise RuntimeError("probes did not receive a gradient")
-    if freeze_head:
+    if cfg.head.freeze:
         if model.classifier.weight.grad is not None:
             raise RuntimeError("head is frozen but classifier received a gradient")
         first_norm = next(model.pool_norms.parameters())
@@ -298,23 +313,27 @@ def _assert_step_grads(
     elif model.classifier.weight.grad is None:
         raise RuntimeError("classifier did not receive a gradient")
     first_contrast = next(model.contrast_head.parameters())
-    if use_contrastive and not freeze_contrast_head:
+    if use_contrastive and not cfg.contrast.freeze:
         if first_contrast.grad is None:
             raise RuntimeError("contrast_head did not receive a gradient")
-    elif freeze_contrast_head and first_contrast.grad is not None:
+    elif cfg.contrast.freeze and first_contrast.grad is not None:
         raise RuntimeError("contrast_head is frozen but received a gradient")
-    first = next(model.backbone.layers[0].parameters())
-    last = next(model.backbone.layers[-1].parameters())
-    if not freeze_blocks:
-        if first.grad is None or last.grad is None:
-            raise RuntimeError("transformer blocks did not receive gradients")
-    elif first.grad is not None or last.grad is not None:
-        raise RuntimeError("transformer blocks are frozen but received a gradient")
-    embed_grad = model.backbone.embed_tokens.weight.grad
-    if freeze_embeddings and embed_grad is not None:
+    embed_grad = _text_stack(model.backbone).embed_tokens.weight.grad
+    if embed_grad is not None:
         raise RuntimeError("token embeddings are frozen but received a gradient")
-    if not freeze_blocks and not freeze_embeddings and embed_grad is None:
-        raise RuntimeError("token embeddings are trainable but received no gradient")
+    for block in cfg.lora.blocks:
+        params = lora_params_for_block(model.backbone, block)
+        if block.enabled:
+            if not params:
+                raise RuntimeError(f"{block.name} is enabled but has no LoRA parameters")
+            if not any(p.grad is not None for p in params):
+                raise RuntimeError(f"{block.name} did not receive a gradient")
+        elif any(p.grad is not None for p in params):
+            raise RuntimeError(f"{block.name} is disabled but received a gradient")
+    for name, param in model.backbone.named_parameters():
+        if param.grad is None or is_lora_param(name):
+            continue
+        raise RuntimeError(f"frozen backbone parameter {name} received a gradient")
 
 
 def run(cfg: Config | None = None, *, max_steps: int | None = None) -> None:
@@ -354,27 +373,36 @@ def run(cfg: Config | None = None, *, max_steps: int | None = None) -> None:
         print("train: fresh contrast_head init", flush=True)
     model.to(device)
 
-    block_params = _count(model.backbone.layers.parameters())
-    embed_params = _count(model.backbone.embed_tokens.parameters())
+    lora_params = lora_trainable_count(model.backbone)
     probe_params = int(model.probes.numel())
     head_params = _count(model.pool_norms.parameters()) + _count(model.classifier.parameters())
     contrast_params = _count(model.contrast_head.parameters())
-    blocks_state = "frozen" if cfg.train.freeze_blocks else f"trainable={block_params}"
-    embed_state = "trainable" if embed_params else "frozen"
-    probes_state = "frozen" if cfg.train.freeze_probes else f"trainable={probe_params}"
-    head_state = "frozen" if cfg.train.freeze_head else f"trainable={head_params}"
-    ch = cfg.train.contrast_head
+    probes_state = "frozen" if cfg.probe.freeze else f"trainable={probe_params}"
+    head_state = "frozen" if cfg.head.freeze else f"trainable={head_params}"
+    ch = cfg.contrast
     contrast_state = (
         "frozen"
         if ch.freeze
         else f"trainable={contrast_params} ({ch.hidden_dim}→{ch.out_dim})"
     )
+    lora_bits = []
+    for block in cfg.lora.blocks:
+        if block.enabled:
+            n = sum(
+                int(p.numel())
+                for p in lora_params_for_block(model.backbone, block)
+                if p.requires_grad
+            )
+            lora_bits.append(f"{block.name}=on({n}, lr={block.lr:g})")
+        else:
+            lora_bits.append(f"{block.name}=off")
     print(
         f"train: taps={list(cfg.tap_layers)} hidden={model.hidden_size} "
-        f"blocks={blocks_state} embeddings={embed_state} "
-        f"probes={probes_state} head={head_state} contrast_head={contrast_state}",
+        f"lora_trainable={lora_params} embeddings=frozen "
+        f"probes={probes_state} head={head_state} contrast={contrast_state}",
         flush=True,
     )
+    print(f"train: lora {' | '.join(lora_bits)}", flush=True)
 
     collator = PassageCollator(
         model.tokenizer, max_len=model.max_len, probe_slots=model.num_probes
@@ -382,7 +410,7 @@ def run(cfg: Config | None = None, *, max_steps: int | None = None) -> None:
     batch_sampler = PromptBatchSampler(
         train_ex,
         batch_size=cfg.train.batch_size,
-        prompt_count=cfg.train.prompt_count,
+        number_of_authors=cfg.number_of_authors,
         seed=cfg.data.seed,
     )
     train_loader = DataLoader(
@@ -427,8 +455,7 @@ def run(cfg: Config | None = None, *, max_steps: int | None = None) -> None:
 
     model.train()
     saved_step = step if pending_state is not None else -1
-    micro = cfg.train.micro_batch_size
-    contrastive_weight = cfg.train.contrastive_weight
+    contrastive_weight = cfg.contrast.weight
     checked_grads = False
     progress = tqdm(total=total_steps, initial=step, desc="train", unit="step")
     progress.refresh()
@@ -447,50 +474,31 @@ def run(cfg: Config | None = None, *, max_steps: int | None = None) -> None:
             attention_mask = batch.attention_mask.to(device)
             labels = batch.labels.to(device)
             n = int(input_ids.shape[0])
+            if n != cfg.train.batch_size:
+                raise RuntimeError(
+                    f"batch size {n} != configured batch_size {cfg.train.batch_size}"
+                )
             optimizer.zero_grad(set_to_none=True)
-            ce_sum: torch.Tensor | None = None
-            contrast_chunks: list[torch.Tensor] = []
-            correct = 0
             use_contrastive = contrastive_weight > 0.0
-            for start in range(0, n, micro):
-                end = min(start + micro, n)
-                chunk_labels = labels[start:end]
-                chunk_ids = input_ids[start:end]
-                chunk_mask = attention_mask[start:end]
-                if use_contrastive:
-                    logits, contrast = model.forward_logits_and_contrastive(
-                        chunk_ids, chunk_mask
-                    )
-                    contrast_chunks.append(contrast)
-                else:
-                    logits = model(chunk_ids, chunk_mask)
-                chunk_ce = cross_entropy_loss(logits, chunk_labels)
-                weight = (end - start) / n
-                weighted = chunk_ce * weight
-                ce_sum = weighted if ce_sum is None else ce_sum + weighted
-                correct += int((logits.argmax(dim=-1) == chunk_labels).sum().item())
-            assert ce_sum is not None
             p_mean = c_mean = ctr_loss = None
             if use_contrastive:
-                if n != cfg.train.batch_size:
-                    raise RuntimeError(
-                        f"contrastive batch size {n} != configured batch_size "
-                        f"{cfg.train.batch_size}"
-                    )
-                embeddings = torch.cat(contrast_chunks, dim=0)
+                logits, contrast = model.forward_logits_and_contrastive(
+                    input_ids, attention_mask
+                )
+                ce_sum = cross_entropy_loss(logits, labels)
                 ctr_loss, p_mean, c_mean = supervised_contrastive_loss(
-                    embeddings,
+                    contrast,
                     labels,
-                    temperature=cfg.train.contrastive_temperature,
+                    temperature=cfg.contrast.temperature,
                 )
                 total_loss = ce_sum + contrastive_weight * ctr_loss
             else:
+                logits = model(input_ids, attention_mask)
+                ce_sum = cross_entropy_loss(logits, labels)
                 total_loss = ce_sum
             total_loss.backward()
-            loss_sum = float(ce_sum.detach()) * n
-            if ctr_loss is not None:
-                loss_sum += float(ctr_loss.detach()) * contrastive_weight * n
-            running_loss = loss_sum / n
+            correct = int((logits.argmax(dim=-1) == labels).sum().item())
+            running_loss = float(total_loss.detach())
             running_acc = correct / n
             if use_contrastive:
                 postfix = (
@@ -502,15 +510,7 @@ def run(cfg: Config | None = None, *, max_steps: int | None = None) -> None:
                 postfix = f"loss={running_loss:.4f} acc={running_acc:.3f} epoch={epoch + 1}"
             progress.set_postfix_str(postfix)
             if not checked_grads:
-                _assert_step_grads(
-                    model,
-                    freeze_blocks=cfg.train.freeze_blocks,
-                    freeze_probes=cfg.train.freeze_probes,
-                    freeze_head=cfg.train.freeze_head,
-                    freeze_embeddings=cfg.train.freeze_embeddings,
-                    freeze_contrast_head=cfg.train.contrast_head.freeze,
-                    use_contrastive=use_contrastive,
-                )
+                _assert_step_grads(model, cfg, use_contrastive=use_contrastive)
                 checked_grads = True
             torch.nn.utils.clip_grad_norm_(
                 (param for param in model.parameters() if param.requires_grad),

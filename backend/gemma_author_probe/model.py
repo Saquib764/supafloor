@@ -1,4 +1,4 @@
-"""Gemma blocks + learnable probe tokens + multi-layer linear head."""
+"""Qwen3 blocks + learnable probe tokens + multi-layer linear head."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTo
 from config import Config, hub_from_pretrained_kwargs
 from data import prepare_tokenizer
 from labels import NUM_CLASSES
+from lora import apply_loras, lora_params_for_block
 
 # One question per probe slot, low-level surface cues → high-level authorial semantics.
 _PROBE_STRUCTURE_QUESTIONS: tuple[str, ...] = (
@@ -26,7 +27,14 @@ _PROBE_STRUCTURE_QUESTIONS: tuple[str, ...] = (
 )
 
 
+def _unwrap_backbone(model: PreTrainedModel) -> PreTrainedModel:
+    if hasattr(model, "get_base_model"):
+        return model.get_base_model()
+    return model
+
+
 def _text_stack(model: PreTrainedModel) -> PreTrainedModel:
+    model = _unwrap_backbone(model)
     if hasattr(model, "layers") and hasattr(model, "embed_tokens"):
         return model
     inner = getattr(model, "model", None)
@@ -35,7 +43,11 @@ def _text_stack(model: PreTrainedModel) -> PreTrainedModel:
     language = getattr(model, "language_model", None)
     if language is not None:
         return _text_stack(language)
-    raise TypeError(f"unsupported Gemma module {type(model).__name__}")
+    raise TypeError(f"unsupported backbone module {type(model).__name__}")
+
+
+def _backbone_layers(backbone: PreTrainedModel) -> nn.ModuleList:
+    return _text_stack(backbone).layers
 
 
 def _mean_question_embedding(
@@ -96,13 +108,14 @@ class ProbeClassifier(nn.Module):
         contrast_out: int,
     ) -> None:
         super().__init__()
-        n_layers = int(backbone.config.num_hidden_layers)
-        hidden = int(backbone.config.hidden_size)
+        stack = _text_stack(backbone)
+        n_layers = int(stack.config.num_hidden_layers)
+        hidden = int(stack.config.hidden_size)
         if num_probes < 1:
             raise ValueError("num_probes must be >= 1")
         for layer in tap_layers:
             if layer > n_layers:
-                raise ValueError(f"tap layer {layer} is past the {n_layers} Gemma blocks")
+                raise ValueError(f"tap layer {layer} is past the {n_layers} backbone blocks")
         self.backbone = backbone
         self.tokenizer = tokenizer
         self.tap_layers = tap_layers
@@ -111,7 +124,7 @@ class ProbeClassifier(nn.Module):
         self.num_probes = num_probes
         self.probes = nn.Parameter(
             _probe_inits_from_questions(
-                tokenizer, backbone.embed_tokens, num_probes=num_probes
+                tokenizer, stack.embed_tokens, num_probes=num_probes
             )
         )
         tap_width = num_probes * hidden
@@ -126,8 +139,9 @@ class ProbeClassifier(nn.Module):
         )
         self._captured: dict[int, torch.Tensor] = {}
         self._hook_handles = []
+        layers = _backbone_layers(backbone)
         for layer in tap_layers:
-            handle = backbone.layers[layer - 1].register_forward_hook(self._make_hook(layer))
+            handle = layers[layer - 1].register_forward_hook(self._make_hook(layer))
             self._hook_handles.append(handle)
         backbone.config.use_cache = False
 
@@ -141,7 +155,7 @@ class ProbeClassifier(nn.Module):
     def _embed_with_probes(
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        tok = self.backbone.embed_tokens(input_ids)
+        tok = _text_stack(self.backbone).embed_tokens(input_ids)
         batch, seq_len, hidden = tok.shape
         num = self.num_probes
         content_len = attention_mask.sum(dim=1).long()
@@ -210,7 +224,7 @@ def build_model(cfg: Config) -> ProbeClassifier:
     kw = hub_from_pretrained_kwargs(cfg)
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_id, **kw)
     prepare_tokenizer(tokenizer, max_len=cfg.max_len)
-    backbone = _text_stack(
+    inner = _text_stack(
         AutoModel.from_pretrained(
             cfg.model_id,
             torch_dtype=torch.float32,
@@ -219,15 +233,17 @@ def build_model(cfg: Config) -> ProbeClassifier:
             **kw,
         )
     )
+    n_layers = int(inner.config.num_hidden_layers)
+    backbone = apply_loras(inner, cfg.lora, num_layers=n_layers)
     model = ProbeClassifier(
         backbone,
         tokenizer,
         tap_layers=cfg.tap_layers,
         max_len=cfg.max_len,
-        num_probes=cfg.num_probes,
-        dropout=cfg.train.head_dropout,
-        contrast_hidden=cfg.train.contrast_head.hidden_dim,
-        contrast_out=cfg.train.contrast_head.out_dim,
+        num_probes=cfg.probe.probe_count,
+        dropout=cfg.head.dropout,
+        contrast_hidden=cfg.contrast.hidden_dim,
+        contrast_out=cfg.contrast.out_dim,
     )
     configure_trainability(model, cfg)
     init_contrast_head(model)
@@ -237,19 +253,15 @@ def build_model(cfg: Config) -> ProbeClassifier:
 def configure_trainability(model: ProbeClassifier, cfg: Config) -> None:
     for param in model.backbone.parameters():
         param.requires_grad = False
-    if not cfg.train.freeze_blocks:
-        for param in model.backbone.layers.parameters():
+    for block in cfg.lora.blocks:
+        if not block.enabled:
+            continue
+        for param in lora_params_for_block(model.backbone, block):
             param.requires_grad = True
-        model.backbone.gradient_checkpointing_enable(
-            gradient_checkpointing_kwargs={"use_reentrant": False}
-        )
-    if not cfg.train.freeze_blocks and not cfg.train.freeze_embeddings:
-        for param in model.backbone.embed_tokens.parameters():
-            param.requires_grad = True
-    model.probes.requires_grad = not cfg.train.freeze_probes
+    model.probes.requires_grad = not cfg.probe.freeze
     for param in model.pool_norms.parameters():
-        param.requires_grad = not cfg.train.freeze_head
+        param.requires_grad = not cfg.head.freeze
     for param in model.classifier.parameters():
-        param.requires_grad = not cfg.train.freeze_head
+        param.requires_grad = not cfg.head.freeze
     for param in model.contrast_head.parameters():
-        param.requires_grad = not cfg.train.contrast_head.freeze
+        param.requires_grad = not cfg.contrast.freeze

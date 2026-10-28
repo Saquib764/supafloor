@@ -247,7 +247,7 @@ def _print_predicted_count_std(pred: list[int]) -> None:
 
 
 def _print_summary(predictions: list[ScoredPrediction], examples: list[PassageExample]) -> None:
-    print("\n=== Whole passage (Gemma probe) ===", flush=True)
+    print("\n=== Whole passage (Qwen3 probe) ===", flush=True)
     print(f"rows: {len(predictions)}", flush=True)
     if not predictions:
         return
@@ -342,13 +342,13 @@ def run_test(cfg: Config, *, checkpoint: Path | None = None) -> None:
     device = pick_device()
     model = _load_checkpoint(cfg, path)
     model.to(device)
-    evaluate_model(model, test_ex, device, cfg.train.micro_batch_size)
+    evaluate_model(model, test_ex, device, cfg.train.batch_size)
 
 
 def main(argv: list[str] | None = None) -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Evaluate Gemma authorship model on held-out prompts")
+    parser = argparse.ArgumentParser(description="Evaluate Qwen3 authorship model on held-out prompts")
     parser.add_argument("--config", type=Path, default=CONFIG_PATH)
     parser.add_argument("--checkpoint", type=Path, default=None)
     args = parser.parse_args(argv)
