@@ -102,6 +102,8 @@ class TrainSettings:
     resume: bool
     epochs: int
     batch_size: int
+    prompt_count: int
+    authors_per_batch: int
     warmup_ratio: float
     weight_decay: float
     max_grad_norm: float
@@ -115,8 +117,6 @@ class Config:
     model_id: str
     hf_cache: Path
     max_len: int
-    prompt_count: int
-    authors_per_batch: int
     tap_layers: tuple[int, ...]
     probe: ProbeSettings
     head: HeadSettings
@@ -306,9 +306,9 @@ def load_config(path: Path | None = None) -> Config:
     if not 0.0 <= test_fraction < 1.0:
         raise ValueError("data.test_fraction must be in [0, 1)")
 
-    prompt_count = int(raw.get("prompt_count", 0))
+    prompt_count = int(train_raw.get("prompt_count", 0))
     if prompt_count < 1:
-        raise ValueError("prompt_count must be >= 1")
+        raise ValueError("train.prompt_count must be >= 1")
 
     batch_size = int(train_raw.get("batch_size", BATCH_SIZE))
     if batch_size < 1:
@@ -325,7 +325,7 @@ def load_config(path: Path | None = None) -> Config:
         if authors_per_batch < 2:
             raise ValueError("contrast.weight > 0 requires train.batch_size / prompt_count >= 2")
         if prompt_count < 2:
-            raise ValueError("contrast.weight > 0 requires prompt_count >= 2")
+            raise ValueError("contrast.weight > 0 requires train.prompt_count >= 2")
 
     epochs = int(train_raw.get("epochs", 3))
     if epochs < 1:
@@ -348,8 +348,6 @@ def load_config(path: Path | None = None) -> Config:
         model_id=model_id,
         hf_cache=apply_hf_cache(_resolve(Path(raw.get("hf_cache") or "../hf_cache"), base)),
         max_len=max_len,
-        prompt_count=prompt_count,
-        authors_per_batch=authors_per_batch,
         tap_layers=_load_tap_layers(raw),
         probe=probe,
         head=head,
@@ -368,6 +366,8 @@ def load_config(path: Path | None = None) -> Config:
             resume=resume,
             epochs=epochs,
             batch_size=batch_size,
+            prompt_count=prompt_count,
+            authors_per_batch=authors_per_batch,
             warmup_ratio=float(train_raw.get("warmup_ratio", 0.05)),
             weight_decay=float(train_raw.get("weight_decay", 0.01)),
             max_grad_norm=float(train_raw.get("max_grad_norm", 1.0)),

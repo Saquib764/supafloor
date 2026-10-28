@@ -415,7 +415,7 @@ def run(
     batch_sampler = PromptBatchSampler(
         train_ex,
         batch_size=cfg.train.batch_size,
-        prompt_count=cfg.prompt_count,
+        prompt_count=cfg.train.prompt_count,
         seed=cfg.data.seed,
     )
     train_loader = DataLoader(
