@@ -115,7 +115,8 @@ class Config:
     model_id: str
     hf_cache: Path
     max_len: int
-    number_of_authors: int
+    prompt_count: int
+    authors_per_batch: int
     tap_layers: tuple[int, ...]
     probe: ProbeSettings
     head: HeadSettings
@@ -305,27 +306,26 @@ def load_config(path: Path | None = None) -> Config:
     if not 0.0 <= test_fraction < 1.0:
         raise ValueError("data.test_fraction must be in [0, 1)")
 
-    number_of_authors = int(raw.get("number_of_authors", 0))
-    if number_of_authors < 1:
-        raise ValueError("number_of_authors must be >= 1")
-    if number_of_authors > NUM_CLASSES:
-        raise ValueError(
-            f"number_of_authors is {number_of_authors}; each prompt has {NUM_CLASSES} models"
-        )
+    prompt_count = int(raw.get("prompt_count", 0))
+    if prompt_count < 1:
+        raise ValueError("prompt_count must be >= 1")
 
     batch_size = int(train_raw.get("batch_size", BATCH_SIZE))
     if batch_size < 1:
         raise ValueError("train.batch_size must be >= 1")
-    if batch_size % number_of_authors != 0:
-        raise ValueError("train.batch_size must be divisible by number_of_authors")
-    prompts_per_batch = batch_size // number_of_authors
+    if batch_size % prompt_count != 0:
+        raise ValueError("train.batch_size must be divisible by prompt_count")
+    authors_per_batch = batch_size // prompt_count
+    if authors_per_batch > NUM_CLASSES:
+        raise ValueError(
+            f"train.batch_size / prompt_count is {authors_per_batch}; "
+            f"each prompt has {NUM_CLASSES} models"
+        )
     if contrast.weight > 0.0:
-        if number_of_authors < 2:
-            raise ValueError("contrast.weight > 0 requires number_of_authors >= 2")
-        if prompts_per_batch < 2:
-            raise ValueError(
-                "contrast.weight > 0 requires train.batch_size / number_of_authors >= 2"
-            )
+        if authors_per_batch < 2:
+            raise ValueError("contrast.weight > 0 requires train.batch_size / prompt_count >= 2")
+        if prompt_count < 2:
+            raise ValueError("contrast.weight > 0 requires prompt_count >= 2")
 
     epochs = int(train_raw.get("epochs", 3))
     if epochs < 1:
@@ -348,7 +348,8 @@ def load_config(path: Path | None = None) -> Config:
         model_id=model_id,
         hf_cache=apply_hf_cache(_resolve(Path(raw.get("hf_cache") or "../hf_cache"), base)),
         max_len=max_len,
-        number_of_authors=number_of_authors,
+        prompt_count=prompt_count,
+        authors_per_batch=authors_per_batch,
         tap_layers=_load_tap_layers(raw),
         probe=probe,
         head=head,

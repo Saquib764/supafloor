@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gemma-author-probe"
-version = "0.1.22"
+version = "0.1.23"
 description = "Frozen Qwen3-0.6B-Base + learnable probe tokens, 18-class authorship head"
 requires-python = ">=3.11"
 dependencies = [

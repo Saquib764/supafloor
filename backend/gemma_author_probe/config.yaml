@@ -10,8 +10,8 @@ max_len: 512
 tap_layers: [4, 8, 12, 16, 20, 24, 28]
 # tap_layers: [4, 8, 12, 16, 20, 24, 28, 32, 36]
 
-# Author rows sampled per prompt in each batch; prompts per step = batch_size / this.
-number_of_authors: 18
+# Prompt ids per batch; authors per batch = train.batch_size / prompt_count.
+prompt_count: 2
 
 probe:
   probe_count: 10  # learnable tokens appended after passage (fixed order)
@@ -74,7 +74,7 @@ train:
     resume: true
   session_dir: training_session
   epochs: 100
-  batch_size: 180
+  batch_size: 8
   weight_decay: 0.01
   warmup_ratio: 0.05
   max_grad_norm: 1.0

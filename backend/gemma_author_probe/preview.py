@@ -50,9 +50,11 @@ def run(
         f"(tokenize to {cfg.max_len - cfg.probe.probe_count}, append {cfg.probe.probe_count} probes)"
     )
     print(f"probe.probe_count: {cfg.probe.probe_count}")
-    prompts_per_batch = train.batch_size // cfg.number_of_authors
-    print(f"number_of_authors: {cfg.number_of_authors}  (rows per prompt in batch)")
-    print(f"prompts per batch: {prompts_per_batch}  (batch_size / number_of_authors)")
+    print(f"prompt_count:      {cfg.prompt_count}")
+    print(
+        f"authors per batch: {cfg.authors_per_batch}  "
+        f"(train.batch_size / prompt_count)"
+    )
     print(f"tap_layers:     {list(cfg.tap_layers)}  (1-indexed blocks)")
     print(
         f"input:          passage + {cfg.probe.probe_count} probes; "
@@ -90,8 +92,8 @@ def run(
     print(f"contrast weight:  {cfg.contrast.weight:g}")
     print(
         f"loss:             cross entropy "
-        f"(batch={train.batch_size}: {prompts_per_batch} prompts × "
-        f"{cfg.number_of_authors} authors)"
+        f"(batch={train.batch_size}: {cfg.prompt_count} prompts × "
+        f"{cfg.authors_per_batch} authors)"
     )
 
     if not build_from_hub:
