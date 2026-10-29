@@ -12,7 +12,8 @@ from data import prepare_tokenizer
 from labels import NUM_CLASSES
 from lora import apply_loras, lora_params_for_block
 
-# One question per probe slot, low-level surface cues → high-level authorial semantics.
+# One question per probe slot (max count), low-level surface cues → high-level semantics.
+MAX_PROBE_PROMPTS = 10
 _PROBE_STRUCTURE_QUESTIONS: tuple[str, ...] = (
     "What punctuation marks and capitalization habits appear in this text?",
     "What suffixes and word endings recur in this passage?",
@@ -25,6 +26,8 @@ _PROBE_STRUCTURE_QUESTIONS: tuple[str, ...] = (
     "What topics and semantic fields dominate this text?",
     "What overall authorial voice and style characterize this passage?",
 )
+if len(_PROBE_STRUCTURE_QUESTIONS) != MAX_PROBE_PROMPTS:
+    raise RuntimeError("MAX_PROBE_PROMPTS must match _PROBE_STRUCTURE_QUESTIONS length")
 
 
 def _unwrap_backbone(model: PreTrainedModel) -> PreTrainedModel:
@@ -69,11 +72,11 @@ def _probe_inits_from_questions(
     *,
     num_probes: int,
 ) -> torch.Tensor:
-    questions = _PROBE_STRUCTURE_QUESTIONS
-    if len(questions) != num_probes:
+    if num_probes > MAX_PROBE_PROMPTS:
         raise ValueError(
-            f"num_probes={num_probes} but {len(questions)} probe init questions are defined"
+            f"num_probes={num_probes} exceeds maximum {MAX_PROBE_PROMPTS} probe prompts"
         )
+    questions = _PROBE_STRUCTURE_QUESTIONS[:num_probes]
     rows = [_mean_question_embedding(q, tokenizer, embed_tokens) for q in questions]
     return torch.stack(rows, dim=0)
 

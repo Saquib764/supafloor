@@ -25,7 +25,7 @@ def _describe_head(cfg: Config) -> list[str]:
         f"num_classes:    {NUM_CLASSES}",
         f"probe tokens:   {cfg.probe.probe_count} (fixed order, concat hiddens per tap)",
         "forward:        all probe hiddens at each tap → LN → concat taps → dropout → Linear",
-        "probe init:     each probe = mean token embed of one structure question (low→semantic)",
+        "probe init:     first N questions (low→semantic); N = probe.probe_count (max 10)",
         "loss:           cross entropy (+ optional contrastive on contrast head)",
         f"contrast head:  Linear→ReLU→Linear→L2 "
         f"({cfg.contrast.hidden_dim}→{cfg.contrast.out_dim})",

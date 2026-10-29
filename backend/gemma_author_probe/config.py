@@ -13,6 +13,7 @@ from env import hf_hub_token
 from labels import NUM_CLASSES
 
 BATCH_SIZE = 18
+MAX_PROBE_PROMPTS = 10  # must match model.MAX_PROBE_PROMPTS and probe question list
 LORA_BLOCK_NAMES = ("lora_1", "lora_2", "lora_3", "lora_4")
 
 
@@ -158,9 +159,13 @@ def hub_from_pretrained_kwargs(cfg: Config) -> dict[str, str]:
 def _load_probe(raw: dict[str, Any]) -> ProbeSettings:
     if not isinstance(raw, dict):
         raise ValueError("probe must be a mapping")
-    probe_count = int(raw.get("probe_count", 10))
+    probe_count = int(raw.get("probe_count", MAX_PROBE_PROMPTS))
     if probe_count < 1:
         raise ValueError("probe.probe_count must be >= 1")
+    if probe_count > MAX_PROBE_PROMPTS:
+        raise ValueError(
+            f"probe.probe_count must be <= {MAX_PROBE_PROMPTS} (defined probe prompts)"
+        )
     freeze = bool(raw.get("freeze", False))
     lr = float(raw.get("lr", 1.0e-4))
     if not freeze and lr <= 0.0:

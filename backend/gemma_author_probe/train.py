@@ -5,8 +5,11 @@ from __future__ import annotations
 import math
 import os
 import shutil
+import signal
 from pathlib import Path
 
+# Must be set before torch loads OpenMP, which otherwise swallows Ctrl+C.
+os.environ.setdefault("KMP_HANDLE_SIGNALS", "FALSE")
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 import torch
@@ -458,6 +461,8 @@ def run(
         flush=True,
     )
 
+    # Kill the process at once, including inside a torch op.
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     model.train()
     saved_step = step if pending_state is not None else -1
     contrastive_weight = cfg.contrast.weight

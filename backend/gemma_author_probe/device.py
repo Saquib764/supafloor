@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
+# OpenMP catches SIGINT unless this is set before torch loads it.
+os.environ.setdefault("KMP_HANDLE_SIGNALS", "FALSE")
+
 import torch
 
 _device: torch.device | None = None
