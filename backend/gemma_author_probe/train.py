@@ -29,7 +29,13 @@ from data import (
 )
 from device import get_device
 from loss import cross_entropy_loss, supervised_contrastive_loss
-from lora import adapter_param, is_lora_param, lora_params_for_block, lora_trainable_count
+from lora import (
+    adapter_param,
+    init_lora_params,
+    is_lora_param,
+    lora_params_for_block,
+    lora_trainable_count,
+)
 from model import ProbeClassifier, _text_stack, build_model, init_contrast_head
 
 CHECKPOINT_NAME = "last.pt"
@@ -119,14 +125,23 @@ def _load_model_weights(
         print(f"train: could not load {path.name} ({exc})", flush=True)
         return False
     contrast_missing = [key for key in missing if key.startswith("contrast_head.")]
+    lora_missing = [key for key in missing if is_lora_param(key)]
     other_missing = [
         key
         for key in missing
-        if not key.startswith("contrast_head.") and not _optional_missing_key(key, cfg)
+        if key not in contrast_missing
+        and key not in lora_missing
+        and not _optional_missing_key(key, cfg)
     ]
     if other_missing:
         print(f"train: checkpoint missing weights: {other_missing}", flush=True)
         return False
+    if lora_missing:
+        init_lora_params(model.backbone, set(lora_missing))
+        print(
+            f"train: fresh lora init ({len(lora_missing)} keys missing in {path.name})",
+            flush=True,
+        )
     loaded_contrast = model_contrast & set(compatible)
     if loaded_contrast and not contrast_missing:
         print(

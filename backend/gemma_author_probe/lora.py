@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import math
 import re
 
+import torch
 from peft import LoraConfig, get_peft_model
 from transformers import PreTrainedModel
 
@@ -134,3 +136,18 @@ def apply_loras(
     if peft_config is None:
         return model
     return get_peft_model(model, peft_config, adapter_name=LORA_ADAPTER_NAME)
+
+
+def init_lora_params(model: PreTrainedModel, names: set[str]) -> None:
+    """Default PEFT LoRA init for checkpoint keys that were not loaded."""
+    if not names:
+        return
+    for name, param in model.named_parameters():
+        if name not in names or not is_lora_param(name):
+            continue
+        if "lora_B" in name:
+            torch.nn.init.zeros_(param.data)
+        elif "lora_A" in name:
+            torch.nn.init.kaiming_uniform_(param.data, a=math.sqrt(5))
+        else:
+            raise ValueError(f"unsupported LoRA parameter name {name!r}")

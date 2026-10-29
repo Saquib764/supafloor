@@ -30,3 +30,17 @@ def get_device(*, announce: bool = False) -> torch.device:
         print(f"device: {_device}", flush=True)
         _announced = True
     return _device
+
+
+def release_device_memory() -> None:
+    """Return cached GPU/MPS allocations in this process (safe anytime)."""
+    import gc
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+        return
+    mps = getattr(torch.backends, "mps", None)
+    if mps is not None and mps.is_available():
+        torch.mps.empty_cache()
