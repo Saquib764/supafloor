@@ -339,7 +339,7 @@ def run_test(
         raise ValueError("test split is empty; set data.test_fraction > 0 to evaluate a holdout")
     path = (checkpoint or (cfg.train.session_dir / CHECKPOINT_NAME)).resolve()
     print(
-        f"run-test: split by prompt_id | {cfg.model_id} | "
+        f"run-test: {cfg.data.test_csv} prompt holdout | {cfg.model_id} | "
         f"test_fraction={cfg.data.test_fraction} seed={cfg.data.seed}",
         flush=True,
     )

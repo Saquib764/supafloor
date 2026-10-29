@@ -45,6 +45,7 @@ CONFIG_PATH = project_root() / "config.yaml"
 class DataSettings:
     root: Path
     train_csv: str
+    test_csv: str
     test_fraction: float
     seed: int
     num_workers: int
@@ -360,7 +361,8 @@ def load_config(path: Path | None = None) -> Config:
         lora=lora,
         data=DataSettings(
             root=_resolve(Path(str(root_raw)), base),
-            train_csv=str(data_raw.get("train_csv") or "train.csv"),
+            train_csv=str(data_raw.get("train_csv") or "ntl_open_pool.csv"),
+            test_csv=str(data_raw.get("test_csv") or "test.csv"),
             test_fraction=test_fraction,
             seed=int(data_raw.get("seed", 42)),
             num_workers=int(data_raw.get("num_workers", 0)),

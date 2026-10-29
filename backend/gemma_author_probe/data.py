@@ -1,4 +1,4 @@
-"""Load train.csv; split by prompt_id; batch sampled authors on sampled prompts."""
+"""Load train/test CSV; batch sampled authors on sampled prompts."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import random
 from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 from transformers import PreTrainedTokenizerBase
@@ -32,8 +33,7 @@ class ClassifierBatch:
     labels: torch.Tensor
 
 
-def read_train_csv(cfg: Config) -> list[PassageExample]:
-    path = cfg.data.root / cfg.data.train_csv
+def read_passage_csv(path: Path) -> list[PassageExample]:
     if not path.is_file():
         raise FileNotFoundError(f"missing {path}")
     out: list[PassageExample] = []
@@ -50,6 +50,14 @@ def read_train_csv(cfg: Config) -> list[PassageExample]:
     if not out:
         raise ValueError(f"no rows in {path}")
     return out
+
+
+def read_train_csv(cfg: Config) -> list[PassageExample]:
+    return read_passage_csv(cfg.data.root / cfg.data.train_csv)
+
+
+def read_test_csv(cfg: Config) -> list[PassageExample]:
+    return read_passage_csv(cfg.data.root / cfg.data.test_csv)
 
 
 def _prompt_is_complete(rows: list[PassageExample]) -> bool:
@@ -107,11 +115,20 @@ def split_train_test(
 
 
 def load_train_test_split(cfg: Config) -> tuple[list[PassageExample], list[PassageExample]]:
-    return split_train_test(
-        read_train_csv(cfg),
+    train = filter_complete_prompts(read_train_csv(cfg))
+    if not train:
+        raise ValueError(
+            f"no complete prompts in {cfg.data.root / cfg.data.train_csv} "
+            f"(need {MODELS_PER_PROMPT} distinct models per prompt_id)"
+        )
+    if cfg.data.test_fraction <= 0.0:
+        return train, []
+    _, test = split_train_test(
+        read_test_csv(cfg),
         test_fraction=cfg.data.test_fraction,
         seed=cfg.data.seed,
     )
+    return train, test
 
 
 def build_prompt_label_index(examples: list[PassageExample]) -> dict[str, dict[int, int]]:

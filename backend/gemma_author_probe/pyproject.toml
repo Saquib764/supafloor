@@ -14,6 +14,7 @@ dependencies = [
   "torch>=2.4.0",
   "tqdm>=4.66.0",
   "transformers>=4.55.0",
+  "pyarrow>=26.0.0",
 ]
 
 [project.scripts]
@@ -39,6 +40,7 @@ dev-mode-dirs = ["."]
 "train.py" = "train.py"
 "preview.py" = "preview.py"
 "run_test.py" = "run_test.py"
+"export_ntl_open_pool.py" = "export_ntl_open_pool.py"
 
 [tool.uv]
 package = true

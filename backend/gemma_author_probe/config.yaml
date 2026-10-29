@@ -60,8 +60,9 @@ lora:
 
 data:
   root: data
-  train_csv: train.csv
-  test_fraction: 0.1  # 0 trains on every complete prompt
+  train_csv: ntl_open_pool.csv
+  test_csv: test.csv
+  test_fraction: 0.1  # share of complete prompts in test_csv used for eval
   seed: 42
   num_workers: 0
 

@@ -39,8 +39,25 @@ def main(argv: list[str] | None = None) -> None:
     p_run = sub.add_parser("run-test", help="Eval held-out prompts from the saved checkpoint")
     p_run.add_argument("--config", type=Path, default=CONFIG_PATH)
     p_run.add_argument("--checkpoint", type=Path, default=None)
+
+    p_export = sub.add_parser(
+        "export-data",
+        help="Export ntl_open_pool.parquet to data.train_csv (one-off; training reads CSV only)",
+    )
+    p_export.add_argument("--config", type=Path, default=CONFIG_PATH)
+    p_export.add_argument("--parquet", type=Path, default=None)
+    p_export.add_argument("--csv", type=Path, default=None)
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
+
+    if args.cmd == "export-data":
+        from export_ntl_open_pool import DEFAULT_PARQUET_NAME, main as export_main
+
+        parquet = args.parquet or (cfg.data.root / DEFAULT_PARQUET_NAME)
+        csv_out = args.csv or (cfg.data.root / cfg.data.train_csv)
+        export_main(parquet, csv_out)
+        return
+
     device = get_device(announce=True)
 
     if args.cmd == "preview":
