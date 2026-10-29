@@ -23,8 +23,9 @@ from data import (
     PassageCollator,
     PassageDataset,
     PassageExample,
-    PromptBatchSampler,
+    RowBatchSampler,
     load_train_test_split,
+    print_data_summary,
 )
 from device import get_device
 from loss import cross_entropy_loss, supervised_contrastive_loss
@@ -348,6 +349,7 @@ def run(
     cfg = cfg or load_config()
     device = device or get_device(announce=True)
     train_ex, test_ex = load_train_test_split(cfg)
+    print_data_summary(cfg, train_ex, test_ex)
     print(f"train: loading {cfg.model_id}", flush=True)
     model = build_model(cfg)
     session_ckpt = cfg.train.session_dir / CHECKPOINT_NAME
@@ -415,10 +417,9 @@ def run(
     collator = PassageCollator(
         model.tokenizer, max_len=model.max_len, probe_slots=model.num_probes
     )
-    batch_sampler = PromptBatchSampler(
-        train_ex,
+    batch_sampler = RowBatchSampler(
+        len(train_ex),
         batch_size=cfg.train.batch_size,
-        prompt_count=cfg.train.prompt_count,
         seed=cfg.data.seed,
     )
     train_loader = DataLoader(

@@ -115,12 +115,7 @@ def split_train_test(
 
 
 def load_train_test_split(cfg: Config) -> tuple[list[PassageExample], list[PassageExample]]:
-    train = filter_complete_prompts(read_train_csv(cfg))
-    if not train:
-        raise ValueError(
-            f"no complete prompts in {cfg.data.root / cfg.data.train_csv} "
-            f"(need {MODELS_PER_PROMPT} distinct models per prompt_id)"
-        )
+    train = read_train_csv(cfg)
     if cfg.data.test_fraction <= 0.0:
         return train, []
     _, test = split_train_test(
@@ -129,6 +124,52 @@ def load_train_test_split(cfg: Config) -> tuple[list[PassageExample], list[Passa
         seed=cfg.data.seed,
     )
     return train, test
+
+
+def _count_complete_prompts(examples: list[PassageExample]) -> int:
+    by_prompt: dict[str, list[PassageExample]] = defaultdict(list)
+    for ex in examples:
+        by_prompt[ex.prompt_id].append(ex)
+    return sum(1 for rows in by_prompt.values() if _prompt_is_complete(rows))
+
+
+def print_data_summary(
+    cfg: Config,
+    train_ex: list[PassageExample],
+    test_ex: list[PassageExample],
+) -> None:
+    train_path = (cfg.data.root / cfg.data.train_csv).resolve()
+    test_path = (cfg.data.root / cfg.data.test_csv).resolve()
+    train_prompts = len({ex.prompt_id for ex in train_ex})
+    train_complete = _count_complete_prompts(train_ex)
+    print(f"data: train {train_path.name}", flush=True)
+    print(
+        f"  rows={len(train_ex)} prompt_ids={train_prompts} "
+        f"complete_prompts={train_complete} (all rows used for training)",
+        flush=True,
+    )
+    if cfg.data.test_fraction <= 0.0:
+        print(f"data: test disabled (test_fraction=0)", flush=True)
+        return
+    try:
+        test_all = read_test_csv(cfg)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"data: test {test_path.name} unavailable ({exc})", flush=True)
+        return
+    test_all_prompts = len({ex.prompt_id for ex in test_all})
+    test_complete = _count_complete_prompts(test_all)
+    test_prompts = len({ex.prompt_id for ex in test_ex})
+    print(f"data: test {test_path.name}", flush=True)
+    print(
+        f"  source rows={len(test_all)} prompt_ids={test_all_prompts} "
+        f"complete_prompts={test_complete}",
+        flush=True,
+    )
+    print(
+        f"  eval holdout test_fraction={cfg.data.test_fraction} seed={cfg.data.seed} "
+        f"→ rows={len(test_ex)} prompt_ids={test_prompts}",
+        flush=True,
+    )
 
 
 def build_prompt_label_index(examples: list[PassageExample]) -> dict[str, dict[int, int]]:
@@ -257,6 +298,40 @@ class PassageDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index: int) -> PassageExample:
         return self._examples[int(index)]
+
+
+class RowBatchSampler(torch.utils.data.Sampler[list[int]]):
+    """Shuffle row indices each epoch; fixed-size batches (drop tail)."""
+
+    def __init__(self, num_rows: int, *, batch_size: int, seed: int) -> None:
+        if num_rows < 1:
+            raise ValueError("need at least one training row")
+        if batch_size < 1:
+            raise ValueError("batch_size must be >= 1")
+        self._num_rows = int(num_rows)
+        self._batch_size = int(batch_size)
+        self._seed = int(seed)
+        self._batches: list[list[int]] = []
+        self.set_epoch(0)
+
+    def __len__(self) -> int:
+        return len(self._batches)
+
+    def set_epoch(self, epoch: int) -> None:
+        rng = random.Random(self._seed + int(epoch) * 1_000_003)
+        indices = list(range(self._num_rows))
+        rng.shuffle(indices)
+        n = (len(indices) // self._batch_size) * self._batch_size
+        self._batches = [
+            indices[i : i + self._batch_size] for i in range(0, n, self._batch_size)
+        ]
+        if not self._batches:
+            raise ValueError(
+                f"batch_size {self._batch_size} exceeds training rows {self._num_rows}"
+            )
+
+    def __iter__(self):
+        yield from self._batches
 
 
 def prepare_tokenizer(tokenizer: PreTrainedTokenizerBase, *, max_len: int) -> PreTrainedTokenizerBase:
