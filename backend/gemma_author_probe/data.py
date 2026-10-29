@@ -141,11 +141,11 @@ def print_data_summary(
     train_path = (cfg.data.root / cfg.data.train_csv).resolve()
     test_path = (cfg.data.root / cfg.data.test_csv).resolve()
     train_prompts = len({ex.prompt_id for ex in train_ex})
-    train_complete = _count_complete_prompts(train_ex)
+    batch_prompts = len(build_prompt_label_index(train_ex))
     print(f"data: train {train_path.name}", flush=True)
     print(
         f"  rows={len(train_ex)} prompt_ids={train_prompts} "
-        f"complete_prompts={train_complete} (all rows used for training)",
+        f"prompts_with_all_models={batch_prompts}",
         flush=True,
     )
     if cfg.data.test_fraction <= 0.0:
@@ -173,20 +173,22 @@ def print_data_summary(
 
 
 def build_prompt_label_index(examples: list[PassageExample]) -> dict[str, dict[int, int]]:
-    """prompt_id -> label_index -> row index in `examples`."""
+    """prompt_id -> label_index -> first row index.
+
+    A repeated model on the same prompt keeps the first row. Prompts missing any
+    model are left out; batches only sample prompts that contain every model.
+    """
     index: dict[str, dict[int, int]] = {}
     for i, ex in enumerate(examples):
         slot = index.setdefault(ex.prompt_id, {})
         label = int(ex.label_index)
-        if label in slot:
-            raise ValueError(f"duplicate model {label} for prompt {ex.prompt_id}")
-        slot[label] = i
-    for pid, labels in index.items():
-        if len(labels) != MODELS_PER_PROMPT:
-            raise ValueError(
-                f"prompt {pid} has {len(labels)} models; expected {MODELS_PER_PROMPT}"
-            )
-    return index
+        if label not in slot:
+            slot[label] = i
+    return {
+        pid: labels
+        for pid, labels in index.items()
+        if len(labels) == MODELS_PER_PROMPT
+    }
 
 
 def iter_prompt_batches(
@@ -264,9 +266,10 @@ class PromptBatchSampler(torch.utils.data.Sampler[list[int]]):
             examples, batch_size=batch_size, prompt_count=prompt_count
         )
         if self._num_batches < 1:
+            found = len(build_prompt_label_index(examples))
             raise ValueError(
-                f"need at least {prompt_count} complete prompts; "
-                f"found {len(examples) // MODELS_PER_PROMPT}"
+                f"need at least {prompt_count} prompts with all {MODELS_PER_PROMPT} models; "
+                f"found {found}"
             )
         self._batches: list[list[int]] = []
         self.set_epoch(0)

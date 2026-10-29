@@ -9,4 +9,4 @@ To regenerate the CSV from parquet: `uv run gemma-author-probe export-data` (def
 
 Parquet columns map to CSV as: `id` → `id`, `prompt_group` → `prompt_id`, `text` → `text`, `model` → `model`.
 
-Training uses every row in **ntl_open_pool.csv**. Test eval samples complete prompts (18 models each) from **test.csv** per `data.test_fraction`.
+Training batches use prompts in **ntl_open_pool.csv** that contain every model. A repeated model on the same prompt keeps the first row. Test eval samples complete prompts (18 models each) from **test.csv** per `data.test_fraction`.
