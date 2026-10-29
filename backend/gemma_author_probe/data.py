@@ -300,40 +300,6 @@ class PassageDataset(torch.utils.data.Dataset):
         return self._examples[int(index)]
 
 
-class RowBatchSampler(torch.utils.data.Sampler[list[int]]):
-    """Shuffle row indices each epoch; fixed-size batches (drop tail)."""
-
-    def __init__(self, num_rows: int, *, batch_size: int, seed: int) -> None:
-        if num_rows < 1:
-            raise ValueError("need at least one training row")
-        if batch_size < 1:
-            raise ValueError("batch_size must be >= 1")
-        self._num_rows = int(num_rows)
-        self._batch_size = int(batch_size)
-        self._seed = int(seed)
-        self._batches: list[list[int]] = []
-        self.set_epoch(0)
-
-    def __len__(self) -> int:
-        return len(self._batches)
-
-    def set_epoch(self, epoch: int) -> None:
-        rng = random.Random(self._seed + int(epoch) * 1_000_003)
-        indices = list(range(self._num_rows))
-        rng.shuffle(indices)
-        n = (len(indices) // self._batch_size) * self._batch_size
-        self._batches = [
-            indices[i : i + self._batch_size] for i in range(0, n, self._batch_size)
-        ]
-        if not self._batches:
-            raise ValueError(
-                f"batch_size {self._batch_size} exceeds training rows {self._num_rows}"
-            )
-
-    def __iter__(self):
-        yield from self._batches
-
-
 def prepare_tokenizer(tokenizer: PreTrainedTokenizerBase, *, max_len: int) -> PreTrainedTokenizerBase:
     if tokenizer.pad_token_id is None:
         eos_id = tokenizer.eos_token_id

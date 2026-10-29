@@ -23,7 +23,7 @@ from data import (
     PassageCollator,
     PassageDataset,
     PassageExample,
-    RowBatchSampler,
+    PromptBatchSampler,
     load_train_test_split,
     print_data_summary,
 )
@@ -432,9 +432,10 @@ def run(
     collator = PassageCollator(
         model.tokenizer, max_len=model.max_len, probe_slots=model.num_probes
     )
-    batch_sampler = RowBatchSampler(
-        len(train_ex),
+    batch_sampler = PromptBatchSampler(
+        train_ex,
         batch_size=cfg.train.batch_size,
+        prompt_count=cfg.train.prompt_count,
         seed=cfg.data.seed,
     )
     train_loader = DataLoader(
